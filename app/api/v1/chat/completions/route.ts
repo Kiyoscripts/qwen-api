@@ -8,6 +8,7 @@ import {
   imageUrlsIn,
   openQwenStream,
   qwenDeltas,
+  showReasoning,
   uploadImages,
   QwenError,
   type OpenAIMessage,
@@ -73,6 +74,8 @@ export async function POST(req: NextRequest) {
     await Promise.all([deleteChat(chatId), forgetAllMemories()]);
   };
 
+  const withReasoning = showReasoning();
+
   if (wantStream) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -80,8 +83,15 @@ export async function POST(req: NextRequest) {
         const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
         send({ id, object: "chat.completion.chunk", created, model: ALLOWED_MODEL, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
         try {
-          for await (const piece of qwenDeltas(qwenRes)) {
-            send({ id, object: "chat.completion.chunk", created, model: ALLOWED_MODEL, choices: [{ index: 0, delta: { content: piece }, finish_reason: null }] });
+          for await (const { phase, text } of qwenDeltas(qwenRes)) {
+            // Reasoning goes to reasoning_content; the answer goes to content.
+            const delta =
+              phase === "think"
+                ? withReasoning
+                  ? { reasoning_content: text }
+                  : null
+                : { content: text };
+            if (delta) send({ id, object: "chat.completion.chunk", created, model: ALLOWED_MODEL, choices: [{ index: 0, delta, finish_reason: null }] });
           }
         } catch (e: any) {
           send({ id, object: "chat.completion.chunk", created, model: ALLOWED_MODEL, choices: [{ index: 0, delta: { content: `\n[error: ${e.message}]` }, finish_reason: null }] });
@@ -100,8 +110,12 @@ export async function POST(req: NextRequest) {
 
   // --- non-streaming ---
   let content = "";
+  let reasoning = "";
   try {
-    for await (const piece of qwenDeltas(qwenRes)) content += piece;
+    for await (const { phase, text } of qwenDeltas(qwenRes)) {
+      if (phase === "think") reasoning += text;
+      else content += text;
+    }
   } catch (e: any) {
     await cleanup();
     const status = e instanceof QwenError ? e.status : 502;
@@ -111,12 +125,15 @@ export async function POST(req: NextRequest) {
   await cleanup();
   logUsage(record.id, ALLOWED_MODEL, hadImage, false, 200);
 
+  const message: Record<string, unknown> = { role: "assistant", content };
+  if (withReasoning && reasoning) message.reasoning_content = reasoning;
+
   return NextResponse.json({
     id,
     object: "chat.completion",
     created,
     model: ALLOWED_MODEL,
-    choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
+    choices: [{ index: 0, message, finish_reason: "stop" }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
 }

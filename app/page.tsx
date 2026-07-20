@@ -59,7 +59,13 @@ export default function Home() {
         </div>
       </div>
 
-      <h2>Get an API key</h2>
+      <p style={{ margin: "0 0 40px" }}>
+        <a className="btn" href="/playground" style={{ display: "inline-block" }}>
+          Open the playground →
+        </a>
+      </p>
+
+      <h2 id="get-a-key">Get an API key</h2>
       <KeyGenerator />
 
       <h2>Quick start</h2>

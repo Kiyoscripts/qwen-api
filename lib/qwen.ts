@@ -17,8 +17,14 @@ export const ALLOWED_MODEL = "qwen3.8-max-preview";
 
 const QWEN_TOKEN = process.env.QWEN_TOKEN || "";
 const QWEN_CLIENT_VERSION = process.env.QWEN_CLIENT_VERSION || "0.2.74";
-const QWEN_THINKING = /^(1|true|yes)$/i.test(process.env.QWEN_THINKING || "");
+// Whether to expose the model's reasoning as `reasoning_content` in responses.
+// Defaults to true (thinking is shown). Set QWEN_SHOW_REASONING=false to hide it.
+const SHOW_REASONING = !/^(0|false|no)$/i.test(process.env.QWEN_SHOW_REASONING || "");
 const QWEN_FORGET_MEMORIES = !/^(0|false|no)$/i.test(process.env.QWEN_FORGET_MEMORIES || "");
+
+export function showReasoning(): boolean {
+  return SHOW_REASONING;
+}
 
 export type ChatRole = "system" | "user" | "assistant";
 export interface OpenAIContentPart {
@@ -234,8 +240,14 @@ export async function openQwenStream(chatId: string, qwenMessages: unknown[]): P
   return res;
 }
 
-// Async generator yielding answer-phase text deltas. Throws on stream errors.
-export async function* qwenDeltas(res: Response): AsyncGenerator<string> {
+export interface QwenDelta {
+  phase: "think" | "answer";
+  text: string;
+}
+
+// Async generator yielding {phase, text} deltas. "think" = reasoning,
+// "answer" = final answer. Throws on stream errors.
+export async function* qwenDeltas(res: Response): AsyncGenerator<QwenDelta> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -261,8 +273,7 @@ export async function* qwenDeltas(res: Response): AsyncGenerator<string> {
       if (!delta) continue;
       const piece: unknown = delta.content;
       if (typeof piece !== "string" || piece.length === 0) continue;
-      if (delta.phase === "think" && !QWEN_THINKING) continue;
-      yield piece;
+      yield { phase: delta.phase === "think" ? "think" : "answer", text: piece };
     }
   }
 }

@@ -131,3 +131,33 @@ code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, mo
 .hint { width: 100%; margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
 .foot { color: var(--muted); font-size: 13px; margin-top: 56px; border-top: 1px solid var(--border); padding-top: 20px; }
+
+/* Playground */
+.pg { max-width: 820px; margin: 0 auto; padding: 24px; height: 100vh; display: flex; flex-direction: column; }
+.pg-head { display: flex; align-items: center; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.pg-back { color: var(--muted); font-size: 14px; }
+.pg-title { font-weight: 600; }
+.pg-toggle { margin-left: auto; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.pg-key { display: flex; gap: 10px; margin: 16px 0; }
+.pg-chat { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 4px 2px; }
+.pg-empty { color: var(--muted); text-align: center; margin-top: 40px; }
+.bubble { max-width: 88%; padding: 12px 14px; border-radius: 14px; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; word-wrap: break-word; }
+.bubble.user { align-self: flex-end; background: var(--accent); color: #0a0a0b; }
+.bubble.assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); }
+.bubble-img { max-width: 220px; border-radius: 10px; margin-bottom: 8px; display: block; }
+.bubble-text { }
+.thinking { margin-bottom: 8px; border-left: 2px solid var(--border); padding-left: 10px; }
+.thinking summary { color: var(--muted); font-size: 12px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.06em; }
+.thinking > div { color: var(--muted); font-size: 13px; margin-top: 6px; white-space: pre-wrap; }
+.pg-composer { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 8px; }
+.pg-attach { position: relative; display: inline-block; margin-bottom: 10px; }
+.pg-attach img { max-height: 64px; border-radius: 8px; border: 1px solid var(--border); }
+.pg-attach button { position: absolute; top: -8px; right: -8px; background: #000; color: #fff; border: 1px solid var(--border); border-radius: 999px; width: 22px; height: 22px; cursor: pointer; }
+.pg-inputrow { display: flex; gap: 10px; align-items: flex-end; }
+.pg-attach-btn { cursor: pointer; }
+.pg-textarea {
+  flex: 1; resize: none; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px; color: var(--text); font-size: 14.5px;
+  font-family: inherit; max-height: 160px; outline: none; line-height: 1.5;
+}
+.pg-textarea:focus { border-color: var(--accent); }
