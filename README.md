@@ -6,8 +6,12 @@ to a chat.qwen.ai account (your token, server-side) and exposes a clean, keyed A
 
 - `POST /v1/chat/completions` — streaming & non-streaming, supports image inputs
 - `GET  /v1/models` — the single available model
-- `POST /api/admin/keys` — issue an API key (admin-only)
+- `POST /api/keys` — **public** self-serve API key creation (also on the homepage)
 - `GET  /api/admin/keys` — list keys (admin-only)
+
+> ⚠️ Key creation is **public**: anyone can mint a key, and every key runs through
+> your single shared Qwen account. Consider adding rate limiting / per-key usage
+> caps before promoting this widely.
 
 ## 1. Supabase setup
 
@@ -50,20 +54,27 @@ vercel --prod         # production
 Then add every variable from `.env.local` in **Vercel → Project → Settings →
 Environment Variables** (Production + Preview). Redeploy.
 
-## 5. Issue an API key
+## 5. Get an API key
+
+**Public, self-serve** — visit the homepage and click **Generate key**, or:
 
 ```bash
-curl -X POST https://YOUR-DEPLOYMENT.vercel.app/api/admin/keys \
-  -H "x-admin-secret: <ADMIN_SECRET>" \
+curl -X POST https://qwen3-8-api.vercel.app/api/keys \
   -H "Content-Type: application/json" \
   -d '{"name":"my first key"}'
 # -> { "key": "qwen_sk_...", ... }   (shown once; only its hash is stored)
 ```
 
+To **list** existing keys (owner only), use the admin endpoint with your secret:
+
+```bash
+curl https://qwen3-8-api.vercel.app/api/admin/keys -H "x-admin-secret: <ADMIN_SECRET>"
+```
+
 ## 6. Use it
 
 ```bash
-curl https://YOUR-DEPLOYMENT.vercel.app/v1/chat/completions \
+curl https://qwen3-8-api.vercel.app/v1/chat/completions \
   -H "Authorization: Bearer qwen_sk_..." \
   -H "Content-Type: application/json" \
   -d '{"model":"qwen3.8-max-preview","messages":[{"role":"user","content":"Hi"}]}'

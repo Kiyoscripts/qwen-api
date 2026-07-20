@@ -1,4 +1,4 @@
-const curlExample = `curl https://YOUR-DEPLOYMENT.vercel.app/v1/chat/completions \\
+const curlExample = `curl https://qwen3-8-api.vercel.app/v1/chat/completions \\
   -H "Authorization: Bearer qwen_sk_..." \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -21,7 +21,7 @@ const visionExample = `{
 const sdkExample = `import OpenAI from "openai";
 
 const client = new OpenAI({
-  baseURL: "https://YOUR-DEPLOYMENT.vercel.app/v1",
+  baseURL: "https://qwen3-8-api.vercel.app/v1",
   apiKey: "qwen_sk_...",
 });
 
@@ -29,6 +29,8 @@ const r = await client.chat.completions.create({
   model: "qwen3.8-max-preview",
   messages: [{ role: "user", content: "Hello!" }],
 });`;
+
+import KeyGenerator from "./KeyGenerator";
 
 export default function Home() {
   return (
@@ -56,6 +58,9 @@ export default function Home() {
           <p>Access is gated by keys managed in Supabase. Bring your own client.</p>
         </div>
       </div>
+
+      <h2>Get an API key</h2>
+      <KeyGenerator />
 
       <h2>Quick start</h2>
       <pre>
