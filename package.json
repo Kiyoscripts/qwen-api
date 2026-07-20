@@ -1,0 +1,23 @@
+{
+  "name": "qwen38-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OpenAI-compatible API for qwen3.8-max-preview (with vision), gated by Supabase-managed API keys.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}
