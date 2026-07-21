@@ -13,9 +13,8 @@ import {
   QwenError,
   type OpenAIMessage,
 } from "@/lib/qwen";
-import { pickToken } from "@/lib/tokens";
+import { withTokenFailover } from "@/lib/tokens";
 import { extractApiKey, validateApiKey, logUsage } from "@/lib/supabase";
-import { toolsEnabled, buildToolPreamble, normalizeToolMessages, parseToolCalls } from "@/lib/tools";
 import { randomUUID } from "node:crypto";
 
 export const runtime = "nodejs";
@@ -41,46 +40,53 @@ export async function POST(req: NextRequest) {
   }
   const messages: OpenAIMessage[] = Array.isArray(body.messages) ? body.messages : [];
   if (messages.length === 0) return err("'messages' must be a non-empty array.", 400);
+
+  // Tool / function calling is not supported: chat.qwen.ai ignores custom tool
+  // schemas, and emulating it in the prompt proved unreliable. Fail loudly rather
+  // than silently returning prose to a caller that is waiting for tool_calls.
+  if (Array.isArray(body.tools) && body.tools.length > 0 && body.tool_choice !== "none") {
+    return err(
+      "Tool/function calling is not supported by this API. Remove 'tools' (or send tool_choice: \"none\").",
+      400,
+      "tools_not_supported"
+    );
+  }
   const wantStream = body.stream === true;
   const modelId = typeof body.model === "string" && body.model ? body.model : DEFAULT_MODEL;
 
-  let pooled;
-  try {
-    pooled = await pickToken();
-  } catch (e: any) {
-    return err(e.message, 503, "no_token");
-  }
-  const token = pooled.token;
-
-  const model = await resolveModel(token, modelId);
-  if (!model) return err(`Model '${modelId}' is not available.`, 404, "model_not_found");
-
   const hadImage = imageUrlsIn(messages[messages.length - 1]).length > 0;
-  let files;
-  try {
-    files = await uploadImages(token, imageUrlsIn(messages[messages.length - 1]));
-  } catch (e: any) {
-    return err(`Image upload failed: ${e.message}`, 400);
-  }
 
-  // Tool calling: Qwen ignores `tools`, so we do it via prompt + response parsing.
-  const useTools = toolsEnabled(body.tools, body.tool_choice);
-  const promptMessages: OpenAIMessage[] = useTools
-    ? ([{ role: "system", content: buildToolPreamble(body.tools, body.tool_choice) }, ...normalizeToolMessages(messages)] as OpenAIMessage[])
-    : messages;
-
+  // Run the whole setup under token failover: if an account is out of quota,
+  // rate-limited or expired, transparently retry on a different pooled account.
+  let token: string;
   let chatId: string | undefined;
   let qwenRes: Response;
   try {
-    chatId = await createChat(token, modelId, "t2t");
-    const qwenMessages = [buildMessage(promptMessages, { model: modelId, chatType: "t2t", files, thinking: model.thinking })];
-    // Always stream from Qwen (it returns SSE); we buffer it for non-streaming clients.
-    qwenRes = await openCompletion(token, chatId, { model: modelId, messages: qwenMessages, stream: true });
+    const { token: usedToken, result } = await withTokenFailover(async (candidate) => {
+      const model = await resolveModel(candidate, modelId);
+      if (!model) throw new QwenError(`Model '${modelId}' is not available.`, 404);
+      const files = await uploadImages(candidate, imageUrlsIn(messages[messages.length - 1]));
+
+      let cid: string | undefined;
+      try {
+        cid = await createChat(candidate, modelId, "t2t");
+        const qwenMessages = [buildMessage(messages, { model: modelId, chatType: "t2t", files, thinking: model.thinking })];
+        // Always stream from Qwen (it returns SSE); we buffer it for non-streaming clients.
+        const res = await openCompletion(candidate, cid, { model: modelId, messages: qwenMessages, stream: true });
+        return { chatId: cid, res };
+      } catch (e) {
+        // Don't leave an orphan chat behind on the account we're abandoning.
+        await deleteChat(candidate, cid);
+        throw e;
+      }
+    });
+    token = usedToken;
+    chatId = result.chatId;
+    qwenRes = result.res;
   } catch (e: any) {
-    await deleteChat(token, chatId);
     const status = e instanceof QwenError ? e.status : 502;
     logUsage(record.id, modelId, hadImage, wantStream, status);
-    return err(e.message || "Upstream error", status, "upstream_error");
+    return err(e.message || "Upstream error", status, status === 404 ? "model_not_found" : "upstream_error");
   }
 
   const id = "chatcmpl-" + randomUUID();
@@ -96,41 +102,20 @@ export async function POST(req: NextRequest) {
       async start(controller) {
         const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
         send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
-        let finish = "stop";
         try {
-          if (useTools) {
-            // A tool call is only valid once complete, so buffer then emit.
-            let buffered = "";
-            for await (const { phase, text } of qwenDeltas(qwenRes)) {
-              if (phase === "think") {
-                if (withReasoning) send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { reasoning_content: text }, finish_reason: null }] });
-              } else buffered += text;
-            }
-            const parsed = parseToolCalls(buffered);
-            if (parsed) {
-              finish = "tool_calls";
-              send({
-                id, object: "chat.completion.chunk", created, model: modelId,
-                choices: [{ index: 0, delta: { tool_calls: parsed.calls.map((c, i) => ({ index: i, ...c })) }, finish_reason: null }],
-              });
-            } else if (buffered) {
-              send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: buffered }, finish_reason: null }] });
-            }
-          } else {
-            for await (const { phase, text } of qwenDeltas(qwenRes)) {
-              const delta =
-                phase === "think"
-                  ? withReasoning
-                    ? { reasoning_content: text }
-                    : null
-                  : { content: text };
-              if (delta) send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: null }] });
-            }
+          for await (const { phase, text } of qwenDeltas(qwenRes)) {
+            const delta =
+              phase === "think"
+                ? withReasoning
+                  ? { reasoning_content: text }
+                  : null
+                : { content: text };
+            if (delta) send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: null }] });
           }
         } catch (e: any) {
           send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: `\n[error: ${e.message}]` }, finish_reason: null }] });
         }
-        send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: finish }] });
+        send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
         await cleanup();
@@ -156,10 +141,7 @@ export async function POST(req: NextRequest) {
   await cleanup();
   logUsage(record.id, modelId, hadImage, false, 200);
 
-  const parsed = useTools ? parseToolCalls(content) : null;
-  const message: Record<string, unknown> = parsed
-    ? { role: "assistant", content: null, tool_calls: parsed.calls }
-    : { role: "assistant", content };
+  const message: Record<string, unknown> = { role: "assistant", content };
   if (withReasoning && reasoning) message.reasoning_content = reasoning;
 
   return NextResponse.json({
@@ -167,7 +149,7 @@ export async function POST(req: NextRequest) {
     object: "chat.completion",
     created,
     model: modelId,
-    choices: [{ index: 0, message, finish_reason: parsed ? "tool_calls" : "stop" }],
+    choices: [{ index: 0, message, finish_reason: "stop" }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
 }

@@ -8,7 +8,7 @@ import {
   QwenError,
 } from "@/lib/qwen";
 import { getVoices, setVoice, synthesize, pcmToWav } from "@/lib/tts";
-import { pickToken } from "@/lib/tokens";
+import { withTokenFailover } from "@/lib/tokens";
 import { extractApiKey, validateApiKey, logUsage } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -42,60 +42,61 @@ export async function POST(req: NextRequest) {
   if (input.length > 2000) return err("'input' is too long (max 2000 characters).", 400);
   const requestedVoice = typeof body.voice === "string" ? body.voice : "";
 
-  let pooled;
-  try {
-    pooled = await pickToken();
-  } catch (e: any) {
-    return err(e.message, 503, "no_token");
-  }
-  const token = pooled.token;
-
-  // Resolve the voice against the real voice list.
-  let voice = "";
-  if (requestedVoice) {
-    const voices = await getVoices(token);
-    const match = voices.find((v) => v.speaker.toLowerCase() === requestedVoice.toLowerCase());
-    if (!match) return err(`Unknown voice '${requestedVoice}'. See GET /v1/audio/voices.`, 400, "voice_not_found");
-    voice = match.speaker;
-  }
-
-  let chatId: string | undefined;
+  // TTS costs an echo completion plus the synthesis, so a burnt-out account must
+  // fail over to another one rather than failing the request.
   let wav: Buffer;
   try {
-    if (voice) await setVoice(token, voice);
-
-    // Get the text into an assistant message.
-    chatId = await createChat(token, TTS_HELPER_MODEL, "t2t");
-    const prompt = `Repeat the following text back exactly as written, with no extra words, no quotes and no commentary:\n\n${input}`;
-    const messages = [buildMessage([{ role: "user", content: prompt }], { model: TTS_HELPER_MODEL, chatType: "t2t", thinking: true })];
-    const res = await openCompletion(token, chatId, { model: TTS_HELPER_MODEL, messages, stream: true });
-
-    // We only need the assistant message id (response_id) from the stream.
-    const raw = await res.text();
-    let messageId: string | null = null;
-    for (const line of raw.split("\n")) {
-      if (!line.startsWith("data:")) continue;
-      try {
-        const evt = JSON.parse(line.slice(5).trim());
-        if (evt?.["response.created"]?.response_id) {
-          messageId = evt["response.created"].response_id;
-          break;
-        }
-      } catch {
-        /* skip */
+    const { result } = await withTokenFailover(async (token) => {
+      // Resolve the voice against the real voice list.
+      let voice = "";
+      if (requestedVoice) {
+        const voices = await getVoices(token);
+        const match = voices.find((v) => v.speaker.toLowerCase() === requestedVoice.toLowerCase());
+        if (!match) throw new QwenError(`Unknown voice '${requestedVoice}'. See GET /v1/audio/voices.`, 400);
+        voice = match.speaker;
       }
-    }
-    if (!messageId) throw new QwenError("Could not prepare text for speech.");
 
-    const pcm = await synthesize(token, chatId, messageId);
-    wav = pcmToWav(pcm);
+      let chatId: string | undefined;
+      try {
+        if (voice) await setVoice(token, voice);
+
+        // Get the text into an assistant message.
+        chatId = await createChat(token, TTS_HELPER_MODEL, "t2t");
+        const prompt = `Repeat the following text back exactly as written, with no extra words, no quotes and no commentary:\n\n${input}`;
+        const messages = [buildMessage([{ role: "user", content: prompt }], { model: TTS_HELPER_MODEL, chatType: "t2t", thinking: true })];
+        const res = await openCompletion(token, chatId, { model: TTS_HELPER_MODEL, messages, stream: true });
+
+        // We only need the assistant message id (response_id) from the stream.
+        const raw = await res.text();
+        let messageId: string | null = null;
+        for (const line of raw.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+          try {
+            const evt = JSON.parse(line.slice(5).trim());
+            if (evt?.["response.created"]?.response_id) {
+              messageId = evt["response.created"].response_id;
+              break;
+            }
+          } catch {
+            /* skip */
+          }
+        }
+        if (!messageId) throw new QwenError("Could not prepare text for speech.");
+
+        const pcm = await synthesize(token, chatId, messageId);
+        await Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);
+        return pcmToWav(pcm);
+      } catch (e) {
+        await deleteChat(token, chatId);
+        throw e;
+      }
+    });
+    wav = result;
   } catch (e: any) {
-    await deleteChat(token, chatId);
     const status = e instanceof QwenError ? e.status : 502;
     logUsage(record.id, "tts", false, false, status);
-    return err(e.message || "Speech generation failed", status, "upstream_error");
+    return err(e.message || "Speech generation failed", status, status === 400 ? "voice_not_found" : "upstream_error");
   }
-  await Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);
   logUsage(record.id, "tts", false, false, 200);
 
   return new Response(new Uint8Array(wav), {

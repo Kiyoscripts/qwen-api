@@ -59,9 +59,12 @@ export default function Home() {
         </div>
       </div>
 
-      <p style={{ margin: "0 0 40px" }}>
-        <a className="btn" href="/playground" style={{ display: "inline-block" }}>
-          Open the playground →
+      <p style={{ margin: "0 0 40px", display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <a className="btn" href="/chat" style={{ display: "inline-block" }}>
+          Open chat →
+        </a>
+        <a className="btn ghost" href="/playground" style={{ display: "inline-block" }}>
+          Playground
         </a>
       </p>
 

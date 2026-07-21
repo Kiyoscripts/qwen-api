@@ -10,11 +10,15 @@
 //   4. POST /api/v2/tts/completions?chat_id=X
 //        {chat_id, timestamp, messages:[{id, role:"assistant", sub_chat_type:"tts"}]}
 //      -> SSE whose deltas carry base64 PCM in `delta.tts`.
-//   5. The PCM is 16-bit mono @ 16 kHz; we wrap it in a WAV header.
+//   5. The PCM is 16-bit mono @ 24 kHz; we wrap it in a WAV header.
 
 import { QWEN_BASE, qwenHeaders, QwenError } from "./qwen";
 
-export const TTS_SAMPLE_RATE = 16000;
+// Qwen's TTS PCM is 24 kHz mono 16-bit — every audio player class in their
+// frontend defaults to sampleRate 24e3. (Do not confuse this with the 16 kHz in
+// their SpeechTranscriber payload: that is microphone input for speech-to-text.
+// Declaring 16 kHz here plays the audio 1.5x too slow and drops the pitch.)
+export const TTS_SAMPLE_RATE = 24000;
 
 export interface Voice {
   speaker: string;
