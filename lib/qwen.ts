@@ -312,6 +312,31 @@ export function extractWanxTaskId(json: any): string | null {
   return json?.data?.messages?.[0]?.extra?.wanx?.task_id || json?.data?.messages?.[0]?.extra?.aipodcast?.task_id || null;
 }
 
+export interface TaskState {
+  status: "processing" | "completed" | "failed";
+  url?: string;
+}
+
+// Single, non-blocking check of a WanX task. Lets callers poll for as long as
+// they like without holding a serverless function open.
+export async function checkTask(token: string, taskId: string): Promise<TaskState> {
+  let json: any;
+  try {
+    const res = await fetch(`${QWEN_BASE}/api/v2/tasks/status/${encodeURIComponent(taskId)}`, {
+      headers: qwenHeaders(token),
+    });
+    json = await res.json();
+  } catch {
+    return { status: "processing" };
+  }
+  const blob = JSON.stringify(json);
+  const m = blob.match(/https?:\/\/[^"\\]+\.(?:mp4|mov|webm)[^"\\]*/);
+  if (m) return { status: "completed", url: m[0] };
+  const status = (json?.data?.task_status || json?.data?.status || "").toString().toLowerCase();
+  if (status === "failed" || status === "failure") return { status: "failed" };
+  return { status: "processing" };
+}
+
 // Poll a WanX (video) task until it produces a media URL. Returns the URL.
 export async function pollTask(token: string, taskId: string, timeoutMs = 240_000): Promise<string> {
   const start = Date.now();

@@ -6,7 +6,8 @@ to a chat.qwen.ai account (your token, server-side) and exposes a clean, keyed A
 
 - `POST /v1/chat/completions` — all models, streaming, vision, reasoning (`reasoning_content`)
 - `POST /v1/images/generations` — text-to-image (OpenAI-compatible)
-- `POST /v1/videos/generations` — text-to-video (async; `{ "prompt": "..." }` → `{ data: [{ url }] }`)
+- `POST /v1/videos/generations` — text-to-video; returns `202 { id, chat_id, status }` immediately
+- `GET  /v1/videos/status?task_id=…&chat_id=…` — poll a video task (**no timeout** — render as long as it needs)
 - `POST /v1/audio/speech` — text-to-speech → `audio/wav` (`{ "input": "...", "voice": "Cherry" }`)
 - `GET  /v1/audio/voices` — lists the ~78 TTS voices (name, gender, description)
 - `GET  /v1/models` — lists **all** Qwen models
@@ -119,6 +120,34 @@ Vision — send `image_url` parts (base64 data URL or public URL):
   }]
 }
 ```
+
+## Video generation (no timeout)
+
+Video can take many minutes and a serverless function can't stay open forever, so
+generation is **asynchronous**: you get a task id back instantly and poll it for
+as long as you like.
+
+```bash
+# 1. start the render -> 202
+curl -X POST https://qwen3-8-api.vercel.app/v1/videos/generations \
+  -H "Authorization: Bearer qwen_sk_..." -H "Content-Type: application/json" \
+  -d '{"prompt":"a man waving hello"}'
+# -> {"id":"<task>","chat_id":"<chat>","status":"processing"}
+
+# 2. poll until done (as long as it takes)
+curl "https://qwen3-8-api.vercel.app/v1/videos/status?task_id=<task>&chat_id=<chat>" \
+  -H "Authorization: Bearer qwen_sk_..."
+# -> {"status":"processing"}  ... then {"status":"completed","data":[{"url":"…mp4"}]}
+```
+
+Pass `"wait": true` if you'd rather block and get the URL directly (bounded by the
+function's max duration; it falls back to a 202 task id if it runs long).
+
+## Serving generated media
+
+Qwen's CDN URLs are signed and referer-checked, so they often won't load directly
+in a browser `<img>`/`<video>`. Re-serve them through `GET /api/media?url=<encoded>`
+(host-allowlisted to Qwen/Alibaba CDNs only). The playground does this automatically.
 
 ## Text-to-speech
 

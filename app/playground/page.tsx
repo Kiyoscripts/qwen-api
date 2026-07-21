@@ -147,22 +147,64 @@ export default function Playground() {
     }
   }
 
-  async function sendGeneration(prompt: string, kind: "image" | "video") {
-    const url = kind === "image" ? "/v1/images/generations" : "/v1/videos/generations";
-    const res = await fetch(url, {
+  // Qwen's CDN URLs don't load reliably in an <img>/<video> (signed + referer
+  // checked), so we serve them back through our own origin.
+  const viaProxy = (u: string) => `/api/media?url=${encodeURIComponent(u)}`;
+
+  function setResult(mediaUrl: string, kind: "image" | "video") {
+    setTurns((prev) => {
+      const c = [...prev];
+      c[c.length - 1] = { role: "assistant", content: "", mediaUrl: viaProxy(mediaUrl), mediaType: kind };
+      return c;
+    });
+  }
+
+  async function sendImage(prompt: string) {
+    const res = await fetch("/v1/images/generations", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model, prompt }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(j?.error?.message || `HTTP ${res.status}`);
-    const mediaUrl = j?.data?.[0]?.url;
-    if (!mediaUrl) throw new Error("No media returned");
-    setTurns((prev) => {
-      const c = [...prev];
-      c[c.length - 1] = { role: "assistant", content: "", mediaUrl, mediaType: kind };
-      return c;
+    const url = j?.data?.[0]?.url;
+    if (!url) throw new Error("No image returned");
+    setResult(url, "image");
+  }
+
+  // Video has NO timeout: we kick off the task and poll until it's done.
+  async function sendVideo(prompt: string) {
+    const res = await fetch("/v1/videos/generations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, prompt }),
     });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok && res.status !== 202) throw new Error(j?.error?.message || `HTTP ${res.status}`);
+    if (j?.data?.[0]?.url) return setResult(j.data[0].url, "video");
+
+    const taskId = j?.id;
+    const chatId = j?.chat_id;
+    if (!taskId) throw new Error("No video task returned");
+
+    const started = Date.now();
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 5000));
+      const mins = Math.floor((Date.now() - started) / 60000);
+      const secs = Math.floor(((Date.now() - started) % 60000) / 1000);
+      setTurns((prev) => {
+        const c = [...prev];
+        c[c.length - 1] = { role: "assistant", content: `Rendering video… ${mins}m ${secs}s`, pending: true };
+        return c;
+      });
+      const s = await fetch(
+        `/v1/videos/status?task_id=${encodeURIComponent(taskId)}${chatId ? `&chat_id=${encodeURIComponent(chatId)}` : ""}`,
+        { headers: { Authorization: `Bearer ${apiKey}` } }
+      );
+      const sj = await s.json().catch(() => ({}));
+      if (sj?.status === "completed" && sj?.data?.[0]?.url) return setResult(sj.data[0].url, "video");
+      if (sj?.status === "failed") throw new Error("Video generation failed upstream");
+    }
   }
 
   async function sendSpeech(text: string) {
@@ -192,7 +234,7 @@ export default function Playground() {
     const history = [...turns, userTurn];
     const pendingLabel =
       mode === "video"
-        ? "Generating video… (up to a few minutes)"
+        ? "Starting video render… (this can take a while — no time limit)"
         : mode === "image"
         ? "Generating image…"
         : mode === "tts"
@@ -205,7 +247,8 @@ export default function Playground() {
     try {
       if (mode === "chat") await sendChat(history);
       else if (mode === "tts") await sendSpeech(text);
-      else await sendGeneration(text, mode);
+      else if (mode === "image") await sendImage(text);
+      else await sendVideo(text);
     } catch (e: any) {
       setTurns((prev) => {
         const c = [...prev];
