@@ -190,6 +190,16 @@ export default function Playground() {
   // checked), so we serve them back through our own origin.
   const viaProxy = (u: string) => `/api/media?url=${encodeURIComponent(u)}`;
 
+  // Filename for the download button. Everything we render is same-origin
+  // (/api/media) or a blob: URL, so the `download` attribute works.
+  function mediaFilename(kind?: string): string {
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    if (kind === "image") return `qwen-image-${ts}.png`;
+    if (kind === "video") return `qwen-video-${ts}.mp4`;
+    if (kind === "audio") return `qwen-speech-${ts}.wav`;
+    return `qwen-${ts}`;
+  }
+
   function setResult(mediaUrl: string, kind: "image" | "video") {
     setTurns((prev) => {
       const c = [...prev];
@@ -463,6 +473,11 @@ export default function Playground() {
             {t.mediaUrl && t.mediaType === "image" && <img className="bubble-media" src={t.mediaUrl} alt="generated" />}
             {t.mediaUrl && t.mediaType === "video" && <video className="bubble-media" src={t.mediaUrl} controls />}
             {t.mediaUrl && t.mediaType === "audio" && <audio src={t.mediaUrl} controls autoPlay style={{ width: 280, display: "block" }} />}
+            {t.mediaUrl && (
+              <a className="dl-btn" href={t.mediaUrl} download={mediaFilename(t.mediaType)}>
+                ↓ Download {t.mediaType === "audio" ? "audio" : t.mediaType}
+              </a>
+            )}
             {t.content && <div className="bubble-text">{t.content}</div>}
 
             {t.role === "tool" && (
