@@ -4,10 +4,19 @@ An **OpenAI-compatible** hosted API for `qwen3.8-max-preview` (with **vision**),
 built on **Next.js + Vercel**, with API keys managed in **Supabase**. It proxies
 to a chat.qwen.ai account (your token, server-side) and exposes a clean, keyed API.
 
-- `POST /v1/chat/completions` — streaming & non-streaming, supports image inputs
-- `GET  /v1/models` — the single available model
+- `POST /v1/chat/completions` — all models, streaming, vision, reasoning (`reasoning_content`)
+- `POST /v1/images/generations` — text-to-image (OpenAI-compatible)
+- `POST /v1/videos/generations` — text-to-video (async; `{ "prompt": "..." }` → `{ data: [{ url }] }`)
+- `GET  /v1/models` — lists **all** Qwen models
 - `POST /api/keys` — **public** self-serve API key creation (also on the homepage)
-- `GET  /api/admin/keys` — list keys (admin-only)
+- `/admin` — password-protected dashboard to manage the pooled Qwen tokens & view keys
+
+### Multiple accounts (token pool)
+
+The API rotates across a **pool of Qwen account tokens** so no single account gets
+rate-limited or flagged. Add tokens in the `/admin` dashboard (password = your
+`ADMIN_SECRET`). The `QWEN_TOKEN` env var is always included as a fallback. This is
+what keeps a public deployment from hammering one account.
 
 > ⚠️ Key creation is **public**: anyone can mint a key, and every key runs through
 > your single shared Qwen account. Consider adding rate limiting / per-key usage
@@ -17,8 +26,12 @@ to a chat.qwen.ai account (your token, server-side) and exposes a clean, keyed A
 
 1. Open your Supabase project → **SQL Editor** → **New query**.
 2. Paste the contents of [`supabase/schema.sql`](./supabase/schema.sql) and **Run**.
-   This creates `api_keys` + `usage_logs` (RLS on, no policies — only the service
-   role can touch them) and a `touch_api_key` function.
+   This creates `api_keys`, `usage_logs`, and **`qwen_tokens`** (the account pool) —
+   all with RLS on and no policies, so only the service role can touch them —
+   plus a `touch_api_key` function.
+
+   > If you already ran an earlier version of this file, re-run it (or just run the
+   > `qwen_tokens` table block) to add the token pool table.
 
 ## 2. Environment variables
 

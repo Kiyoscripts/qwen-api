@@ -81,3 +81,43 @@ export async function logUsage(apiKeyId: string, model: string, hadImage: boolea
     .insert({ api_key_id: apiKeyId, model, had_image: hadImage, streamed, status })
     .then(() => {}, () => {});
 }
+
+// --- Qwen token pool (admin-managed) ---------------------------------------
+
+export async function addQwenToken(label: string | null, token: string) {
+  const { data, error } = await admin()
+    .from("qwen_tokens")
+    .insert({ label, token })
+    .select("id, label, active, created_at")
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+// List tokens for the admin dashboard — the raw token is masked, never returned whole.
+export async function listQwenTokens() {
+  const { data, error } = await admin()
+    .from("qwen_tokens")
+    .select("id, label, token, active, created_at, last_used_at, error_count")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data || []).map((t) => ({
+    id: t.id,
+    label: t.label,
+    active: t.active,
+    created_at: t.created_at,
+    last_used_at: t.last_used_at,
+    error_count: t.error_count,
+    masked: (t.token || "").slice(0, 6) + "…" + (t.token || "").slice(-4),
+  }));
+}
+
+export async function setQwenTokenActive(id: string, active: boolean) {
+  const { error } = await admin().from("qwen_tokens").update({ active }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteQwenToken(id: string) {
+  const { error } = await admin().from("qwen_tokens").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}

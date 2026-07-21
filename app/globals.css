@@ -161,3 +161,14 @@ code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, mo
   font-family: inherit; max-height: 160px; outline: none; line-height: 1.5;
 }
 .pg-textarea:focus { border-color: var(--accent); }
+
+/* Admin tables */
+.tbl { width: 100%; border-collapse: collapse; margin-bottom: 32px; font-size: 13.5px; }
+.tbl th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.tbl td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tbl code { font-size: 12.5px; color: var(--accent-2); }
+.tbl .muted { color: var(--muted); }
+.pill { border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.pill.on { color: var(--accent-2); border-color: var(--accent-2); }
+.pill.off { color: var(--muted); }
+.pill.del { color: #ff7a7a; border-color: #57323a; }

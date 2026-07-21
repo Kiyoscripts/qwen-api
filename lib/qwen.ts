@@ -1,24 +1,23 @@
-// Core chat.qwen.ai client (server-side). Ported from the verified proxy.
+// Core chat.qwen.ai client (server-side). Supports text/vision chat, image
+// generation (t2i) and video generation (t2v), across all Qwen models, using a
+// per-request token from the pool (see tokens.ts).
 //
-// Key facts discovered by reverse-engineering chat.qwen.ai:
-//  - The completions endpoint requires a "Version" header (the frontend app
-//    version) or it returns a generic Internal error.
-//  - qwen3.8-max-preview requires feature_config.thinking_enabled = true, else it
-//    rejects the request with "invalid_input".
-//  - The endpoint keeps history server-side and accepts exactly ONE message per
-//    call, so we collapse the whole conversation into a single message.
-//  - Images are uploaded to Alibaba OSS and referenced in the message `files`.
+// Reverse-engineered facts:
+//  - The "Version" header is required or completions fail with Internal error.
+//  - qwen3.8-max-preview requires feature_config.thinking_enabled = true.
+//  - Completions accept exactly ONE message; we collapse history into one.
+//  - Images are uploaded to OSS and referenced in message.files.
+//  - Image gen (chat_type t2i, stream): the image URL arrives as delta.content
+//    in phase "image_gen".
+//  - Video gen (chat_type t2v, stream:false): returns extra.wanx.task_id; poll
+//    GET /api/v2/tasks/status/{task_id} until the video URL is ready.
 
 import { randomUUID } from "node:crypto";
 import { uploadImage, fetchImageBytes, type QwenFileEntry } from "./upload";
 
 export const QWEN_BASE = "https://chat.qwen.ai";
-export const ALLOWED_MODEL = "qwen3.8-max-preview";
 
-const QWEN_TOKEN = process.env.QWEN_TOKEN || "";
 const QWEN_CLIENT_VERSION = process.env.QWEN_CLIENT_VERSION || "0.2.74";
-// Whether to expose the model's reasoning as `reasoning_content` in responses.
-// Defaults to true (thinking is shown). Set QWEN_SHOW_REASONING=false to hide it.
 const SHOW_REASONING = !/^(0|false|no)$/i.test(process.env.QWEN_SHOW_REASONING || "");
 const QWEN_FORGET_MEMORIES = !/^(0|false|no)$/i.test(process.env.QWEN_FORGET_MEMORIES || "");
 
@@ -26,7 +25,17 @@ export function showReasoning(): boolean {
   return SHOW_REASONING;
 }
 
-export type ChatRole = "system" | "user" | "assistant";
+export class QwenError extends Error {
+  status: number;
+  constructor(message: string, status = 502) {
+    super(message);
+    this.status = status;
+  }
+}
+
+// --- types -----------------------------------------------------------------
+
+export type ChatType = "t2t" | "t2i" | "t2v";
 export interface OpenAIContentPart {
   type: string;
   text?: string;
@@ -36,12 +45,21 @@ export interface OpenAIMessage {
   role: string;
   content: string | OpenAIContentPart[] | null;
 }
+export interface ModelInfo {
+  id: string;
+  name: string;
+  chatTypes: string[];
+  thinking: boolean;
+  vision: boolean;
+}
 
-export function qwenHeaders(extra: Record<string, string> = {}): Record<string, string> {
+// --- headers ---------------------------------------------------------------
+
+export function qwenHeaders(token: string, extra: Record<string, string> = {}): Record<string, string> {
   return {
     "Content-Type": "application/json",
     Accept: "application/json",
-    Authorization: `Bearer ${QWEN_TOKEN}`,
+    Authorization: `Bearer ${token}`,
     Origin: QWEN_BASE,
     Referer: `${QWEN_BASE}/`,
     "User-Agent":
@@ -55,11 +73,36 @@ export function qwenHeaders(extra: Record<string, string> = {}): Record<string, 
   };
 }
 
-export function hasToken(): boolean {
-  return Boolean(QWEN_TOKEN);
+// --- model registry (cached) ----------------------------------------------
+
+let modelCache: { models: ModelInfo[]; at: number } | null = null;
+const MODEL_TTL = 5 * 60_000;
+
+export async function getModels(token: string): Promise<ModelInfo[]> {
+  if (modelCache && Date.now() - modelCache.at < MODEL_TTL) return modelCache.models;
+  const res = await fetch(`${QWEN_BASE}/api/models`, { headers: qwenHeaders(token) });
+  const j: any = await res.json().catch(() => ({}));
+  const models: ModelInfo[] = (j?.data || []).map((m: any) => {
+    const meta = m.info?.meta || {};
+    const caps = meta.capabilities || {};
+    return {
+      id: m.id,
+      name: m.name || m.id,
+      chatTypes: Array.isArray(meta.chat_type) ? meta.chat_type : ["t2t"],
+      thinking: Boolean(caps.thinking),
+      vision: Boolean(caps.vision),
+    };
+  });
+  if (models.length) modelCache = { models, at: Date.now() };
+  return models;
 }
 
-// --- helpers ---------------------------------------------------------------
+export async function resolveModel(token: string, id: string): Promise<ModelInfo | null> {
+  const models = await getModels(token);
+  return models.find((m) => m.id === id) || null;
+}
+
+// --- message helpers -------------------------------------------------------
 
 export function messageText(m: OpenAIMessage): string {
   if (typeof m.content === "string") return m.content;
@@ -80,16 +123,18 @@ export function imageUrlsIn(m: OpenAIMessage | undefined): string[] {
   return urls;
 }
 
-function normalizeRole(role: string): ChatRole {
+function normalizeRole(role: string): "system" | "user" | "assistant" {
   return role === "assistant" ? "assistant" : role === "system" ? "system" : "user";
 }
 
-// Collapse the whole OpenAI conversation into a single Qwen user message.
-export function buildQwenMessages(messages: OpenAIMessage[], files: QwenFileEntry[] = []) {
+// Collapse a conversation into a single Qwen user message of the given chat type.
+export function buildMessage(
+  messages: OpenAIMessage[],
+  opts: { model: string; chatType: ChatType; files?: QwenFileEntry[]; thinking: boolean; size?: string }
+) {
   const now = Math.floor(Date.now() / 1000);
-
   const systemParts: string[] = [];
-  const turns: { role: ChatRole; text: string }[] = [];
+  const turns: { role: string; text: string }[] = [];
   for (const m of messages) {
     const text = messageText(m);
     if (!text) continue;
@@ -105,61 +150,46 @@ export function buildQwenMessages(messages: OpenAIMessage[], files: QwenFileEntr
     const lines: string[] = [];
     if (systemParts.length) lines.push(systemParts.join("\n\n"), "");
     for (const t of turns) lines.push(`${t.role === "assistant" ? "Assistant" : "User"}: ${t.text}`);
-    lines.push("Assistant:");
+    if (opts.chatType === "t2t") lines.push("Assistant:");
     content = lines.join("\n");
   }
 
-  return [
-    {
-      id: null,
-      fid: randomUUID(),
-      parentId: null,
-      childrenIds: [],
-      role: "user",
-      content,
-      user_action: "chat",
-      files,
-      timestamp: now,
-      models: [ALLOWED_MODEL],
-      model: "",
-      chat_type: "t2t",
-      feature_config: { thinking_enabled: true, output_schema: "phase", research_mode: "normal" },
-      extra: {},
-      sub_chat_type: "t2t",
-      parent_id: null,
-    },
-  ];
+  return {
+    id: null,
+    fid: randomUUID(),
+    parentId: null,
+    childrenIds: [],
+    role: "user",
+    content,
+    user_action: "chat",
+    files: opts.files || [],
+    timestamp: now,
+    models: [opts.model],
+    model: "",
+    chat_type: opts.chatType,
+    feature_config: { thinking_enabled: opts.thinking, output_schema: "phase", research_mode: "normal" },
+    extra: {},
+    sub_chat_type: opts.chatType,
+    parent_id: null,
+    ...(opts.size ? { size: opts.size } : {}),
+  };
 }
 
-// --- API calls -------------------------------------------------------------
+// --- API calls (all take a token) ------------------------------------------
 
 function looksLikeChallenge(status: number, body: string): boolean {
   if (status === 401 || status === 403) return true;
-  return /access verification|verify that you are|captcha|please complete the operation/i.test(body);
+  return /access verification|verify that you are|captcha|please complete the operation|punish|rgv587/i.test(body);
 }
 
-export class QwenError extends Error {
-  status: number;
-  constructor(message: string, status = 502) {
-    super(message);
-    this.status = status;
-  }
-}
-
-export async function createChat(): Promise<string> {
+export async function createChat(token: string, model: string, chatType: ChatType): Promise<string> {
   const res = await fetch(`${QWEN_BASE}/api/v2/chats/new`, {
     method: "POST",
-    headers: qwenHeaders(),
-    body: JSON.stringify({
-      title: "New Chat",
-      models: [ALLOWED_MODEL],
-      chat_mode: "normal",
-      chat_type: "t2t",
-      timestamp: Date.now(),
-    }),
+    headers: qwenHeaders(token),
+    body: JSON.stringify({ title: "New Chat", models: [model], chat_mode: "normal", chat_type: chatType, timestamp: Date.now() }),
   });
   const text = await res.text();
-  if (looksLikeChallenge(res.status, text)) throw new QwenError("Qwen anti-bot challenge; refresh QWEN_TOKEN.", 503);
+  if (looksLikeChallenge(res.status, text)) throw new QwenError("Qwen anti-bot challenge / rate limit on this account.", 503);
   let json: any;
   try {
     json = JSON.parse(text);
@@ -171,82 +201,80 @@ export async function createChat(): Promise<string> {
   return id;
 }
 
-export async function deleteChat(chatId: string | undefined): Promise<void> {
+export async function deleteChat(token: string, chatId: string | undefined): Promise<void> {
   if (!chatId) return;
   try {
-    await fetch(`${QWEN_BASE}/api/v2/chats/${encodeURIComponent(chatId)}`, {
-      method: "DELETE",
-      headers: qwenHeaders(),
-    });
+    await fetch(`${QWEN_BASE}/api/v2/chats/${encodeURIComponent(chatId)}`, { method: "DELETE", headers: qwenHeaders(token) });
   } catch {
     /* best effort */
   }
 }
 
-export async function forgetAllMemories(): Promise<void> {
+export async function forgetAllMemories(token: string): Promise<void> {
   if (!QWEN_FORGET_MEMORIES) return;
   try {
-    await fetch(`${QWEN_BASE}/api/v2/memories/delete`, {
-      method: "POST",
-      headers: qwenHeaders(),
-      body: JSON.stringify({ forget_all: true }),
-    });
+    await fetch(`${QWEN_BASE}/api/v2/memories/delete`, { method: "POST", headers: qwenHeaders(token), body: JSON.stringify({ forget_all: true }) });
   } catch {
     /* best effort */
   }
 }
 
-// Upload any images attached to the latest user turn.
-export async function uploadImages(imageUrls: string[]): Promise<QwenFileEntry[]> {
+export async function uploadImages(token: string, imageUrls: string[]): Promise<QwenFileEntry[]> {
+  const headers = (extra?: Record<string, string>) => qwenHeaders(token, extra);
   const files: QwenFileEntry[] = [];
   for (const u of imageUrls) {
     const { bytes, mime } = await fetchImageBytes(u);
-    files.push(await uploadImage(qwenHeaders, QWEN_BASE, bytes, mime));
+    files.push(await uploadImage(headers, QWEN_BASE, bytes, mime));
   }
   return files;
 }
 
-export async function openQwenStream(chatId: string, qwenMessages: unknown[]): Promise<Response> {
+// Open a completion. Returns the raw Response (SSE when stream=true, JSON when not).
+export async function openCompletion(
+  token: string,
+  chatId: string,
+  opts: { model: string; messages: unknown[]; stream: boolean; size?: string }
+): Promise<Response> {
   const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    stream: true,
+  const payload: Record<string, unknown> = {
+    stream: opts.stream,
     version: "2.1",
-    incremental_output: true,
+    incremental_output: opts.stream,
     chat_id: chatId,
     chat_mode: "normal",
-    model: ALLOWED_MODEL,
+    model: opts.model,
     parent_id: null,
-    messages: qwenMessages,
+    messages: opts.messages,
     timestamp: now,
+    ...(opts.size ? { size: opts.size } : {}),
   };
   const res = await fetch(`${QWEN_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}`, {
     method: "POST",
-    headers: qwenHeaders({ Accept: "text/event-stream" }),
+    headers: qwenHeaders(token, { Accept: opts.stream ? "text/event-stream" : "application/json" }),
     body: JSON.stringify(payload),
   });
-  const ct = res.headers.get("content-type") || "";
-  if (!res.ok || !res.body || !ct.includes("event-stream")) {
-    const text = await res.text().catch(() => "");
-    if (looksLikeChallenge(res.status, text)) throw new QwenError("Qwen anti-bot challenge; refresh QWEN_TOKEN.", 503);
-    let detail = text.slice(0, 200);
-    try {
-      const j = JSON.parse(text);
-      detail = j?.data?.details || j?.error?.details || j?.data?.code || detail;
-    } catch {
-      /* keep raw */
+  if (opts.stream) {
+    const ct = res.headers.get("content-type") || "";
+    if (!res.ok || !res.body || !ct.includes("event-stream")) {
+      const text = await res.text().catch(() => "");
+      if (looksLikeChallenge(res.status, text)) throw new QwenError("Qwen anti-bot challenge / rate limit on this account.", 503);
+      let detail = text.slice(0, 200);
+      try {
+        const j = JSON.parse(text);
+        detail = j?.data?.details || j?.error?.details || j?.data?.code || detail;
+      } catch {}
+      throw new QwenError(`Qwen completion failed (${res.status}): ${detail}`);
     }
-    throw new QwenError(`Qwen completion failed (${res.status}): ${detail}`);
   }
   return res;
 }
 
 export interface QwenDelta {
-  phase: "think" | "answer";
+  phase: string;
   text: string;
 }
 
-// Async generator yielding {phase, text} deltas. "think" = reasoning,
-// "answer" = final answer. Throws on stream errors.
+// Async generator over SSE deltas. Yields {phase, text}. Throws on stream errors.
 export async function* qwenDeltas(res: Response): AsyncGenerator<QwenDelta> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
@@ -273,7 +301,36 @@ export async function* qwenDeltas(res: Response): AsyncGenerator<QwenDelta> {
       if (!delta) continue;
       const piece: unknown = delta.content;
       if (typeof piece !== "string" || piece.length === 0) continue;
-      yield { phase: delta.phase === "think" ? "think" : "answer", text: piece };
+      yield { phase: typeof delta.phase === "string" ? delta.phase : "answer", text: piece };
     }
   }
+}
+
+// --- video: task id + polling ----------------------------------------------
+
+export function extractWanxTaskId(json: any): string | null {
+  return json?.data?.messages?.[0]?.extra?.wanx?.task_id || json?.data?.messages?.[0]?.extra?.aipodcast?.task_id || null;
+}
+
+// Poll a WanX (video) task until it produces a media URL. Returns the URL.
+export async function pollTask(token: string, taskId: string, timeoutMs = 240_000): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 5000));
+    let json: any;
+    try {
+      const res = await fetch(`${QWEN_BASE}/api/v2/tasks/status/${encodeURIComponent(taskId)}`, { headers: qwenHeaders(token) });
+      json = await res.json();
+    } catch {
+      continue;
+    }
+    const blob = JSON.stringify(json);
+    if (looksLikeChallenge(200, blob)) throw new QwenError("Qwen anti-bot challenge while polling video task.", 503);
+    const status = (json?.data?.task_status || json?.data?.status || "").toString().toLowerCase();
+    const m = blob.match(/https?:\/\/[^"\\]+\.(?:mp4|mov|webm)[^"\\]*/);
+    if (m) return m[0];
+    if (status === "failed" || status === "failure") throw new QwenError("Video generation failed upstream.");
+    // otherwise keep polling (pending / running / succeeded-without-url-yet)
+  }
+  throw new QwenError("Video generation timed out.", 504);
 }

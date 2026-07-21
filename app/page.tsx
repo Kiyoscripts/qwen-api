@@ -46,16 +46,16 @@ export default function Home() {
 
       <div className="grid">
         <div className="card">
-          <h3>Drop-in compatible</h3>
-          <p>Same request/response shape as the OpenAI Chat Completions API. Streaming supported.</p>
+          <h3>All Qwen models</h3>
+          <p>Every model from chat.qwen.ai — reasoning, vision, coding, omni and more.</p>
         </div>
         <div className="card">
-          <h3>Vision</h3>
-          <p>Send images as <code>image_url</code> parts — base64 data URLs or public URLs.</p>
+          <h3>Vision + thinking</h3>
+          <p>Image inputs via <code>image_url</code>, and the model&apos;s reasoning in <code>reasoning_content</code>.</p>
         </div>
         <div className="card">
-          <h3>API keys</h3>
-          <p>Access is gated by keys managed in Supabase. Bring your own client.</p>
+          <h3>Image &amp; video</h3>
+          <p>Generate images (<code>/v1/images/generations</code>) and video (<code>/v1/videos/generations</code>).</p>
         </div>
       </div>
 
@@ -86,9 +86,20 @@ export default function Home() {
       <h2>Endpoints</h2>
       <pre>
         <code>
-          POST /v1/chat/completions   — chat (streaming &amp; non-streaming, vision){"\n"}
-          GET  /v1/models             — lists the one available model
+          POST /v1/chat/completions    — chat (streaming, vision, reasoning){"\n"}
+          POST /v1/images/generations  — text-to-image{"\n"}
+          POST /v1/videos/generations  — text-to-video (async){"\n"}
+          GET  /v1/models              — lists all available models
         </code>
+      </pre>
+
+      <h2>Image generation</h2>
+      <pre>
+        <code>{`curl https://qwen3-8-api.vercel.app/v1/images/generations \\
+  -H "Authorization: Bearer qwen_sk_..." \\
+  -H "Content-Type: application/json" \\
+  -d '{ "prompt": "a red apple on a table", "size": "1:1" }'
+# -> { "data": [{ "url": "https://..." }] }`}</code>
       </pre>
 
       <p className="foot">
