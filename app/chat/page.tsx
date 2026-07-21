@@ -51,6 +51,10 @@ function describeModel(m: ModelOpt): string {
   return "Text, " + bits.join(", ");
 }
 
+// How many times a truncated reply may auto-resume. Each attempt gets a fresh
+// serverless budget, so 3 covers roughly 20 minutes of generation.
+const MAX_AUTO_CONTINUE = 3;
+
 const STORE = "qwen_chat_conversations";
 const KEY_STORE = "qwen_api_key";
 const DEFAULT_MODEL = "qwen3.8-max-preview";
@@ -217,12 +221,89 @@ export default function Chat() {
     el.style.height = Math.min(el.scrollHeight, 200) + "px";
   }
 
-  function toApi(list: Msg[]) {
-    return list.map((m) =>
-      m.role === "user" && m.image
-        ? { role: "user", content: [{ type: "text", text: m.content }, { type: "image_url", image_url: { url: m.image } }] }
-        : { role: m.role, content: m.content }
-    );
+  function toApi(list: Msg[]): Record<string, unknown>[] {
+    const out: Record<string, unknown>[] = [];
+    for (const m of list) {
+      if (m.role === "user" && m.image) {
+        out.push({
+          role: "user",
+          content: [{ type: "text", text: m.content }, { type: "image_url", image_url: { url: m.image } }],
+        });
+        continue;
+      }
+      // A reply cut off mid-reasoning has no visible content, only reasoning. Send
+      // that instead, otherwise the turn is empty and the model loses everything
+      // it had already drafted when you ask it to continue.
+      const cutOff = m.role === "assistant" && !m.content && Boolean(m.reasoning);
+      const text = m.content || m.reasoning || "";
+      if (!text) continue;
+      out.push({
+        role: m.role,
+        content: cutOff ? `${text}\n\n[This reply was cut off before it finished.]` : text,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Stream one turn, appending onto whatever we already have.
+   *
+   * `complete` is the important bit: our API always ends a healthy stream with
+   * `[DONE]`. If the serverless function is killed mid-generation (Vercel caps a
+   * request at 300s) the stream just dies without it, which is an exact signal
+   * that the reply was truncated rather than finished.
+   */
+  async function streamTurn(
+    convo: Record<string, unknown>[],
+    base: { content: string; reasoning: string },
+    signal: AbortSignal
+  ): Promise<{ content: string; reasoning: string; complete: boolean }> {
+    let content = base.content;
+    let reasoning = base.reasoning;
+    let complete = false;
+
+    const res = await fetch("/v1/chat/completions", {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: active!.model, stream: true, messages: convo }),
+    });
+    if (!res.ok || !res.body) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j?.error?.message || `Request failed (${res.status})`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") {
+          complete = true;
+          continue;
+        }
+        try {
+          const d = JSON.parse(data)?.choices?.[0]?.delta;
+          if (d?.reasoning_content) reasoning += d.reasoning_content;
+          if (d?.content) content += d.content;
+          patchActive((c) => {
+            const msgs = [...c.messages];
+            msgs[msgs.length - 1] = { role: "assistant", content, reasoning };
+            return { ...c, messages: msgs };
+          });
+        } catch {
+          /* partial frame */
+        }
+      }
+    }
+    return { content, reasoning, complete };
   }
 
   async function send(text?: string) {
@@ -248,45 +329,29 @@ export default function Chat() {
     abortRef.current = ctrl;
 
     try {
-      const res = await fetch("/v1/chat/completions", {
-        method: "POST",
-        signal: ctrl.signal,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ model: active.model, stream: true, messages: toApi(history) }),
-      });
-      if (!res.ok || !res.body) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error?.message || `Request failed (${res.status})`);
-      }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let content = "";
-      let reasoning = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let idx: number;
-        while ((idx = buffer.indexOf("\n")) !== -1) {
-          const line = buffer.slice(0, idx).trim();
-          buffer = buffer.slice(idx + 1);
-          if (!line.startsWith("data:")) continue;
-          const data = line.slice(5).trim();
-          if (data === "[DONE]") continue;
-          try {
-            const d = JSON.parse(data)?.choices?.[0]?.delta;
-            if (d?.reasoning_content) reasoning += d.reasoning_content;
-            if (d?.content) content += d.content;
-            patchActive((c) => {
-              const msgs = [...c.messages];
-              msgs[msgs.length - 1] = { role: "assistant", content, reasoning };
-              return { ...c, messages: msgs };
-            });
-          } catch {
-            /* partial frame */
-          }
-        }
+      let convo = toApi(history);
+      let acc = { content: "", reasoning: "" };
+
+      for (let attempt = 0; attempt <= MAX_AUTO_CONTINUE; attempt++) {
+        const before = acc.content.length + acc.reasoning.length;
+        const r = await streamTurn(convo, acc, ctrl.signal);
+        acc = { content: r.content, reasoning: r.reasoning };
+
+        if (r.complete) break;
+        // Nothing new arrived, so continuing again would just spin.
+        if (acc.content.length + acc.reasoning.length === before) break;
+        if (attempt === MAX_AUTO_CONTINUE) break;
+
+        // Truncated: resume from exactly where it stopped.
+        convo = [
+          ...convo,
+          { role: "assistant", content: acc.content || acc.reasoning },
+          {
+            role: "user",
+            content:
+              "Your previous reply was cut off. Continue from exactly where it stopped. Do not repeat anything you already wrote, and do not restart.",
+          },
+        ];
       }
     } catch (e: any) {
       if (e.name === "AbortError") {
