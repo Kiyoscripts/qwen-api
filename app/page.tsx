@@ -89,6 +89,8 @@ export default function Home() {
           POST /v1/chat/completions    — chat (streaming, vision, reasoning){"\n"}
           POST /v1/images/generations  — text-to-image{"\n"}
           POST /v1/videos/generations  — text-to-video (async){"\n"}
+          POST /v1/audio/speech        — text-to-speech (wav){"\n"}
+          GET  /v1/audio/voices        — ~78 TTS voices{"\n"}
           GET  /v1/models              — lists all available models
         </code>
       </pre>

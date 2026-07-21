@@ -7,6 +7,8 @@ to a chat.qwen.ai account (your token, server-side) and exposes a clean, keyed A
 - `POST /v1/chat/completions` — all models, streaming, vision, reasoning (`reasoning_content`)
 - `POST /v1/images/generations` — text-to-image (OpenAI-compatible)
 - `POST /v1/videos/generations` — text-to-video (async; `{ "prompt": "..." }` → `{ data: [{ url }] }`)
+- `POST /v1/audio/speech` — text-to-speech → `audio/wav` (`{ "input": "...", "voice": "Cherry" }`)
+- `GET  /v1/audio/voices` — lists the ~78 TTS voices (name, gender, description)
 - `GET  /v1/models` — lists **all** Qwen models
 - `POST /api/keys` — **public** self-serve API key creation (also on the homepage)
 - `/admin` — password-protected dashboard to manage the pooled Qwen tokens & view keys
@@ -117,6 +119,28 @@ Vision — send `image_url` parts (base64 data URL or public URL):
   }]
 }
 ```
+
+## Text-to-speech
+
+```bash
+curl -X POST https://qwen3-8-api.vercel.app/v1/audio/speech \
+  -H "Authorization: Bearer qwen_sk_..." -H "Content-Type: application/json" \
+  -d '{"input":"Hello there","voice":"Cherry"}' --output speech.wav
+```
+
+Output is 16 kHz, 16-bit mono WAV. List voices with `GET /v1/audio/voices`
+(Cherry, Dylan, Kiki, Vivian, Serena, Momo, Moon, …).
+
+Two honest caveats about how Qwen's TTS works:
+
+- Qwen can only *read aloud a message that exists in a chat* — there's no raw
+  text→speech endpoint. So this route first has the model echo your text back
+  verbatim, then runs "read aloud" on that message. That means an extra model
+  call per request, and very occasionally the echo isn't 100% word-for-word.
+- The voice is an **account-level setting**, not a per-request parameter. The
+  route sets it on the pooled account right before synthesising, so two
+  concurrent requests with different voices on the *same* token can race. More
+  tokens in the pool makes this less likely.
 
 ## How it works / notes
 

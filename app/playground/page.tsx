@@ -2,12 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type Mode = "chat" | "image" | "video";
+type Mode = "chat" | "image" | "video" | "tts";
 
 interface ModelOpt {
   id: string;
   name: string;
   chatTypes: string[];
+}
+interface VoiceOpt {
+  speaker: string;
+  name: string;
+  gender: string;
+  description: string;
 }
 interface Turn {
   role: "user" | "assistant";
@@ -15,7 +21,7 @@ interface Turn {
   reasoning?: string;
   image?: string; // user attachment (data URL)
   mediaUrl?: string; // assistant result
-  mediaType?: "image" | "video";
+  mediaType?: "image" | "video" | "audio";
   pending?: boolean;
 }
 
@@ -23,6 +29,8 @@ export default function Playground() {
   const [apiKey, setApiKey] = useState("");
   const [models, setModels] = useState<ModelOpt[]>([]);
   const [model, setModel] = useState("qwen3.8-max-preview");
+  const [voices, setVoices] = useState<VoiceOpt[]>([]);
+  const [voice, setVoice] = useState("");
   const [mode, setMode] = useState<Mode>("chat");
   const [input, setInput] = useState("");
   const [image, setImage] = useState<string | null>(null);
@@ -48,6 +56,17 @@ export default function Playground() {
       }));
       setModels(opts);
       if (opts.length && !opts.find((o) => o.id === model)) setModel(opts[0].id);
+    } catch {
+      /* ignore */
+    }
+    // voices for TTS
+    try {
+      const r = await fetch("/v1/audio/voices", { headers: { Authorization: `Bearer ${key}` } });
+      if (r.ok) {
+        const v: VoiceOpt[] = (await r.json()).data || [];
+        setVoices(v);
+        if (v.length) setVoice((cur) => cur || v[0].speaker);
+      }
     } catch {
       /* ignore */
     }
@@ -146,19 +165,46 @@ export default function Playground() {
     });
   }
 
+  async function sendSpeech(text: string) {
+    const res = await fetch("/v1/audio/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ input: text, voice }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j?.error?.message || `HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    setTurns((prev) => {
+      const c = [...prev];
+      c[c.length - 1] = { role: "assistant", content: "", mediaUrl: url, mediaType: "audio" };
+      return c;
+    });
+  }
+
   async function send() {
     const text = input.trim();
     if ((!text && !image) || busy || !apiKey) return;
 
     const userTurn: Turn = { role: "user", content: text || (mode === "chat" ? "(image)" : ""), image: image || undefined };
     const history = [...turns, userTurn];
-    const pendingLabel = mode === "video" ? "Generating video… (up to a few minutes)" : mode === "image" ? "Generating image…" : "";
+    const pendingLabel =
+      mode === "video"
+        ? "Generating video… (up to a few minutes)"
+        : mode === "image"
+        ? "Generating image…"
+        : mode === "tts"
+        ? "Generating speech…"
+        : "";
     setTurns([...history, { role: "assistant", content: pendingLabel, pending: true }]);
     setInput("");
     setImage(null);
     setBusy(true);
     try {
       if (mode === "chat") await sendChat(history);
+      else if (mode === "tts") await sendSpeech(text);
       else await sendGeneration(text, mode);
     } catch (e: any) {
       setTurns((prev) => {
@@ -184,6 +230,8 @@ export default function Playground() {
     ? "Describe an image to generate…"
     : mode === "video"
     ? "Describe a video to generate…"
+    : mode === "tts"
+    ? "Type text to read aloud…"
     : "Message…  (Enter to send)";
 
   return (
@@ -212,16 +260,28 @@ export default function Playground() {
       </div>
 
       <div className="pg-controls">
-        <select className="input pg-select" value={model} onChange={(e) => setModel(e.target.value)}>
-          {models.length === 0 && <option value={model}>{model}</option>}
-          {models.map((m) => (
-            <option key={m.id} value={m.id}>{m.name}</option>
-          ))}
-        </select>
+        {mode === "tts" ? (
+          <select className="input pg-select" value={voice} onChange={(e) => setVoice(e.target.value)}>
+            {voices.length === 0 && <option value="">(default voice)</option>}
+            {voices.map((v) => (
+              <option key={v.speaker} value={v.speaker}>
+                {v.name}{v.gender ? ` · ${v.gender}` : ""}{v.description ? ` — ${v.description}` : ""}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <select className="input pg-select" value={model} onChange={(e) => setModel(e.target.value)}>
+            {models.length === 0 && <option value={model}>{model}</option>}
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        )}
         <div className="pg-modes">
           <button className={`pill ${mode === "chat" ? "on" : ""}`} onClick={() => setMode("chat")}>Chat</button>
           <button className={`pill ${mode === "image" ? "on" : ""}`} onClick={() => setMode("image")} disabled={!canImage} title={canImage ? "" : "This model can't generate images"}>Image</button>
           <button className={`pill ${mode === "video" ? "on" : ""}`} onClick={() => setMode("video")} disabled={!canVideo} title={canVideo ? "" : "This model can't generate video"}>Video</button>
+          <button className={`pill ${mode === "tts" ? "on" : ""}`} onClick={() => setMode("tts")}>Speech</button>
         </div>
       </div>
 
@@ -238,6 +298,7 @@ export default function Playground() {
             ) : null}
             {t.mediaUrl && t.mediaType === "image" && <img className="bubble-media" src={t.mediaUrl} alt="generated" />}
             {t.mediaUrl && t.mediaType === "video" && <video className="bubble-media" src={t.mediaUrl} controls />}
+            {t.mediaUrl && t.mediaType === "audio" && <audio src={t.mediaUrl} controls autoPlay style={{ width: 280, display: "block" }} />}
             {t.content && <div className="bubble-text">{t.content}</div>}
             {t.pending && <span className="spin" />}
           </div>
