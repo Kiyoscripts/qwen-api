@@ -2,7 +2,29 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type Mode = "chat" | "image" | "video" | "tts";
+type Mode = "chat" | "image" | "video" | "tts" | "tools";
+
+const DEFAULT_TOOLS = JSON.stringify(
+  [
+    {
+      type: "function",
+      function: {
+        name: "get_weather",
+        description: "Get the current weather for a city",
+        parameters: {
+          type: "object",
+          properties: {
+            city: { type: "string", description: "City name" },
+            unit: { type: "string", enum: ["c", "f"] },
+          },
+          required: ["city"],
+        },
+      },
+    },
+  ],
+  null,
+  2
+);
 
 interface ModelOpt {
   id: string;
@@ -15,14 +37,22 @@ interface VoiceOpt {
   gender: string;
   description: string;
 }
+interface ToolCall {
+  id: string;
+  type: string;
+  function: { name: string; arguments: string };
+}
 interface Turn {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   content: string;
   reasoning?: string;
   image?: string; // user attachment (data URL)
   mediaUrl?: string; // assistant result
   mediaType?: "image" | "video" | "audio";
   pending?: boolean;
+  toolCalls?: ToolCall[]; // assistant requested these
+  toolCallId?: string; // for role:"tool"
+  toolName?: string;
 }
 
 export default function Playground() {
@@ -32,6 +62,9 @@ export default function Playground() {
   const [voices, setVoices] = useState<VoiceOpt[]>([]);
   const [voice, setVoice] = useState("");
   const [mode, setMode] = useState<Mode>("chat");
+  const [toolsText, setToolsText] = useState(DEFAULT_TOOLS);
+  const [showTools, setShowTools] = useState(true);
+  const [toolResults, setToolResults] = useState<Record<string, string>>({});
   const [input, setInput] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -104,6 +137,12 @@ export default function Playground() {
     return list.map((t) => {
       if (t.role === "user" && t.image) {
         return { role: "user", content: [{ type: "text", text: t.content }, { type: "image_url", image_url: { url: t.image } }] };
+      }
+      if (t.role === "assistant" && t.toolCalls?.length) {
+        return { role: "assistant", content: null, tool_calls: t.toolCalls };
+      }
+      if (t.role === "tool") {
+        return { role: "tool", tool_call_id: t.toolCallId, name: t.toolName, content: t.content };
       }
       return { role: t.role, content: t.content };
     });
@@ -207,6 +246,59 @@ export default function Playground() {
     }
   }
 
+  // Tool calling uses the non-streaming path (a tool call is only valid complete).
+  async function sendWithTools(history: Turn[]) {
+    let tools: unknown;
+    try {
+      tools = JSON.parse(toolsText);
+    } catch {
+      throw new Error("Tool schema is not valid JSON");
+    }
+    const res = await fetch("/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, tools, messages: toApiMessages(history) }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j?.error?.message || `HTTP ${res.status}`);
+    const m = j?.choices?.[0]?.message;
+    setTurns((prev) => {
+      const c = [...prev];
+      c[c.length - 1] = {
+        role: "assistant",
+        content: m?.content || "",
+        reasoning: m?.reasoning_content,
+        toolCalls: m?.tool_calls?.length ? m.tool_calls : undefined,
+      };
+      return c;
+    });
+  }
+
+  // Feed the tool results back and let the model finish the answer.
+  async function submitToolResults(calls: ToolCall[]) {
+    if (busy) return;
+    const toolTurns: Turn[] = calls.map((c) => ({
+      role: "tool",
+      content: (toolResults[c.id] ?? "").trim() || "{}",
+      toolCallId: c.id,
+      toolName: c.function.name,
+    }));
+    const history = [...turns, ...toolTurns];
+    setTurns([...history, { role: "assistant", content: "Thinking…", pending: true }]);
+    setBusy(true);
+    try {
+      await sendWithTools(history);
+    } catch (e: any) {
+      setTurns((prev) => {
+        const c = [...prev];
+        c[c.length - 1] = { role: "assistant", content: `⚠️ ${e.message}` };
+        return c;
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function sendSpeech(text: string) {
     const res = await fetch("/v1/audio/speech", {
       method: "POST",
@@ -246,6 +338,7 @@ export default function Playground() {
     setBusy(true);
     try {
       if (mode === "chat") await sendChat(history);
+      else if (mode === "tools") await sendWithTools(history);
       else if (mode === "tts") await sendSpeech(text);
       else if (mode === "image") await sendImage(text);
       else await sendVideo(text);
@@ -275,6 +368,8 @@ export default function Playground() {
     ? "Describe a video to generate…"
     : mode === "tts"
     ? "Type text to read aloud…"
+    : mode === "tools"
+    ? "Ask something that needs a tool…"
     : "Message…  (Enter to send)";
 
   return (
@@ -325,8 +420,34 @@ export default function Playground() {
           <button className={`pill ${mode === "image" ? "on" : ""}`} onClick={() => setMode("image")} disabled={!canImage} title={canImage ? "" : "This model can't generate images"}>Image</button>
           <button className={`pill ${mode === "video" ? "on" : ""}`} onClick={() => setMode("video")} disabled={!canVideo} title={canVideo ? "" : "This model can't generate video"}>Video</button>
           <button className={`pill ${mode === "tts" ? "on" : ""}`} onClick={() => setMode("tts")}>Speech</button>
+          <button className={`pill ${mode === "tools" ? "on" : ""}`} onClick={() => setMode("tools")}>Tools</button>
         </div>
       </div>
+
+      {mode === "tools" && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: showTools ? 8 : 0 }}>
+            <strong style={{ fontSize: 13 }}>Tool schema (OpenAI format)</strong>
+            <div className="pg-modes">
+              <button className="pill" onClick={() => setToolsText(DEFAULT_TOOLS)}>reset example</button>
+              <button className="pill" onClick={() => setShowTools((s) => !s)}>{showTools ? "hide" : "show"}</button>
+            </div>
+          </div>
+          {showTools && (
+            <textarea
+              className="input"
+              style={{ width: "100%", minHeight: 150, fontFamily: "ui-monospace, monospace", fontSize: 12 }}
+              value={toolsText}
+              onChange={(e) => setToolsText(e.target.value)}
+              spellCheck={false}
+            />
+          )}
+          <p className="hint" style={{ marginTop: 8 }}>
+            Try: <em>&quot;What&apos;s the weather in Paris in celsius?&quot;</em> — the model should return a tool call.
+            Then fill in a result (e.g. <code>{"{\"temp_c\":18}"}</code>) and send it back.
+          </p>
+        </div>
+      )}
 
       <div className="pg-chat" ref={scrollRef}>
         {turns.length === 0 && <p className="pg-empty">Pick a model and mode, then start. Chat supports image input; Image/Video generate media.</p>}
@@ -343,6 +464,42 @@ export default function Playground() {
             {t.mediaUrl && t.mediaType === "video" && <video className="bubble-media" src={t.mediaUrl} controls />}
             {t.mediaUrl && t.mediaType === "audio" && <audio src={t.mediaUrl} controls autoPlay style={{ width: 280, display: "block" }} />}
             {t.content && <div className="bubble-text">{t.content}</div>}
+
+            {t.role === "tool" && (
+              <div className="toolcall">
+                <div className="toolcall-head">↩ tool result · {t.toolName}</div>
+              </div>
+            )}
+
+            {t.toolCalls?.map((c) => {
+              let args = c.function.arguments;
+              try {
+                args = JSON.stringify(JSON.parse(c.function.arguments), null, 1);
+              } catch {}
+              const answered = turns.some((x) => x.role === "tool" && x.toolCallId === c.id);
+              return (
+                <div className="toolcall" key={c.id}>
+                  <div className="toolcall-head">🔧 tool call · {c.function.name}</div>
+                  <pre className="toolcall-args">{args}</pre>
+                  {!answered && (
+                    <div className="row" style={{ marginTop: 8 }}>
+                      <input
+                        className="input"
+                        style={{ fontSize: 12 }}
+                        placeholder='result JSON, e.g. {"temp_c":18}'
+                        value={toolResults[c.id] ?? ""}
+                        onChange={(e) => setToolResults((r) => ({ ...r, [c.id]: e.target.value }))}
+                        onKeyDown={(e) => e.key === "Enter" && submitToolResults(t.toolCalls!)}
+                      />
+                      <button className="btn" disabled={busy} onClick={() => submitToolResults(t.toolCalls!)}>
+                        Send result
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
             {t.pending && <span className="spin" />}
           </div>
         ))}

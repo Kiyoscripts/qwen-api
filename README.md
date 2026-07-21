@@ -121,6 +121,38 @@ Vision — send `image_url` parts (base64 data URL or public URL):
 }
 ```
 
+## Tool / function calling
+
+Standard OpenAI tool calling works — pass `tools`, get back `tool_calls`, send
+`role:"tool"` results, get a final answer:
+
+```bash
+curl https://qwen3-8-api.vercel.app/v1/chat/completions \
+  -H "Authorization: Bearer qwen_sk_..." -H "Content-Type: application/json" \
+  -d '{
+    "messages":[{"role":"user","content":"What is the weather in Paris in celsius?"}],
+    "tools":[{"type":"function","function":{
+      "name":"get_weather","description":"Get current weather for a city",
+      "parameters":{"type":"object","properties":{"city":{"type":"string"},"unit":{"type":"string","enum":["c","f"]}},"required":["city"]}}}]
+  }'
+# -> finish_reason: "tool_calls"
+#    tool_calls: [{ id, type:"function", function:{ name:"get_weather", arguments:"{\"city\":\"Paris\",\"unit\":\"c\"}" }}]
+```
+
+`tool_choice` supports `"auto"` (default), `"none"`, `"required"`, and
+`{"type":"function","function":{"name":"…"}}`.
+
+**How it works (and the caveat):** chat.qwen.ai's API *ignores* `tools` you send —
+the model only knows Qwen's own built-ins. So the proxy implements function
+calling itself: it injects your tool schemas into the prompt, instructs the model
+to emit a strict JSON envelope, and parses that back into OpenAI `tool_calls`.
+This works well with these models, but because it's prompt-driven rather than
+constrained decoding, it's not 100% guaranteed — a model can occasionally answer
+in prose instead of calling, or produce arguments that don't perfectly match your
+schema. Validate arguments before executing them. When `tools` are supplied,
+streaming buffers the reply before emitting (a tool call is only valid once
+complete); reasoning still streams live.
+
 ## Video generation (no timeout)
 
 Video can take many minutes and a serverless function can't stay open forever, so
@@ -181,8 +213,8 @@ Two honest caveats about how Qwen's TTS works:
   its sidebar stay clean between requests/users.
 - **All traffic uses one shared Qwen account** (your token). Its rate limits and
   Terms of Service apply to the whole API. Keep `QWEN_TOKEN` fresh (see below).
-- **Tool/function-calling is not supported** — chat.qwen.ai doesn't accept custom
-  function schemas (its tools are its own built-ins / MCP).
+- **Tool/function-calling IS supported** — see below. (chat.qwen.ai itself ignores
+  custom function schemas, so the proxy implements it.)
 - If completions start failing with `Internal error`, Qwen probably updated their
   frontend: set `QWEN_CLIENT_VERSION` to the new `Version` header value from
   DevTools → Network on chat.qwen.ai. If you see `unauthorized`, refresh

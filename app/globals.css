@@ -152,6 +152,12 @@ code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, mo
 .bubble { max-width: 88%; padding: 12px 14px; border-radius: 14px; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; word-wrap: break-word; }
 .bubble.user { align-self: flex-end; background: var(--accent); color: #0a0a0b; }
 .bubble.assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); }
+.bubble.tool { align-self: flex-start; background: transparent; border: 1px dashed var(--border); color: var(--muted); font-size: 13px; }
+
+/* Tool calls */
+.toolcall { margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: rgba(124,108,255,0.06); }
+.toolcall-head { font-size: 12px; color: var(--accent-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.toolcall-args { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: #d6d6db; white-space: pre-wrap; overflow-x: auto; }
 .bubble-img { max-width: 220px; border-radius: 10px; margin-bottom: 8px; display: block; }
 .bubble-text { }
 .thinking { margin-bottom: 8px; border-left: 2px solid var(--border); padding-left: 10px; }

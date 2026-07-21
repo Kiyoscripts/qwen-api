@@ -15,6 +15,7 @@ import {
 } from "@/lib/qwen";
 import { pickToken } from "@/lib/tokens";
 import { extractApiKey, validateApiKey, logUsage } from "@/lib/supabase";
+import { toolsEnabled, buildToolPreamble, normalizeToolMessages, parseToolCalls } from "@/lib/tools";
 import { randomUUID } from "node:crypto";
 
 export const runtime = "nodejs";
@@ -62,11 +63,17 @@ export async function POST(req: NextRequest) {
     return err(`Image upload failed: ${e.message}`, 400);
   }
 
+  // Tool calling: Qwen ignores `tools`, so we do it via prompt + response parsing.
+  const useTools = toolsEnabled(body.tools, body.tool_choice);
+  const promptMessages: OpenAIMessage[] = useTools
+    ? ([{ role: "system", content: buildToolPreamble(body.tools, body.tool_choice) }, ...normalizeToolMessages(messages)] as OpenAIMessage[])
+    : messages;
+
   let chatId: string | undefined;
   let qwenRes: Response;
   try {
     chatId = await createChat(token, modelId, "t2t");
-    const qwenMessages = [buildMessage(messages, { model: modelId, chatType: "t2t", files, thinking: model.thinking })];
+    const qwenMessages = [buildMessage(promptMessages, { model: modelId, chatType: "t2t", files, thinking: model.thinking })];
     // Always stream from Qwen (it returns SSE); we buffer it for non-streaming clients.
     qwenRes = await openCompletion(token, chatId, { model: modelId, messages: qwenMessages, stream: true });
   } catch (e: any) {
@@ -89,20 +96,41 @@ export async function POST(req: NextRequest) {
       async start(controller) {
         const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
         send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
+        let finish = "stop";
         try {
-          for await (const { phase, text } of qwenDeltas(qwenRes)) {
-            const delta =
-              phase === "think"
-                ? withReasoning
-                  ? { reasoning_content: text }
-                  : null
-                : { content: text };
-            if (delta) send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: null }] });
+          if (useTools) {
+            // A tool call is only valid once complete, so buffer then emit.
+            let buffered = "";
+            for await (const { phase, text } of qwenDeltas(qwenRes)) {
+              if (phase === "think") {
+                if (withReasoning) send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { reasoning_content: text }, finish_reason: null }] });
+              } else buffered += text;
+            }
+            const parsed = parseToolCalls(buffered);
+            if (parsed) {
+              finish = "tool_calls";
+              send({
+                id, object: "chat.completion.chunk", created, model: modelId,
+                choices: [{ index: 0, delta: { tool_calls: parsed.calls.map((c, i) => ({ index: i, ...c })) }, finish_reason: null }],
+              });
+            } else if (buffered) {
+              send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: buffered }, finish_reason: null }] });
+            }
+          } else {
+            for await (const { phase, text } of qwenDeltas(qwenRes)) {
+              const delta =
+                phase === "think"
+                  ? withReasoning
+                    ? { reasoning_content: text }
+                    : null
+                  : { content: text };
+              if (delta) send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: null }] });
+            }
           }
         } catch (e: any) {
           send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: `\n[error: ${e.message}]` }, finish_reason: null }] });
         }
-        send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
+        send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: finish }] });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
         await cleanup();
@@ -128,7 +156,10 @@ export async function POST(req: NextRequest) {
   await cleanup();
   logUsage(record.id, modelId, hadImage, false, 200);
 
-  const message: Record<string, unknown> = { role: "assistant", content };
+  const parsed = useTools ? parseToolCalls(content) : null;
+  const message: Record<string, unknown> = parsed
+    ? { role: "assistant", content: null, tool_calls: parsed.calls }
+    : { role: "assistant", content };
   if (withReasoning && reasoning) message.reasoning_content = reasoning;
 
   return NextResponse.json({
@@ -136,7 +167,7 @@ export async function POST(req: NextRequest) {
     object: "chat.completion",
     created,
     model: modelId,
-    choices: [{ index: 0, message, finish_reason: "stop" }],
+    choices: [{ index: 0, message, finish_reason: parsed ? "tool_calls" : "stop" }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
 }
