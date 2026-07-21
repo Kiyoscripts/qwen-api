@@ -53,17 +53,67 @@ export async function validateApiKey(key: string): Promise<ApiKeyRecord | null> 
 }
 
 // Generate a new key, store its hash, return the raw key ONCE.
-export async function createApiKey(name: string | null): Promise<{ id: string; key: string; key_prefix: string }> {
+export async function createApiKey(name: string | null, ip?: string | null): Promise<{ id: string; key: string; key_prefix: string }> {
   const key = "qwen_sk_" + randomBytes(24).toString("hex");
   const key_hash = hashKey(key);
   const key_prefix = key.slice(0, 16) + "…";
   const { data, error } = await admin()
     .from("api_keys")
-    .insert({ name, key_hash, key_prefix })
+    .insert({ name, key_hash, key_prefix, created_ip: ip || null })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
   return { id: data.id, key, key_prefix };
+}
+
+// How many keys were created by this IP in the last `windowMs`.
+export async function countRecentKeysByIp(ip: string, windowMs: number): Promise<number> {
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const { count, error } = await admin()
+    .from("api_keys")
+    .select("id", { count: "exact", head: true })
+    .eq("created_ip", ip)
+    .gte("created_at", since);
+  if (error) return 0;
+  return count || 0;
+}
+
+// Global keys created in the last `windowMs` (backstop against IP rotation).
+export async function countRecentKeysGlobal(windowMs: number): Promise<number> {
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const { count, error } = await admin()
+    .from("api_keys")
+    .select("id", { count: "exact", head: true })
+    .gte("created_at", since);
+  if (error) return 0;
+  return count || 0;
+}
+
+export async function deleteApiKey(id: string) {
+  const { error } = await admin().from("api_keys").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+// Bulk-delete unused keys whose name matches a prefix (e.g. spam "batch-…" keys).
+export async function purgeKeysByPrefix(prefix: string): Promise<number> {
+  const { error, count } = await admin()
+    .from("api_keys")
+    .delete({ count: "exact" })
+    .like("name", `${prefix}%`)
+    .eq("request_count", 0);
+  if (error) throw new Error(error.message);
+  return count || 0;
+}
+
+// Delete ALL API keys. Returns how many were removed. Uses a count instead of
+// returning every deleted row (there can be tens of thousands).
+export async function deleteAllApiKeys(): Promise<number> {
+  const { error, count } = await admin()
+    .from("api_keys")
+    .delete({ count: "exact" })
+    .not("id", "is", null);
+  if (error) throw new Error(error.message);
+  return count || 0;
 }
 
 export async function listApiKeys() {

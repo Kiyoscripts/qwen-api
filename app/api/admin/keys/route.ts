@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createApiKey, listApiKeys } from "@/lib/supabase";
+import { createApiKey, listApiKeys, deleteApiKey, purgeKeysByPrefix, deleteAllApiKeys } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -38,6 +38,32 @@ export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
     return NextResponse.json({ keys: await listApiKeys() });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
+// Delete keys:
+//   ?id=<uuid>          -> delete one
+//   ?spam=<prefix>      -> delete unused keys whose name starts with <prefix> (default "batch-")
+//   ?all=true           -> delete ALL keys
+export async function DELETE(req: NextRequest) {
+  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const p = req.nextUrl.searchParams;
+  try {
+    if (p.get("all") === "true") {
+      return NextResponse.json({ deleted: await deleteAllApiKeys() });
+    }
+    if (p.has("spam")) {
+      const prefix = p.get("spam") || "batch-";
+      return NextResponse.json({ deleted: await purgeKeysByPrefix(prefix) });
+    }
+    const id = p.get("id");
+    if (id) {
+      await deleteApiKey(id);
+      return NextResponse.json({ ok: true });
+    }
+    return NextResponse.json({ error: "specify id, spam, or all" }, { status: 400 });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

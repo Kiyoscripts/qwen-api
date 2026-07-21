@@ -90,6 +90,35 @@ export default function Admin() {
     await authFetch(`/api/admin/tokens?id=${id}`, { method: "DELETE" });
     await load();
   }
+  async function purgeSpam() {
+    if (!confirm("Delete all unused keys named 'batch-…' (the spam keys)?")) return;
+    setBusy(true);
+    try {
+      const r = await authFetch("/api/admin/keys?spam=batch-", { method: "DELETE" });
+      const j = await r.json();
+      setError(r.ok ? null : j.error);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function removeKey(id: string) {
+    await authFetch(`/api/admin/keys?id=${id}`, { method: "DELETE" });
+    await load();
+  }
+  async function revokeAll() {
+    if (!confirm("Delete ALL API keys? Every existing key will stop working immediately. This cannot be undone.")) return;
+    if (!confirm("Are you absolutely sure? This revokes every key including your own.")) return;
+    setBusy(true);
+    try {
+      const r = await authFetch("/api/admin/keys?all=true", { method: "DELETE" });
+      const j = await r.json();
+      setError(r.ok ? null : j.error);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (!unlocked) {
     return (
@@ -147,10 +176,16 @@ export default function Admin() {
         </tbody>
       </table>
 
-      <h2>API keys ({keys.length})</h2>
+      <div className="pg-controls" style={{ marginTop: 32, marginBottom: 4, justifyContent: "space-between" }}>
+        <h2 style={{ margin: 0 }}>API keys ({keys.length})</h2>
+        <div className="pg-modes">
+          <button className="pill del" onClick={purgeSpam} disabled={busy}>Delete spam (batch-…)</button>
+          <button className="pill del" onClick={revokeAll} disabled={busy}>Revoke ALL</button>
+        </div>
+      </div>
       <table className="tbl">
         <thead>
-          <tr><th>Name</th><th>Prefix</th><th>Requests</th><th>Last used</th><th>Status</th></tr>
+          <tr><th>Name</th><th>Prefix</th><th>Requests</th><th>Last used</th><th>Status</th><th></th></tr>
         </thead>
         <tbody>
           {keys.map((k) => (
@@ -160,6 +195,7 @@ export default function Admin() {
               <td>{k.request_count}</td>
               <td className="muted">{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "—"}</td>
               <td>{k.revoked ? <span className="pill off">revoked</span> : <span className="pill on">active</span>}</td>
+              <td><button className="pill del" onClick={() => removeKey(k.id)}>delete</button></td>
             </tr>
           ))}
         </tbody>
