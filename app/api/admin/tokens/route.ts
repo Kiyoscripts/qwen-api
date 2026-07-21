@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addQwenToken, listQwenTokens, setQwenTokenActive, deleteQwenToken } from "@/lib/supabase";
+import { addQwenToken, addQwenTokens, listQwenTokens, setQwenTokenActive, deleteQwenToken } from "@/lib/supabase";
 import { invalidateTokenCache } from "@/lib/tokens";
 
 export const runtime = "nodejs";
@@ -26,6 +26,25 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
+
+  // Bulk: body.tokens is a newline-separated string (or array), one token per line.
+  if (body?.tokens !== undefined) {
+    const raw: string[] = Array.isArray(body.tokens) ? body.tokens : String(body.tokens).split(/\r?\n/);
+    const seen = new Set<string>();
+    const rows = raw
+      .map((t) => (typeof t === "string" ? t.trim() : ""))
+      .filter((t) => t && !seen.has(t) && seen.add(t))
+      .map((t) => ({ label: (typeof body.label === "string" && body.label) || null, token: t }));
+    if (rows.length === 0) return NextResponse.json({ error: "no tokens found" }, { status: 400 });
+    try {
+      const added = await addQwenTokens(rows);
+      invalidateTokenCache();
+      return NextResponse.json({ added });
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message }, { status: 500 });
+    }
+  }
+
   const token = typeof body?.token === "string" ? body.token.trim() : "";
   const label = typeof body?.label === "string" ? body.label : null;
   if (!token) return NextResponse.json({ error: "token is required" }, { status: 400 });

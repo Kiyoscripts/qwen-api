@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { withBotId } from "botid/next/config";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -11,4 +12,5 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+// withBotId sets up the proxy rewrites BotID needs to run its challenge.
+export default withBotId(nextConfig);

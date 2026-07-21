@@ -27,8 +27,10 @@ export default function Admin() {
   const [error, setError] = useState<string | null>(null);
   const [tokens, setTokens] = useState<TokenRow[]>([]);
   const [keys, setKeys] = useState<KeyRow[]>([]);
+  const [blacklist, setBlacklist] = useState<{ ip: string; reason: string | null; keys_deleted: number; created_at: string }[]>([]);
   const [newToken, setNewToken] = useState("");
   const [newLabel, setNewLabel] = useState("");
+  const [bulk, setBulk] = useState("");
   const [busy, setBusy] = useState(false);
 
   const authFetch = useCallback(
@@ -39,7 +41,11 @@ export default function Admin() {
 
   const load = useCallback(async () => {
     setError(null);
-    const [t, k] = await Promise.all([authFetch("/api/admin/tokens"), authFetch("/api/admin/keys")]);
+    const [t, k, b] = await Promise.all([
+      authFetch("/api/admin/tokens"),
+      authFetch("/api/admin/keys"),
+      authFetch("/api/admin/blacklist"),
+    ]);
     if (t.status === 401) {
       setUnlocked(false);
       setError("Wrong password.");
@@ -47,6 +53,7 @@ export default function Admin() {
     }
     setTokens((await t.json()).tokens || []);
     setKeys((await k.json()).keys || []);
+    setBlacklist((await b.json().catch(() => ({}))).blacklist || []);
     setUnlocked(true);
   }, [authFetch]);
 
@@ -82,6 +89,26 @@ export default function Admin() {
     }
   }
 
+  async function addBulk() {
+    if (!bulk.trim()) return;
+    setBusy(true);
+    try {
+      const r = await authFetch("/api/admin/tokens", { method: "POST", body: JSON.stringify({ tokens: bulk }) });
+      const j = await r.json();
+      if (!r.ok) setError(j.error || "Bulk add failed");
+      else {
+        setBulk("");
+        setError(null);
+      }
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function unban(ip: string) {
+    await authFetch(`/api/admin/blacklist?ip=${encodeURIComponent(ip)}`, { method: "DELETE" });
+    await load();
+  }
   async function toggle(id: string, active: boolean) {
     await authFetch("/api/admin/tokens", { method: "PATCH", body: JSON.stringify({ id, active }) });
     await load();
@@ -149,10 +176,23 @@ export default function Admin() {
 
       <h2>Qwen token pool ({tokens.filter((t) => t.active).length} active / {tokens.length})</h2>
       <div className="card" style={{ marginBottom: 12 }}>
-        <div className="row">
+        <div className="row" style={{ marginBottom: 10 }}>
           <input className="input" placeholder="Label (optional)" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} style={{ maxWidth: 180 }} />
-          <input className="input" placeholder="Paste a Qwen account token…" value={newToken} onChange={(e) => setNewToken(e.target.value)} />
+          <input className="input" placeholder="Paste a single Qwen account token…" value={newToken} onChange={(e) => setNewToken(e.target.value)} />
           <button className="btn" onClick={addToken} disabled={busy || !newToken.trim()}>Add</button>
+        </div>
+        <textarea
+          className="input"
+          style={{ width: "100%", minHeight: 90, fontFamily: "ui-monospace, monospace", fontSize: 12 }}
+          placeholder="…or bulk add: paste many tokens, one per line"
+          value={bulk}
+          onChange={(e) => setBulk(e.target.value)}
+        />
+        <div className="row" style={{ marginTop: 8, justifyContent: "flex-end" }}>
+          <span className="muted" style={{ alignSelf: "center", fontSize: 12 }}>
+            {bulk.trim() ? `${bulk.split(/\r?\n/).filter((l) => l.trim()).length} token(s)` : ""}
+          </span>
+          <button className="btn" onClick={addBulk} disabled={busy || !bulk.trim()}>Add all</button>
         </div>
       </div>
       <table className="tbl">
@@ -196,6 +236,25 @@ export default function Admin() {
               <td className="muted">{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "—"}</td>
               <td>{k.revoked ? <span className="pill off">revoked</span> : <span className="pill on">active</span>}</td>
               <td><button className="pill del" onClick={() => removeKey(k.id)}>delete</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>Blacklisted IPs ({blacklist.length})</h2>
+      <table className="tbl">
+        <thead>
+          <tr><th>IP</th><th>Reason</th><th>Keys deleted</th><th>When</th><th></th></tr>
+        </thead>
+        <tbody>
+          {blacklist.length === 0 && <tr><td colSpan={5} className="muted">None. IPs that mass-create keys are auto-banned here.</td></tr>}
+          {blacklist.map((b) => (
+            <tr key={b.ip}>
+              <td><code>{b.ip}</code></td>
+              <td className="muted">{b.reason || "—"}</td>
+              <td className="muted">{b.keys_deleted}</td>
+              <td className="muted">{new Date(b.created_at).toLocaleString()}</td>
+              <td><button className="pill" onClick={() => unban(b.ip)}>unban</button></td>
             </tr>
           ))}
         </tbody>

@@ -69,18 +69,28 @@ Environment Variables** (Production + Preview). Redeploy.
 
 ## 5. Get an API key
 
-**Public, self-serve** — visit the homepage and click **Generate key**, or:
+Visit the homepage and click **Generate key**. Key creation is protected by
+**Vercel BotID** — it only works from a real browser session on the site, so
+scripted/`curl` requests to `/api/keys` are blocked. It's also rate-limited
+(3/hr, 10/day per IP) and an IP that mass-creates keys is auto-blacklisted and
+its keys purged.
+
+Abuse controls (all env-tunable):
+
+| Var | Default | Purpose |
+| --- | --- | --- |
+| `PUBLIC_KEY_CREATION` | `true` | `false` = key creation becomes admin-only (kill switch). |
+| `KEY_RL_PER_IP_HOUR` / `KEY_RL_PER_IP_DAY` | `3` / `10` | Per-IP creation limits. |
+| `KEY_RL_GLOBAL_HOUR` | `0` (off) | Global/hour cap — leave off; it 429s everyone during a flood. |
+| `KEY_BLACKLIST_THRESHOLD` | `12` | Auto-ban an IP + delete its keys after this many. |
+
+The owner can always create keys out-of-band (bypasses BotID) via the admin
+endpoint, and list/revoke keys there:
 
 ```bash
-curl -X POST https://qwen3-8-api.vercel.app/api/keys \
-  -H "Content-Type: application/json" \
-  -d '{"name":"my first key"}'
-# -> { "key": "qwen_sk_...", ... }   (shown once; only its hash is stored)
-```
-
-To **list** existing keys (owner only), use the admin endpoint with your secret:
-
-```bash
+curl -X POST https://qwen3-8-api.vercel.app/api/admin/keys \
+  -H "x-admin-secret: <ADMIN_SECRET>" -H "Content-Type: application/json" \
+  -d '{"name":"my key"}'
 curl https://qwen3-8-api.vercel.app/api/admin/keys -H "x-admin-secret: <ADMIN_SECRET>"
 ```
 

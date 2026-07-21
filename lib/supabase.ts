@@ -66,6 +66,49 @@ export async function createApiKey(name: string | null, ip?: string | null): Pro
   return { id: data.id, key, key_prefix };
 }
 
+// --- IP blacklist ----------------------------------------------------------
+
+export async function isIpBlacklisted(ip: string): Promise<boolean> {
+  if (!ip || ip === "unknown") return false;
+  const { data } = await admin().from("blacklisted_ips").select("ip").eq("ip", ip).maybeSingle();
+  return Boolean(data);
+}
+
+export async function blacklistIp(ip: string, reason: string, keysDeleted = 0) {
+  await admin().from("blacklisted_ips").upsert({ ip, reason, keys_deleted: keysDeleted }, { onConflict: "ip" });
+}
+
+// Delete every key created by an IP. Returns how many were removed.
+export async function deleteKeysByIp(ip: string): Promise<number> {
+  const { error, count } = await admin().from("api_keys").delete({ count: "exact" }).eq("created_ip", ip);
+  if (error) throw new Error(error.message);
+  return count || 0;
+}
+
+// Total keys ever created by an IP.
+export async function countKeysByIp(ip: string): Promise<number> {
+  const { count, error } = await admin()
+    .from("api_keys")
+    .select("id", { count: "exact", head: true })
+    .eq("created_ip", ip);
+  if (error) return 0;
+  return count || 0;
+}
+
+export async function listBlacklist() {
+  const { data, error } = await admin()
+    .from("blacklisted_ips")
+    .select("ip, reason, keys_deleted, created_at")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+export async function unblacklistIp(ip: string) {
+  const { error } = await admin().from("blacklisted_ips").delete().eq("ip", ip);
+  if (error) throw new Error(error.message);
+}
+
 // How many keys were created by this IP in the last `windowMs`.
 export async function countRecentKeysByIp(ip: string, windowMs: number): Promise<number> {
   const since = new Date(Date.now() - windowMs).toISOString();
@@ -142,6 +185,14 @@ export async function addQwenToken(label: string | null, token: string) {
     .single();
   if (error) throw new Error(error.message);
   return data;
+}
+
+// Bulk-insert many tokens at once (one per entry). Returns how many were added.
+export async function addQwenTokens(rows: { label: string | null; token: string }[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const { data, error } = await admin().from("qwen_tokens").insert(rows).select("id");
+  if (error) throw new Error(error.message);
+  return data?.length || 0;
 }
 
 // List tokens for the admin dashboard — the raw token is masked, never returned whole.
