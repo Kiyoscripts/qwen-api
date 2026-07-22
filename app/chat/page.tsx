@@ -51,10 +51,6 @@ function describeModel(m: ModelOpt): string {
   return "Text, " + bits.join(", ");
 }
 
-// How many times a truncated reply may auto-resume. Each attempt gets a fresh
-// serverless budget, so 3 covers roughly 20 minutes of generation.
-const MAX_AUTO_CONTINUE = 3;
-
 const STORE = "qwen_chat_conversations";
 const KEY_STORE = "qwen_api_key";
 const DEFAULT_MODEL = "qwen3.8-max-preview";
@@ -329,30 +325,10 @@ export default function Chat() {
     abortRef.current = ctrl;
 
     try {
-      let convo = toApi(history);
-      let acc = { content: "", reasoning: "" };
-
-      for (let attempt = 0; attempt <= MAX_AUTO_CONTINUE; attempt++) {
-        const before = acc.content.length + acc.reasoning.length;
-        const r = await streamTurn(convo, acc, ctrl.signal);
-        acc = { content: r.content, reasoning: r.reasoning };
-
-        if (r.complete) break;
-        // Nothing new arrived, so continuing again would just spin.
-        if (acc.content.length + acc.reasoning.length === before) break;
-        if (attempt === MAX_AUTO_CONTINUE) break;
-
-        // Truncated: resume from exactly where it stopped.
-        convo = [
-          ...convo,
-          { role: "assistant", content: acc.content || acc.reasoning },
-          {
-            role: "user",
-            content:
-              "Your previous reply was cut off. Continue from exactly where it stopped. Do not repeat anything you already wrote, and do not restart.",
-          },
-        ];
-      }
+      // One request per message. (Auto-continue was removed: each retry is a full
+      // generation and burns account usage far too quickly. If a reply is cut off,
+      // its partial text is kept and typing "continue" resumes from it.)
+      await streamTurn(toApi(history), { content: "", reasoning: "" }, ctrl.signal);
     } catch (e: any) {
       if (e.name === "AbortError") {
         setError(null);

@@ -10,7 +10,7 @@ import {
   resolveModel,
   QwenError,
 } from "@/lib/qwen";
-import { pickToken } from "@/lib/tokens";
+import { withTokenFailover } from "@/lib/tokens";
 import { extractApiKey, validateApiKey, logUsage } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -47,33 +47,38 @@ export async function POST(req: NextRequest) {
   const modelId = typeof body.model === "string" && body.model ? body.model : DEFAULT_VIDEO_MODEL;
   const wait = body.wait === true;
 
-  let pooled;
-  try {
-    pooled = await pickToken();
-  } catch (e: any) {
-    return err(e.message, 503, "no_token");
-  }
-  const token = pooled.token;
-
-  const model = await resolveModel(token, modelId);
-  if (!model) return err(`Model '${modelId}' is not available.`, 404, "model_not_found");
-  if (!model.chatTypes.includes("t2v")) return err(`Model '${modelId}' does not support video generation.`, 400, "model_not_supported");
-
+  // Fail over to an account that still has usage left.
+  let token: string;
   let chatId: string | undefined;
   let taskId: string | null = null;
   try {
-    chatId = await createChat(token, modelId, "t2v");
-    const messages = [buildMessage([{ role: "user", content: prompt }], { model: modelId, chatType: "t2v", thinking: false })];
-    // Video is async: the non-stream request returns a task id.
-    const res = await openCompletion(token, chatId, { model: modelId, messages, stream: false });
-    const json = await res.json().catch(() => ({}));
-    taskId = extractWanxTaskId(json);
-    if (!taskId) throw new QwenError(`No video task returned: ${JSON.stringify(json).slice(0, 200)}`);
+    const { token: usedToken, result } = await withTokenFailover(async (candidate) => {
+      const model = await resolveModel(candidate, modelId);
+      if (!model) throw new QwenError(`Model '${modelId}' is not available.`, 404);
+      if (!model.chatTypes.includes("t2v")) throw new QwenError(`Model '${modelId}' does not support video generation.`, 400);
+
+      let cid: string | undefined;
+      try {
+        cid = await createChat(candidate, modelId, "t2v");
+        const messages = [buildMessage([{ role: "user", content: prompt }], { model: modelId, chatType: "t2v", thinking: false })];
+        // Video is async: the non-stream request returns a task id.
+        const res = await openCompletion(candidate, cid, { model: modelId, messages, stream: false });
+        const json = await res.json().catch(() => ({}));
+        const tid = extractWanxTaskId(json);
+        if (!tid) throw new QwenError(`No video task returned: ${JSON.stringify(json).slice(0, 200)}`);
+        return { chatId: cid, taskId: tid };
+      } catch (e) {
+        await deleteChat(candidate, cid);
+        throw e;
+      }
+    });
+    token = usedToken;
+    chatId = result.chatId;
+    taskId = result.taskId;
   } catch (e: any) {
-    await deleteChat(token, chatId);
     const status = e instanceof QwenError ? e.status : 502;
     logUsage(record.id, modelId, false, false, status);
-    return err(e.message || "Video generation failed", status, "upstream_error");
+    return err(e.message || "Video generation failed", status, status === 404 ? "model_not_found" : "upstream_error");
   }
 
   if (!wait) {

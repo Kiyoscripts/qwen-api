@@ -53,7 +53,7 @@ export async function pickToken(): Promise<PoolEntry> {
 // Errors that mean "this account is no good right now" — try a different one.
 // (daily quota, rate limiting, expired/invalid token, anti-bot challenge)
 export function isTokenFailure(message: string): boolean {
-  return /upper limit|today's usage|quota|rate ?limit|too many requests|429|unauthorized|session has expired|no longer valid|challenge|Internal error/i.test(
+  return /upper limit|upper limit for today|today's usage|usage limit|out of (?:quota|credits)|quota|limit reached|rate ?limit|too many requests|429|unauthorized|session has expired|no longer valid|challenge|Internal error/i.test(
     message || ""
   );
 }
@@ -77,7 +77,9 @@ function noteFailure(entry: PoolEntry) {
  */
 export async function withTokenFailover<T>(
   attempt: (token: string) => Promise<T>,
-  maxAttempts = 4
+  // An exhausted account rejects immediately without generating anything, so
+  // trying several is cheap. Worth a higher ceiling when many are used up.
+  maxAttempts = 8
 ): Promise<{ token: string; result: T }> {
   const pool = await loadPool();
   if (pool.length === 0) throw new Error("No Qwen tokens configured (add one in the admin dashboard or set QWEN_TOKEN).");

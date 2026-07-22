@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getModels } from "@/lib/qwen";
-import { pickToken } from "@/lib/tokens";
+import { withTokenFailover } from "@/lib/tokens";
 import { extractApiKey, validateApiKey } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -11,8 +11,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: { message: "Invalid or missing API key.", type: "invalid_request_error" } }, { status: 401 });
   }
   try {
-    const { token } = await pickToken();
-    const models = await getModels(token);
+    const { result: models } = await withTokenFailover((token) => getModels(token));
     return NextResponse.json({
       object: "list",
       data: models.map((m) => ({

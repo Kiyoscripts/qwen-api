@@ -9,7 +9,7 @@ import {
   resolveModel,
   QwenError,
 } from "@/lib/qwen";
-import { pickToken } from "@/lib/tokens";
+import { withTokenFailover } from "@/lib/tokens";
 import { extractApiKey, validateApiKey, logUsage } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -54,36 +54,37 @@ export async function POST(req: NextRequest) {
   const size = toRatio(body.size);
   const wantB64 = body.response_format === "b64_json";
 
-  let pooled;
-  try {
-    pooled = await pickToken();
-  } catch (e: any) {
-    return err(e.message, 503, "no_token");
-  }
-  const token = pooled.token;
-
-  const model = await resolveModel(token, modelId);
-  if (!model) return err(`Model '${modelId}' is not available.`, 404, "model_not_found");
-  if (!model.chatTypes.includes("t2i")) return err(`Model '${modelId}' does not support image generation.`, 400, "model_not_supported");
-
-  let chatId: string | undefined;
+  // An account that is out of usage rejects instantly, so fail over to one that
+  // still has quota instead of failing the request.
   let url = "";
   try {
-    chatId = await createChat(token, modelId, "t2i");
-    const messages = [buildMessage([{ role: "user", content: prompt }], { model: modelId, chatType: "t2i", thinking: false, size })];
-    const res = await openCompletion(token, chatId, { model: modelId, messages, stream: true, size });
-    let content = "";
-    for await (const { text } of qwenDeltas(res)) content += text;
-    const m = content.match(/https?:\/\/[^"\\\s]+/);
-    if (!m) throw new QwenError("No image URL returned.");
-    url = m[0];
+    const { result } = await withTokenFailover(async (token) => {
+      const model = await resolveModel(token, modelId);
+      if (!model) throw new QwenError(`Model '${modelId}' is not available.`, 404);
+      if (!model.chatTypes.includes("t2i")) throw new QwenError(`Model '${modelId}' does not support image generation.`, 400);
+
+      let chatId: string | undefined;
+      try {
+        chatId = await createChat(token, modelId, "t2i");
+        const messages = [buildMessage([{ role: "user", content: prompt }], { model: modelId, chatType: "t2i", thinking: false, size })];
+        const res = await openCompletion(token, chatId, { model: modelId, messages, stream: true, size });
+        let content = "";
+        for await (const { text } of qwenDeltas(res)) content += text;
+        const m = content.match(/https?:\/\/[^"\\\s]+/);
+        if (!m) throw new QwenError("No image URL returned.");
+        await Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);
+        return m[0];
+      } catch (e) {
+        await deleteChat(token, chatId);
+        throw e;
+      }
+    });
+    url = result;
   } catch (e: any) {
-    await deleteChat(token, chatId);
     const status = e instanceof QwenError ? e.status : 502;
     logUsage(record.id, modelId, false, false, status);
-    return err(e.message || "Image generation failed", status, "upstream_error");
+    return err(e.message || "Image generation failed", status, status === 404 ? "model_not_found" : "upstream_error");
   }
-  await Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);
   logUsage(record.id, modelId, false, false, 200);
 
   const created = Math.floor(Date.now() / 1000);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkTask, deleteChat, forgetAllMemories } from "@/lib/qwen";
-import { pickToken } from "@/lib/tokens";
+import { withTokenFailover } from "@/lib/tokens";
 import { extractApiKey, validateApiKey } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -22,8 +22,7 @@ export async function GET(req: NextRequest) {
   if (!taskId) return NextResponse.json({ error: { message: "task_id is required." } }, { status: 400 });
 
   try {
-    const { token } = await pickToken();
-    const state = await checkTask(token, taskId);
+    const { token, result: state } = await withTokenFailover((t) => checkTask(t, taskId));
     if (state.status === "completed") {
       // Task is done — tidy up the throwaway chat.
       void Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);
