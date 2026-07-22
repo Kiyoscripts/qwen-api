@@ -14,7 +14,18 @@ import {
   type OpenAIMessage,
 } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
-import { extractApiKey, validateApiKey, logUsage } from "@/lib/supabase";
+import {
+  isDeepSeekModel,
+  resolveDeepSeekModel,
+  createSession,
+  deleteSession,
+  openCompletion as openDeepSeekCompletion,
+  deepseekDeltas,
+  collapseMessages,
+  uploadImages as uploadDeepSeekImages,
+  DeepSeekError,
+} from "@/lib/deepseek";
+import { extractApiKey, validateApiKey, logUsage, getDeepSeekToken, noteDeepSeekTokenError } from "@/lib/supabase";
 import { randomUUID } from "node:crypto";
 
 export const runtime = "nodejs";
@@ -55,6 +66,12 @@ export async function POST(req: NextRequest) {
   const modelId = typeof body.model === "string" && body.model ? body.model : DEFAULT_MODEL;
 
   const hadImage = imageUrlsIn(messages[messages.length - 1]).length > 0;
+
+  // DeepSeek models are served by a separate reverse-engineered backend
+  // (chat.deepseek.com) rather than the Qwen account pool.
+  if (isDeepSeekModel(modelId)) {
+    return handleDeepSeek({ messages, modelId, wantStream, hadImage, thinking: body.thinking === true, recordId: record.id });
+  }
 
   // Run the whole setup under token failover: if an account is out of quota,
   // rate-limited or expired, transparently retry on a different pooled account.
@@ -143,6 +160,115 @@ export async function POST(req: NextRequest) {
 
   const message: Record<string, unknown> = { role: "assistant", content };
   if (withReasoning && reasoning) message.reasoning_content = reasoning;
+
+  return NextResponse.json({
+    id,
+    object: "chat.completion",
+    created,
+    model: modelId,
+    choices: [{ index: 0, message, finish_reason: "stop" }],
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  });
+}
+
+// --- DeepSeek (chat.deepseek.com) -------------------------------------------
+// Stateless like the Qwen path: create a throwaway session, send the collapsed
+// history as one prompt, stream, then delete the session. DeepThink reasoning is
+// exposed as `reasoning_content`. Images route to the dedicated "vision" model.
+async function handleDeepSeek(args: {
+  messages: OpenAIMessage[];
+  modelId: string;
+  wantStream: boolean;
+  hadImage: boolean;
+  thinking: boolean;
+  recordId: string;
+}) {
+  const { messages, modelId, wantStream, hadImage, thinking, recordId } = args;
+
+  const model = resolveDeepSeekModel(modelId);
+  if (!model) {
+    logUsage(recordId, modelId, hadImage, wantStream, 404);
+    return err(`Model '${modelId}' is not available.`, 404, "model_not_found");
+  }
+
+  // "Bring your own token": each key runs on its owner's own DeepSeek account.
+  // Fall back to an owner-wide DEEPSEEK_TOKEN only if the env has one set.
+  const token = (await getDeepSeekToken(recordId)) || process.env.DEEPSEEK_TOKEN || null;
+  if (!token) {
+    logUsage(recordId, modelId, hadImage, wantStream, 402);
+    return err(
+      "No DeepSeek account linked to this API key. Link your DeepSeek token at /link to use the deepseek-* models.",
+      402,
+      "deepseek_not_linked"
+    );
+  }
+
+  // Only the vision model accepts images, so an image forces model_type "vision".
+  const imageUrls = imageUrlsIn(messages[messages.length - 1]);
+  const modelType = imageUrls.length > 0 ? "vision" : model.modelType;
+  const prompt = collapseMessages(messages);
+
+  let sessionId: string | undefined;
+  let dsRes: Response;
+  try {
+    // Uploads + waits for each image to finish parsing (status SUCCESS) before use.
+    const refFileIds = imageUrls.length > 0 ? await uploadDeepSeekImages(token, imageUrls) : [];
+    sessionId = await createSession(token);
+    dsRes = await openDeepSeekCompletion(token, { sessionId, modelType, prompt, refFileIds, thinking });
+  } catch (e: any) {
+    await deleteSession(token, sessionId);
+    const status = e instanceof DeepSeekError ? e.status : 502;
+    if (status === 401) noteDeepSeekTokenError(recordId, e.message || "token rejected");
+    logUsage(recordId, modelId, hadImage, wantStream, status);
+    return err(e.message || "Upstream error", status, "upstream_error");
+  }
+
+  const id = "chatcmpl-" + randomUUID();
+  const created = Math.floor(Date.now() / 1000);
+  const cleanup = () => deleteSession(token, sessionId);
+
+  if (wantStream) {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
+        try {
+          for await (const { kind, text } of deepseekDeltas(dsRes)) {
+            const delta = kind === "thinking" ? { reasoning_content: text } : { content: text };
+            send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: null }] });
+          }
+        } catch (e: any) {
+          send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: `\n[error: ${e.message}]` }, finish_reason: null }] });
+        }
+        send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+        await cleanup();
+        logUsage(recordId, modelId, hadImage, true, 200);
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  }
+
+  let content = "";
+  let reasoning = "";
+  try {
+    for await (const { kind, text } of deepseekDeltas(dsRes)) {
+      if (kind === "thinking") reasoning += text;
+      else content += text;
+    }
+  } catch (e: any) {
+    await cleanup();
+    const status = e instanceof DeepSeekError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, false, status);
+    return err(e.message, status, "upstream_error");
+  }
+  await cleanup();
+  logUsage(recordId, modelId, hadImage, false, 200);
+
+  const message: Record<string, unknown> = { role: "assistant", content };
+  if (reasoning) message.reasoning_content = reasoning;
 
   return NextResponse.json({
     id,

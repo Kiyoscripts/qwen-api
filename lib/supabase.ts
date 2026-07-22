@@ -22,6 +22,10 @@ export function hashKey(key: string): string {
   return createHash("sha256").update(key).digest("hex");
 }
 
+function supabaseConfigured(): boolean {
+  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
 export interface ApiKeyRecord {
   id: string;
   name: string | null;
@@ -40,6 +44,13 @@ export function extractApiKey(headers: Headers): string | null {
 
 // Validate a key against Supabase. Returns the record or null. Bumps usage.
 export async function validateApiKey(key: string): Promise<ApiKeyRecord | null> {
+  // Local-dev bypass: if DEV_MASTER_KEY is set (never set it in production) and
+  // matches, accept without Supabase. Lets you test the proxy with no DB set up.
+  const devKey = process.env.DEV_MASTER_KEY;
+  if (devKey && key === devKey) {
+    return { id: "dev", name: "dev", key_hash: "", key_prefix: "dev", revoked: false };
+  }
+  if (!supabaseConfigured()) return null;
   const key_hash = hashKey(key);
   const { data, error } = await admin()
     .from("api_keys")
@@ -169,6 +180,7 @@ export async function listApiKeys() {
 }
 
 export async function logUsage(apiKeyId: string, model: string, hadImage: boolean, streamed: boolean, status: number) {
+  if (!supabaseConfigured()) return; // no DB in local-dev / bypass mode
   admin()
     .from("usage_logs")
     .insert({ api_key_id: apiKeyId, model, had_image: hadImage, streamed, status })
@@ -221,4 +233,39 @@ export async function setQwenTokenActive(id: string, active: boolean) {
 export async function deleteQwenToken(id: string) {
   const { error } = await admin().from("qwen_tokens").delete().eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+// --- DeepSeek "bring your own token" links ----------------------------------
+// Each API key links its owner's own chat.deepseek.com token, stored in
+// `deepseek_user_tokens` (RLS on, service-role only). Tokens are secrets: they are
+// used server-side and never returned to any client.
+
+export async function setDeepSeekToken(apiKeyId: string, token: string): Promise<void> {
+  const { error } = await admin()
+    .from("deepseek_user_tokens")
+    .upsert({ api_key_id: apiKeyId, token, linked_at: new Date().toISOString(), last_error: null }, { onConflict: "api_key_id" });
+  if (error) throw new Error(error.message);
+}
+
+export async function getDeepSeekToken(apiKeyId: string): Promise<string | null> {
+  if (!supabaseConfigured()) return null;
+  const { data } = await admin().from("deepseek_user_tokens").select("token").eq("api_key_id", apiKeyId).maybeSingle();
+  return data?.token || null;
+}
+
+export async function isDeepSeekLinked(apiKeyId: string): Promise<boolean> {
+  if (!supabaseConfigured()) return false;
+  const { data } = await admin().from("deepseek_user_tokens").select("api_key_id").eq("api_key_id", apiKeyId).maybeSingle();
+  return Boolean(data);
+}
+
+export async function deleteDeepSeekToken(apiKeyId: string): Promise<void> {
+  const { error } = await admin().from("deepseek_user_tokens").delete().eq("api_key_id", apiKeyId);
+  if (error) throw new Error(error.message);
+}
+
+// Mark a linked token as failing (e.g. expired/banned) so the user sees why.
+export function noteDeepSeekTokenError(apiKeyId: string, message: string) {
+  if (!supabaseConfigured()) return;
+  admin().from("deepseek_user_tokens").update({ last_error: message.slice(0, 200) }).eq("api_key_id", apiKeyId).then(() => {}, () => {});
 }

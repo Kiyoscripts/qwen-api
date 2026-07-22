@@ -66,6 +66,9 @@ export default function Home() {
         <a className="btn ghost" href="/playground" style={{ display: "inline-block" }}>
           Playground
         </a>
+        <a className="btn ghost" href="/link" style={{ display: "inline-block" }}>
+          Link DeepSeek
+        </a>
       </p>
 
       <h2 id="get-a-key">Get an API key</h2>

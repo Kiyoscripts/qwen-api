@@ -394,7 +394,7 @@ export default function Chat() {
           setModelMenu(false);
         }}
       >
-        <img className="c-model-icon" src="/qwen.svg" alt="" width={20} height={20} />
+        <img className="c-model-icon" src={m.id.startsWith("deepseek") ? "/deepseek.svg" : "/qwen.svg"} alt="" width={20} height={20} />
         <span className="c-model-text">
           <span className="c-model-name">{m.name}</span>
           <span className="c-model-desc">{describeModel(m)}</span>
@@ -597,7 +597,7 @@ export default function Chat() {
                           i === messages.length - 1 && (
                             <img
                               className="c-gen-logo"
-                              src="/qwen.svg"
+                              src={active?.model?.startsWith("deepseek") ? "/deepseek.svg" : "/qwen.svg"}
                               alt="Generating response"
                               width={26}
                               height={26}
