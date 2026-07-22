@@ -32,6 +32,7 @@ export default function Playground() {
   const [voices, setVoices] = useState<VoiceOpt[]>([]);
   const [voice, setVoice] = useState("");
   const [mode, setMode] = useState<Mode>("chat");
+  const [imageModel, setImageModel] = useState("qwen-image-3.0");
   const [input, setInput] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -39,9 +40,12 @@ export default function Playground() {
   const [showThinking, setShowThinking] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const current = models.find((m) => m.id === model);
-  const canImage = current?.chatTypes.includes("t2i") ?? true;
-  const canVideo = current?.chatTypes.includes("t2v") ?? true;
+  // Image/video are dedicated models now, so they don't belong in the chat-model
+  // picker and image generation no longer depends on the selected chat model.
+  const isMedia = (id: string) => id.startsWith("qwen-image") || id === "qwen-vlo";
+  const chatModels = models.filter((m) => !isMedia(m.id));
+  const imageModels = models.filter((m) => m.id.startsWith("qwen-image"));
+  const videoAvailable = models.some((m) => m.id === "qwen-vlo");
 
   const loadModels = useCallback(async (key: string) => {
     if (!key) return;
@@ -55,7 +59,10 @@ export default function Playground() {
         chatTypes: m.capabilities?.chat_types || ["t2t"],
       }));
       setModels(opts);
-      if (opts.length && !opts.find((o) => o.id === model)) setModel(opts[0].id);
+      const chats = opts.filter((o) => !o.id.startsWith("qwen-image") && o.id !== "qwen-vlo");
+      if (chats.length && !chats.find((o) => o.id === model)) setModel(chats[0].id);
+      const imgs = opts.filter((o) => o.id.startsWith("qwen-image"));
+      if (imgs.length && !imgs.find((o) => o.id === imageModel)) setImageModel(imgs[0].id);
     } catch {
       /* ignore */
     }
@@ -86,11 +93,10 @@ export default function Playground() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [turns]);
-  // If current model can't do the selected mode, fall back to chat.
+  // Video is optional; if it's not available, don't leave the user stuck on it.
   useEffect(() => {
-    if (mode === "image" && !canImage) setMode("chat");
-    if (mode === "video" && !canVideo) setMode("chat");
-  }, [model, mode, canImage, canVideo]);
+    if (mode === "video" && !videoAvailable) setMode("chat");
+  }, [mode, videoAvailable]);
 
   function onImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -173,7 +179,7 @@ export default function Playground() {
     const res = await fetch("/v1/images/generations", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, prompt }),
+      body: JSON.stringify({ model: imageModel, prompt }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(j?.error?.message || `HTTP ${res.status}`);
@@ -322,24 +328,33 @@ export default function Playground() {
               </option>
             ))}
           </select>
+        ) : mode === "image" ? (
+          <select className="input pg-select" value={imageModel} onChange={(e) => setImageModel(e.target.value)}>
+            {imageModels.length === 0 && <option value={imageModel}>{imageModel}</option>}
+            {imageModels.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
         ) : (
           <select className="input pg-select" value={model} onChange={(e) => setModel(e.target.value)}>
-            {models.length === 0 && <option value={model}>{model}</option>}
-            {models.map((m) => (
+            {chatModels.length === 0 && <option value={model}>{model}</option>}
+            {chatModels.map((m) => (
               <option key={m.id} value={m.id}>{m.name}</option>
             ))}
           </select>
         )}
         <div className="pg-modes">
           <button className={`pill ${mode === "chat" ? "on" : ""}`} onClick={() => setMode("chat")}>Chat</button>
-          <button className={`pill ${mode === "image" ? "on" : ""}`} onClick={() => setMode("image")} disabled={!canImage} title={canImage ? "" : "This model can't generate images"}>Image</button>
-          <button className={`pill ${mode === "video" ? "on" : ""}`} onClick={() => setMode("video")} disabled={!canVideo} title={canVideo ? "" : "This model can't generate video"}>Video</button>
+          <button className={`pill ${mode === "image" ? "on" : ""}`} onClick={() => setMode("image")}>Image</button>
+          {videoAvailable && (
+            <button className={`pill ${mode === "video" ? "on" : ""}`} onClick={() => setMode("video")}>Video</button>
+          )}
           <button className={`pill ${mode === "tts" ? "on" : ""}`} onClick={() => setMode("tts")}>Speech</button>
         </div>
       </div>
 
       <div className="pg-chat" ref={scrollRef}>
-        {turns.length === 0 && <p className="pg-empty">Pick a model and mode, then start. Chat supports image input; Image/Video generate media.</p>}
+        {turns.length === 0 && <p className="pg-empty">Pick a mode, then start. Chat supports image input; Image generates pictures{videoAvailable ? "/video" : ""}.</p>}
         {turns.map((t, i) => (
           <div key={i} className={`bubble ${t.role}`}>
             {t.image && <img className="bubble-img" src={t.image} alt="attachment" />}
