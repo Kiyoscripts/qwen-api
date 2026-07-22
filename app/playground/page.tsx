@@ -8,6 +8,7 @@ interface ModelOpt {
   id: string;
   name: string;
   chatTypes: string[];
+  thinking: boolean;
 }
 interface VoiceOpt {
   speaker: string;
@@ -33,6 +34,8 @@ export default function Playground() {
   const [voice, setVoice] = useState("");
   const [mode, setMode] = useState<Mode>("chat");
   const [imageModel, setImageModel] = useState("qwen-image-3.0");
+  const [aspect, setAspect] = useState("1:1");
+  const [fast, setFast] = useState(false); // Think (default) vs Fast, non-3.8 models
   const [input, setInput] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -46,6 +49,10 @@ export default function Playground() {
   const chatModels = models.filter((m) => !isMedia(m.id));
   const imageModels = models.filter((m) => m.id.startsWith("qwen-image"));
   const videoAvailable = models.some((m) => m.id === "qwen-vlo");
+  // Think/Fast is offered for thinking-capable chat models except 3.8 Max Preview,
+  // which always reasons (thinking can't be turned off there).
+  const thinkForced = model === "qwen3.8-max-preview";
+  const canPickThink = (chatModels.find((m) => m.id === model)?.thinking ?? false) && !thinkForced;
 
   const loadModels = useCallback(async (key: string) => {
     if (!key) return;
@@ -57,6 +64,7 @@ export default function Playground() {
         id: m.id,
         name: m.display_name || m.id,
         chatTypes: m.capabilities?.chat_types || ["t2t"],
+        thinking: Boolean(m.capabilities?.thinking),
       }));
       setModels(opts);
       const chats = opts.filter((o) => !o.id.startsWith("qwen-image") && o.id !== "qwen-vlo");
@@ -119,7 +127,7 @@ export default function Playground() {
     const res = await fetch("/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, stream: true, messages: toApiMessages(history) }),
+      body: JSON.stringify({ model, stream: true, messages: toApiMessages(history), enable_thinking: canPickThink ? !fast : undefined }),
     });
     if (!res.ok || !res.body) {
       const j = await res.json().catch(() => ({}));
@@ -179,7 +187,7 @@ export default function Playground() {
     const res = await fetch("/v1/images/generations", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: imageModel, prompt }),
+      body: JSON.stringify({ model: imageModel, prompt, size: aspect }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(j?.error?.message || `HTTP ${res.status}`);
@@ -329,12 +337,21 @@ export default function Playground() {
             ))}
           </select>
         ) : mode === "image" ? (
-          <select className="input pg-select" value={imageModel} onChange={(e) => setImageModel(e.target.value)}>
-            {imageModels.length === 0 && <option value={imageModel}>{imageModel}</option>}
-            {imageModels.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </select>
+          <>
+            <select className="input pg-select" value={imageModel} onChange={(e) => setImageModel(e.target.value)}>
+              {imageModels.length === 0 && <option value={imageModel}>{imageModel}</option>}
+              {imageModels.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+            <select className="input pg-select" value={aspect} onChange={(e) => setAspect(e.target.value)} title="Aspect ratio">
+              <option value="1:1">1:1 · Square</option>
+              <option value="16:9">16:9 · Landscape</option>
+              <option value="9:16">9:16 · Portrait</option>
+              <option value="4:3">4:3</option>
+              <option value="3:4">3:4</option>
+            </select>
+          </>
         ) : (
           <select className="input pg-select" value={model} onChange={(e) => setModel(e.target.value)}>
             {chatModels.length === 0 && <option value={model}>{model}</option>}
@@ -351,6 +368,12 @@ export default function Playground() {
           )}
           <button className={`pill ${mode === "tts" ? "on" : ""}`} onClick={() => setMode("tts")}>Speech</button>
         </div>
+        {mode === "chat" && canPickThink && (
+          <div className="pg-modes" role="group" aria-label="Reasoning">
+            <button className={`pill ${!fast ? "on" : ""}`} onClick={() => setFast(false)} title="Reason step by step (slower, better)">Think</button>
+            <button className={`pill ${fast ? "on" : ""}`} onClick={() => setFast(true)} title="Skip reasoning (faster)">Fast</button>
+          </div>
+        )}
       </div>
 
       <div className="pg-chat" ref={scrollRef}>

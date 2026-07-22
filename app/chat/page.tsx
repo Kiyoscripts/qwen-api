@@ -92,6 +92,8 @@ export default function Chat() {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [modelMenu, setModelMenu] = useState(false);
   const [showOthers, setShowOthers] = useState(false);
+  const [fast, setFast] = useState(false); // Think (default) vs Fast
+  const [aspect, setAspect] = useState("1:1"); // image aspect ratio
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -100,6 +102,10 @@ export default function Chat() {
 
   const active = conversations.find((c) => c.id === activeId);
   const messages = active?.messages ?? [];
+  const activeModel = models.find((m) => m.id === active?.model);
+  const isImageModel = (active?.model || "").startsWith("qwen-image");
+  // Think/Fast: thinking-capable chat models, except 3.8 Max Preview (always reasons).
+  const canPickThink = (activeModel?.thinking ?? false) && active?.model !== "qwen3.8-max-preview" && !isImageModel;
 
   // --- boot: restore key + conversations ---
   useEffect(() => {
@@ -262,7 +268,13 @@ export default function Chat() {
       method: "POST",
       signal,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: active!.model, stream: true, messages: convo }),
+      body: JSON.stringify({
+        model: active!.model,
+        stream: true,
+        messages: convo,
+        ...(canPickThink ? { enable_thinking: !fast } : {}),
+        ...(isImageModel ? { size: aspect } : {}),
+      }),
     });
     if (!res.ok || !res.body) {
       const j = await res.json().catch(() => ({}));
@@ -432,6 +444,21 @@ export default function Chat() {
             <Paperclip size={19} />
             <input type="file" accept="image/*" hidden onChange={onImage} disabled={!apiKey} />
           </label>
+          {canPickThink && (
+            <div className="c-seg" role="group" aria-label="Reasoning">
+              <button type="button" className={!fast ? "on" : ""} onClick={() => setFast(false)} title="Reason step by step (slower, better)">Think</button>
+              <button type="button" className={fast ? "on" : ""} onClick={() => setFast(true)} title="Skip reasoning (faster)">Fast</button>
+            </div>
+          )}
+          {isImageModel && (
+            <select className="c-aspect" value={aspect} onChange={(e) => setAspect(e.target.value)} title="Aspect ratio" aria-label="Aspect ratio">
+              <option value="1:1">1:1</option>
+              <option value="16:9">16:9</option>
+              <option value="9:16">9:16</option>
+              <option value="4:3">4:3</option>
+              <option value="3:4">3:4</option>
+            </select>
+          )}
           <div className="c-spacer" />
           {busy ? (
             <button className="c-send stop" onClick={stop} aria-label="Stop generating">

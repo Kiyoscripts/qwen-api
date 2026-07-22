@@ -36,6 +36,10 @@ export const maxDuration = 300;
 
 const DEFAULT_MODEL = "qwen3.8-max-preview";
 
+// These models require feature_config.thinking_enabled = true — they can't run in
+// "Fast" (non-thinking) mode, so `enable_thinking: false` is ignored for them.
+const REQUIRE_THINKING = new Set(["qwen3.8-max-preview"]);
+
 function err(message: string, status: number, type = "invalid_request_error") {
   return NextResponse.json({ error: { message, type } }, { status });
 }
@@ -97,7 +101,12 @@ export async function POST(req: NextRequest) {
       let cid: string | undefined;
       try {
         cid = await createChat(candidate, modelId, "t2t");
-        const qwenMessages = [buildMessage(messages, { model: modelId, chatType: "t2t", files, thinking: model.thinking })];
+        // Think (default) vs Fast: callers can pass `enable_thinking: false` to skip
+        // reasoning on models that support it. Models in REQUIRE_THINKING stay on.
+        const thinking = REQUIRE_THINKING.has(modelId)
+          ? true
+          : model.thinking && body.enable_thinking !== false;
+        const qwenMessages = [buildMessage(messages, { model: modelId, chatType: "t2t", files, thinking })];
         // Always stream from Qwen (it returns SSE); we buffer it for non-streaming clients.
         const res = await openCompletion(candidate, cid, { model: modelId, messages: qwenMessages, stream: true });
         return { chatId: cid, res };
