@@ -443,6 +443,8 @@ code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, mo
 .c-md tr:last-child td { border-bottom: none; }
 .c-md th { background: #2f2f2f; font-weight: 600; }
 
+.c-gen-media { max-width: 100%; width: 380px; border-radius: 14px; display: block; margin: 4px 0; background: #2f2f2f; }
+
 .c-code { position: relative; margin: 0 0 16px; border-radius: 12px; background: #0d0d0d; overflow: hidden; }
 .c-code pre { margin: 0; padding: 14px 16px; overflow-x: auto; }
 .c-code code { font-family: var(--font-mono), ui-monospace, monospace; font-size: 13.5px; line-height: 1.65; background: none; padding: 0; }

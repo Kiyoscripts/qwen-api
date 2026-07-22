@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkTask, deleteChat, forgetAllMemories } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
+import { VIDEO_ENABLED } from "@/lib/media";
 import { extractApiKey, validateApiKey } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -13,6 +14,9 @@ export const runtime = "nodejs";
 //     -> { status: "completed", data: [{ url }] }
 //     -> { status: "failed" }
 export async function GET(req: NextRequest) {
+  if (!VIDEO_ENABLED) {
+    return NextResponse.json({ error: { message: "Video generation is disabled.", type: "not_supported" } }, { status: 404 });
+  }
   const key = extractApiKey(req.headers);
   if (!key || !(await validateApiKey(key))) {
     return NextResponse.json({ error: { message: "Invalid or missing API key.", type: "invalid_request_error" } }, { status: 401 });

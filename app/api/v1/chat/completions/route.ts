@@ -5,7 +5,9 @@ import {
   deleteChat,
   forgetAllMemories,
   imageUrlsIn,
+  messageText,
   openCompletion,
+  pollTask,
   qwenDeltas,
   resolveModel,
   showReasoning,
@@ -14,6 +16,7 @@ import {
   type OpenAIMessage,
 } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
+import { virtualModel, generateImage, startVideo, type VirtualModel } from "@/lib/media";
 import {
   isDeepSeekModel,
   resolveDeepSeekModel,
@@ -71,6 +74,13 @@ export async function POST(req: NextRequest) {
   // (chat.deepseek.com) rather than the Qwen account pool.
   if (isDeepSeekModel(modelId)) {
     return handleDeepSeek({ messages, modelId, wantStream, hadImage, thinking: body.thinking === true, recordId: record.id });
+  }
+
+  // Image / video generation models: generate a result and return it as markdown
+  // media, so picking e.g. `qwen-image-3.0` in a chat just produces an image.
+  const vm = virtualModel(modelId);
+  if (vm) {
+    return handleMedia({ vm, messages, wantStream, size: typeof body.size === "string" ? body.size : undefined, recordId: record.id });
   }
 
   // Run the whole setup under token failover: if an account is out of quota,
@@ -276,6 +286,74 @@ async function handleDeepSeek(args: {
     created,
     model: modelId,
     choices: [{ index: 0, message, finish_reason: "stop" }],
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  });
+}
+
+// --- Image / video generation models ----------------------------------------
+// Turns the model choice into a media generation and returns the result as a
+// markdown image, e.g. `![prompt](url)`. The chat UI renders these (and video
+// URLs) inline. Reference images on the last turn switch image gen -> editing.
+async function handleMedia(args: {
+  vm: VirtualModel;
+  messages: OpenAIMessage[];
+  wantStream: boolean;
+  size?: string;
+  recordId: string;
+}) {
+  const { vm, messages, wantStream, size, recordId } = args;
+  const last = messages[messages.length - 1];
+  const prompt = messageText(last).trim();
+  const images = imageUrlsIn(last);
+  const hadImage = images.length > 0;
+
+  if (!prompt && !hadImage) return err("A prompt is required to generate media.", 400);
+
+  let markdown: string;
+  try {
+    if (vm.kind === "image") {
+      const { result: url } = await withTokenFailover((token) =>
+        generateImage(token, { prompt, images, imageModelId: vm.imageModelId, size })
+      );
+      markdown = `![${(prompt || "edited image").slice(0, 80)}](${url})`;
+    } else {
+      // Video: start the task, then poll (bounded by this function's duration).
+      const { token, result } = await withTokenFailover((t) => startVideo(t, prompt));
+      const url = await pollTask(token, result.taskId, 280_000);
+      void Promise.all([deleteChat(token, result.chatId), forgetAllMemories(token)]);
+      markdown = `![video](${url})`;
+    }
+  } catch (e: any) {
+    const status = e instanceof QwenError ? e.status : 502;
+    logUsage(recordId, vm.id, hadImage, wantStream, status);
+    return err(e.message || "Media generation failed", status, "upstream_error");
+  }
+  logUsage(recordId, vm.id, hadImage, wantStream, 200);
+
+  const id = "chatcmpl-" + randomUUID();
+  const created = Math.floor(Date.now() / 1000);
+
+  if (wantStream) {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        const send = (o: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(o)}\n\n`));
+        send({ id, object: "chat.completion.chunk", created, model: vm.id, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
+        send({ id, object: "chat.completion.chunk", created, model: vm.id, choices: [{ index: 0, delta: { content: markdown }, finish_reason: null }] });
+        send({ id, object: "chat.completion.chunk", created, model: vm.id, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  }
+
+  return NextResponse.json({
+    id,
+    object: "chat.completion",
+    created,
+    model: vm.id,
+    choices: [{ index: 0, message: { role: "assistant", content: markdown }, finish_reason: "stop" }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
 }

@@ -1,41 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  buildMessage,
-  createChat,
-  deleteChat,
-  forgetAllMemories,
-  openCompletion,
-  qwenDeltas,
-  resolveModel,
-  QwenError,
-} from "@/lib/qwen";
+import { generateImage, virtualModel, VIRTUAL_MODELS } from "@/lib/media";
+import { QwenError } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
 import { extractApiKey, validateApiKey, logUsage } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-// Default to a model that supports image generation (t2i).
-const DEFAULT_IMAGE_MODEL = "qwen3-max-2026-01-23";
+const DEFAULT_IMAGE_VERSION = "qwen-image-3.0-pro";
 
 function err(message: string, status: number, type = "invalid_request_error") {
   return NextResponse.json({ error: { message, type } }, { status });
 }
 
-// Map OpenAI-style sizes to Qwen aspect ratios; pass ratios through.
-function toRatio(size?: string): string {
-  if (!size) return "1:1";
-  if (/^\d+:\d+$/.test(size)) return size;
-  const map: Record<string, string> = {
-    "1024x1024": "1:1",
-    "1792x1024": "16:9",
-    "1024x1792": "9:16",
-    "1152x896": "4:3",
-    "896x1152": "3:4",
-  };
-  return map[size] || "1:1";
+// Resolve the requested model to a Qwen image-model version id.
+function resolveImageModel(model?: string): string {
+  if (!model) return DEFAULT_IMAGE_VERSION;
+  const vm = virtualModel(model); // qwen-image-2.0 / qwen-image-3.0
+  if (vm?.imageModelId) return vm.imageModelId;
+  if (/^qwen-image-\d\.\d-pro$/.test(model)) return model; // already a version id
+  return DEFAULT_IMAGE_VERSION;
 }
 
+// Collect reference images from any of the common shapes, for editing.
+function collectImages(body: any): string[] {
+  const out: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === "string" && v) out.push(v);
+    else if (v && typeof v === "object") {
+      const u = (v as any).url || (v as any).image_url?.url;
+      if (typeof u === "string") out.push(u);
+    }
+  };
+  if (Array.isArray(body.images)) body.images.forEach(push);
+  else if (body.images) push(body.images);
+  if (Array.isArray(body.image)) body.image.forEach(push);
+  else if (body.image) push(body.image);
+  return out;
+}
+
+// POST /v1/images/generations
+//   { "prompt": "...", "model"?: "qwen-image-3.0", "size"?: "1:1",
+//     "image"?: <ref image(s) for editing>, "response_format"?: "url"|"b64_json" }
 export async function POST(req: NextRequest) {
   const key = extractApiKey(req.headers);
   if (!key) return err("Missing API key.", 401);
@@ -49,43 +55,23 @@ export async function POST(req: NextRequest) {
     return err("Request body must be valid JSON.", 400);
   }
   const prompt = typeof body.prompt === "string" ? body.prompt : "";
-  if (!prompt) return err("'prompt' is required.", 400);
-  const modelId = typeof body.model === "string" && body.model ? body.model : DEFAULT_IMAGE_MODEL;
-  const size = toRatio(body.size);
+  const images = collectImages(body);
+  if (!prompt && images.length === 0) return err("'prompt' is required.", 400);
+
+  const imageModelId = resolveImageModel(typeof body.model === "string" ? body.model : undefined);
+  const size = typeof body.size === "string" ? body.size : undefined;
   const wantB64 = body.response_format === "b64_json";
 
-  // An account that is out of usage rejects instantly, so fail over to one that
-  // still has quota instead of failing the request.
   let url = "";
   try {
-    const { result } = await withTokenFailover(async (token) => {
-      const model = await resolveModel(token, modelId);
-      if (!model) throw new QwenError(`Model '${modelId}' is not available.`, 404);
-      if (!model.chatTypes.includes("t2i")) throw new QwenError(`Model '${modelId}' does not support image generation.`, 400);
-
-      let chatId: string | undefined;
-      try {
-        chatId = await createChat(token, modelId, "t2i");
-        const messages = [buildMessage([{ role: "user", content: prompt }], { model: modelId, chatType: "t2i", thinking: false, size })];
-        const res = await openCompletion(token, chatId, { model: modelId, messages, stream: true, size });
-        let content = "";
-        for await (const { text } of qwenDeltas(res)) content += text;
-        const m = content.match(/https?:\/\/[^"\\\s]+/);
-        if (!m) throw new QwenError("No image URL returned.");
-        await Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);
-        return m[0];
-      } catch (e) {
-        await deleteChat(token, chatId);
-        throw e;
-      }
-    });
+    const { result } = await withTokenFailover((token) => generateImage(token, { prompt, images, imageModelId, size }));
     url = result;
   } catch (e: any) {
     const status = e instanceof QwenError ? e.status : 502;
-    logUsage(record.id, modelId, false, false, status);
-    return err(e.message || "Image generation failed", status, status === 404 ? "model_not_found" : "upstream_error");
+    logUsage(record.id, imageModelId, images.length > 0, false, status);
+    return err(e.message || "Image generation failed", status, "upstream_error");
   }
-  logUsage(record.id, modelId, false, false, 200);
+  logUsage(record.id, imageModelId, images.length > 0, false, 200);
 
   const created = Math.floor(Date.now() / 1000);
   if (wantB64) {
@@ -98,4 +84,16 @@ export async function POST(req: NextRequest) {
     }
   }
   return NextResponse.json({ created, data: [{ url }] });
+}
+
+// GET /v1/images/generations -> lists the available image models (handy).
+export async function GET(req: NextRequest) {
+  const key = extractApiKey(req.headers);
+  if (!key || !(await validateApiKey(key))) {
+    return NextResponse.json({ error: { message: "Invalid or missing API key." } }, { status: 401 });
+  }
+  return NextResponse.json({
+    object: "list",
+    data: VIRTUAL_MODELS.filter((m) => m.kind === "image").map((m) => ({ id: m.id, name: m.name })),
+  });
 }

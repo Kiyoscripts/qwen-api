@@ -36,6 +36,20 @@ function CodeBlock({ children, className }: { children: React.ReactNode; classNa
   );
 }
 
+// Qwen's generated-media CDNs are signed + referer-checked, so proxy them through
+// our own origin so the browser can load them.
+const MEDIA_HOSTS = /(?:qwenlm\.ai|qwen\.ai|aliyuncs\.com|alicdn\.com)/i;
+function proxied(src?: string): string {
+  if (!src) return "";
+  try {
+    if (MEDIA_HOSTS.test(new URL(src).hostname)) return `/api/media?url=${encodeURIComponent(src)}`;
+  } catch {
+    /* not an absolute URL */
+  }
+  return src;
+}
+const isVideo = (src?: string) => /\.(mp4|webm|mov)(?:\?|$)/i.test(src || "");
+
 function MarkdownInner({ children }: { children: string }) {
   return (
     <div className="c-md">
@@ -45,6 +59,16 @@ function MarkdownInner({ children }: { children: string }) {
         components={{
           // Fenced blocks become our copy-able block; inline code stays inline.
           pre: ({ children }) => <>{children}</>,
+          // Generated media: render <video> for video URLs, otherwise an <img>,
+          // both routed through the media proxy.
+          img: ({ src, alt }) => {
+            const url = proxied(typeof src === "string" ? src : "");
+            if (isVideo(typeof src === "string" ? src : "")) {
+              return <video className="c-gen-media" src={url} controls />;
+            }
+            // eslint-disable-next-line @next/next/no-img-element
+            return <img className="c-gen-media" src={url} alt={alt || "generated"} loading="lazy" />;
+          },
           code({ className, children, ...props }) {
             const isBlock = /language-/.test(className || "");
             if (isBlock) return <CodeBlock className={className}>{children}</CodeBlock>;

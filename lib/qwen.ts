@@ -17,7 +17,7 @@ import { uploadImage, fetchImageBytes, type QwenFileEntry } from "./upload";
 
 export const QWEN_BASE = "https://chat.qwen.ai";
 
-const QWEN_CLIENT_VERSION = process.env.QWEN_CLIENT_VERSION || "0.2.74";
+const QWEN_CLIENT_VERSION = process.env.QWEN_CLIENT_VERSION || "0.2.76";
 const SHOW_REASONING = !/^(0|false|no)$/i.test(process.env.QWEN_SHOW_REASONING || "");
 const QWEN_FORGET_MEMORIES = !/^(0|false|no)$/i.test(process.env.QWEN_FORGET_MEMORIES || "");
 
@@ -35,7 +35,7 @@ export class QwenError extends Error {
 
 // --- types -----------------------------------------------------------------
 
-export type ChatType = "t2t" | "t2i" | "t2v";
+export type ChatType = "t2t" | "t2i" | "t2v" | "image_edit";
 export interface OpenAIContentPart {
   type: string;
   text?: string;
@@ -130,7 +130,15 @@ function normalizeRole(role: string): "system" | "user" | "assistant" {
 // Collapse a conversation into a single Qwen user message of the given chat type.
 export function buildMessage(
   messages: OpenAIMessage[],
-  opts: { model: string; chatType: ChatType; files?: QwenFileEntry[]; thinking: boolean; size?: string }
+  opts: {
+    model: string;
+    chatType: ChatType;
+    files?: QwenFileEntry[];
+    thinking: boolean;
+    size?: string;
+    // Image-model version for t2i / image_edit, e.g. "qwen-image-3.0-pro".
+    imageModelId?: string;
+  }
 ) {
   const now = Math.floor(Date.now() / 1000);
   const systemParts: string[] = [];
@@ -168,7 +176,18 @@ export function buildMessage(
     model: "",
     chat_type: opts.chatType,
     feature_config: { thinking_enabled: opts.thinking, output_schema: "phase", research_mode: "normal" },
-    extra: {},
+    // Image generation/editing carries size + image-model version in extra.meta,
+    // exactly like the web client. Text/video keep extra empty.
+    extra:
+      opts.chatType === "t2i" || opts.chatType === "image_edit"
+        ? {
+            meta: {
+              subChatType: opts.chatType,
+              ...(opts.size ? { size: opts.size } : {}),
+              ...(opts.imageModelId ? { model: opts.imageModelId } : {}),
+            },
+          }
+        : {},
     sub_chat_type: opts.chatType,
     parent_id: null,
     ...(opts.size ? { size: opts.size } : {}),
