@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# build output
+.next/
+out/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# secrets - never commit these
+.env
+.env.local
+.env*.local
+.env.production
+
+# misc
+*.log
+.DS_Store
+.vercel
