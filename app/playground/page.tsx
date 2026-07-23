@@ -242,8 +242,9 @@ export default function Playground() {
   }
 
   // Qwen's CDN URLs don't load reliably in an <img>/<video> (signed + referer
-  // checked), so we serve them back through our own origin.
-  const viaProxy = (u: string) => `/api/media?url=${encodeURIComponent(u)}`;
+  // checked), so we serve them back through our own origin. Images already come
+  // pre-proxied (encrypted /api/media?t= token) — don't wrap those a second time.
+  const viaProxy = (u: string) => (/\/api\/media\?/.test(u) ? u : `/api/media?url=${encodeURIComponent(u)}`);
 
   // Filename for the download button. Everything we render is same-origin
   // (/api/media) or a blob: URL, so the `download` attribute works.

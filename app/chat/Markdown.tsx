@@ -41,6 +41,8 @@ function CodeBlock({ children, className }: { children: React.ReactNode; classNa
 const MEDIA_HOSTS = /(?:qwenlm\.ai|qwen\.ai|aliyuncs\.com|alicdn\.com)/i;
 function proxied(src?: string): string {
   if (!src) return "";
+  // Already served through our proxy (e.g. an encrypted watermark token)? leave it.
+  if (/\/api\/media\?/.test(src)) return src;
   try {
     if (MEDIA_HOSTS.test(new URL(src).hostname)) return `/api/media?url=${encodeURIComponent(src)}`;
   } catch {
