@@ -1,8 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DEMO_TOOLS, DEMO_TOOL_NAMES, runDemoTool } from "@/lib/demoTools";
 
 type Mode = "chat" | "image" | "video" | "tts";
+
+interface ToolCallView {
+  id: string;
+  name: string;
+  arguments: string;
+}
 
 interface ModelOpt {
   id: string;
@@ -17,13 +24,16 @@ interface VoiceOpt {
   description: string;
 }
 interface Turn {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   content: string;
   reasoning?: string;
   image?: string; // user attachment (data URL)
   mediaUrl?: string; // assistant result
   mediaType?: "image" | "video" | "audio";
   pending?: boolean;
+  toolCalls?: ToolCallView[]; // assistant requested these
+  toolName?: string; // tool-result turn
+  toolCallId?: string; // tool-result turn
 }
 
 export default function Playground() {
@@ -36,6 +46,9 @@ export default function Playground() {
   const [imageModel, setImageModel] = useState("qwen-image-3.0");
   const [aspect, setAspect] = useState("1:1");
   const [fast, setFast] = useState(false); // Think (default) vs Fast, non-3.8 models
+  const [toolsOn, setToolsOn] = useState(false);
+  const [toolsJson, setToolsJson] = useState(JSON.stringify(DEMO_TOOLS, null, 2));
+  const [toolsEdit, setToolsEdit] = useState(false);
   const [input, setInput] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -114,20 +127,48 @@ export default function Playground() {
     reader.readAsDataURL(file);
   }
 
-  function toApiMessages(list: Turn[]) {
+  function toApiMessages(list: Turn[]): any[] {
     return list.map((t) => {
       if (t.role === "user" && t.image) {
         return { role: "user", content: [{ type: "text", text: t.content }, { type: "image_url", image_url: { url: t.image } }] };
+      }
+      if (t.role === "assistant" && t.toolCalls?.length) {
+        return {
+          role: "assistant",
+          content: t.content || null,
+          tool_calls: t.toolCalls.map((tc) => ({ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.arguments } })),
+        };
+      }
+      if (t.role === "tool") {
+        return { role: "tool", tool_call_id: t.toolCallId || "", name: t.toolName, content: t.content };
       }
       return { role: t.role, content: t.content };
     });
   }
 
-  async function sendChat(history: Turn[]) {
+  // Parse the tools JSON (falls back to none if invalid). Empty array => no tools.
+  function activeTools(): any[] | null {
+    if (!toolsOn) return null;
+    try {
+      const t = JSON.parse(toolsJson);
+      return Array.isArray(t) && t.length ? t : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Stream one assistant turn. Returns its text + any tool_calls it requested.
+  async function streamAssistant(apiMessages: any[], tools: any[] | null): Promise<{ content: string; toolCalls: ToolCallView[] }> {
     const res = await fetch("/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, stream: true, messages: toApiMessages(history), enable_thinking: canPickThink ? !fast : undefined }),
+      body: JSON.stringify({
+        model,
+        stream: true,
+        messages: apiMessages,
+        enable_thinking: canPickThink ? !fast : undefined,
+        ...(tools ? { tools, tool_choice: "auto" } : {}),
+      }),
     });
     if (!res.ok || !res.body) {
       const j = await res.json().catch(() => ({}));
@@ -136,6 +177,7 @@ export default function Playground() {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "", content = "", reasoning = "";
+    const toolCalls: ToolCallView[] = [];
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -151,13 +193,51 @@ export default function Playground() {
           const d = JSON.parse(data)?.choices?.[0]?.delta;
           if (d?.reasoning_content) reasoning += d.reasoning_content;
           if (d?.content) content += d.content;
+          if (Array.isArray(d?.tool_calls)) {
+            for (const tc of d.tool_calls) {
+              toolCalls.push({ id: tc.id, name: tc.function?.name, arguments: tc.function?.arguments || "{}" });
+            }
+          }
           setTurns((prev) => {
             const c = [...prev];
-            c[c.length - 1] = { role: "assistant", content, reasoning };
+            c[c.length - 1] = { role: "assistant", content, reasoning, toolCalls: toolCalls.length ? [...toolCalls] : undefined };
             return c;
           });
         } catch {}
       }
+    }
+    return { content, toolCalls };
+  }
+
+  // Chat with the tool loop: stream a reply; if it asks for tools, run the demo
+  // tools (unknown tools return an error result), feed results back, repeat.
+  async function sendChat(history: Turn[]) {
+    const tools = activeTools();
+    const apiMessages = toApiMessages(history);
+
+    for (let hop = 0; hop < 8; hop++) {
+      const { content, toolCalls } = await streamAssistant(apiMessages, tools);
+      apiMessages.push({
+        role: "assistant",
+        content: content || null,
+        ...(toolCalls.length ? { tool_calls: toolCalls.map((tc) => ({ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.arguments } })) } : {}),
+      });
+      if (!tools || toolCalls.length === 0) return;
+
+      // Execute each requested tool and show the result as a tool turn.
+      const resultTurns: Turn[] = [];
+      for (const tc of toolCalls) {
+        let args: any = {};
+        try { args = JSON.parse(tc.arguments || "{}"); } catch {}
+        const result = DEMO_TOOL_NAMES.has(tc.name)
+          ? runDemoTool(tc.name, args)
+          : { error: `No executor for "${tc.name}". Only the demo tools run automatically.` };
+        const content = JSON.stringify(result);
+        resultTurns.push({ role: "tool", content, toolName: tc.name, toolCallId: tc.id });
+        apiMessages.push({ role: "tool", tool_call_id: tc.id, name: tc.name, content });
+      }
+      // Add tool-result turns + a fresh assistant placeholder for the next hop.
+      setTurns((prev) => [...prev, ...resultTurns, { role: "assistant", content: "", pending: true }]);
     }
   }
 
@@ -374,7 +454,32 @@ export default function Playground() {
             <button className={`pill ${fast ? "on" : ""}`} onClick={() => setFast(true)} title="Skip reasoning (faster)">Fast</button>
           </div>
         )}
+        {mode === "chat" && (
+          <div className="pg-modes" role="group" aria-label="Tools">
+            <button className={`pill ${toolsOn ? "on" : ""}`} onClick={() => setToolsOn((v) => !v)} title="Enable function/tool calling with the demo tools">
+              🔧 Tools {toolsOn ? "on" : "off"}
+            </button>
+            {toolsOn && (
+              <button className="pill" onClick={() => setToolsEdit((v) => !v)} title="View / edit the tool schemas sent to the model">
+                {toolsEdit ? "Hide schema" : "Edit schema"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
+      {mode === "chat" && toolsOn && toolsEdit && (
+        <div className="pg-tools-edit">
+          <label>Tools (OpenAI schema JSON). Demo tools auto-run; others return an error result.</label>
+          <textarea
+            className="input"
+            spellCheck={false}
+            value={toolsJson}
+            onChange={(e) => setToolsJson(e.target.value)}
+            rows={10}
+          />
+          {activeTools() === null && <p className="pg-tools-warn">⚠️ Not valid JSON (or empty) — tools won&apos;t be sent.</p>}
+        </div>
+      )}
 
       <div className="pg-chat" ref={scrollRef}>
         {turns.length === 0 && <p className="pg-empty">Pick a mode, then start. Chat supports image input; Image generates pictures{videoAvailable ? "/video" : ""}.</p>}
@@ -395,7 +500,19 @@ export default function Playground() {
                 ↓ Download {t.mediaType === "audio" ? "audio" : t.mediaType}
               </a>
             )}
-            {t.content && <div className="bubble-text">{t.content}</div>}
+            {t.content && t.role !== "tool" && <div className="bubble-text">{t.content}</div>}
+            {t.toolCalls?.map((tc) => (
+              <div key={tc.id} className="tool-call">
+                <span className="tool-badge">🔧 {tc.name}</span>
+                <code>{tc.arguments}</code>
+              </div>
+            ))}
+            {t.role === "tool" && (
+              <div className="tool-result">
+                <span className="tool-badge">↩ {t.toolName}</span>
+                <code>{t.content}</code>
+              </div>
+            )}
             {t.pending && <span className="spin" />}
           </div>
         ))}

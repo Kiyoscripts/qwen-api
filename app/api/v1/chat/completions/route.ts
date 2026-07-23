@@ -18,6 +18,7 @@ import {
 import { withTokenFailover } from "@/lib/tokens";
 import { virtualModel, generateImage, startVideo, type VirtualModel } from "@/lib/media";
 import { resolveWatermark, buildMediaUrl } from "@/lib/watermark";
+import { hasTools, preprocessToolMessages, parseToolCalls, type OAIToolCall } from "@/lib/tools";
 import {
   isDeepSeekModel,
   resolveDeepSeekModel,
@@ -60,16 +61,10 @@ export async function POST(req: NextRequest) {
   const messages: OpenAIMessage[] = Array.isArray(body.messages) ? body.messages : [];
   if (messages.length === 0) return err("'messages' must be a non-empty array.", 400);
 
-  // Tool / function calling is not supported: chat.qwen.ai ignores custom tool
-  // schemas, and emulating it in the prompt proved unreliable. Fail loudly rather
-  // than silently returning prose to a caller that is waiting for tool_calls.
-  if (Array.isArray(body.tools) && body.tools.length > 0 && body.tool_choice !== "none") {
-    return err(
-      "Tool/function calling is not supported by this API. Remove 'tools' (or send tool_choice: \"none\").",
-      400,
-      "tools_not_supported"
-    );
-  }
+  // Tool / function calling is emulated at the proxy: the schemas are injected into
+  // the prompt (Qwen-native <tool_call> convention) and parsed back into OpenAI
+  // tool_calls. See lib/tools.ts.
+  const toolsOn = hasTools(body);
   const wantStream = body.stream === true;
   const modelId = typeof body.model === "string" && body.model ? body.model : DEFAULT_MODEL;
 
@@ -96,6 +91,10 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // With tools on, flatten the OpenAI tool-flow (assistant tool_calls, role:"tool"
+  // results) into text and append the tool-protocol system section.
+  const effMessages = toolsOn ? preprocessToolMessages(messages, body.tools, body.tool_choice) : messages;
+
   // Run the whole setup under token failover: if an account is out of quota,
   // rate-limited or expired, transparently retry on a different pooled account.
   let token: string;
@@ -115,7 +114,7 @@ export async function POST(req: NextRequest) {
         const thinking = REQUIRE_THINKING.has(modelId)
           ? true
           : model.thinking && body.enable_thinking !== false;
-        const qwenMessages = [buildMessage(messages, { model: modelId, chatType: "t2t", files, thinking })];
+        const qwenMessages = [buildMessage(effMessages, { model: modelId, chatType: "t2t", files, thinking })];
         // Always stream from Qwen (it returns SSE); we buffer it for non-streaming clients.
         const res = await openCompletion(candidate, cid, { model: modelId, messages: qwenMessages, stream: true });
         return { chatId: cid, res };
@@ -140,6 +139,66 @@ export async function POST(req: NextRequest) {
     await Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);
   };
   const withReasoning = showReasoning();
+
+  // Tool calls can only be recognized once the full reply is in hand, so when tools
+  // are active we buffer, parse, and emit tool_calls (streamed or not).
+  if (toolsOn) {
+    let raw = "";
+    let reasoning = "";
+    try {
+      for await (const { phase, text } of qwenDeltas(qwenRes)) {
+        if (phase === "think") reasoning += text;
+        else raw += text;
+      }
+    } catch (e: any) {
+      await cleanup();
+      const status = e instanceof QwenError ? e.status : 502;
+      logUsage(record.id, modelId, hadImage, wantStream, status);
+      return err(e.message, status, "upstream_error");
+    }
+    await cleanup();
+    logUsage(record.id, modelId, hadImage, wantStream, 200);
+
+    const { content: toolContent, toolCalls } = parseToolCalls(raw);
+    const finish = toolCalls.length ? "tool_calls" : "stop";
+    const message: Record<string, unknown> = {
+      role: "assistant",
+      content: toolCalls.length ? toolContent : raw,
+    };
+    if (toolCalls.length) message.tool_calls = toolCalls;
+    if (withReasoning && reasoning) message.reasoning_content = reasoning;
+
+    const streamDelta = (tcs: OAIToolCall[]) =>
+      tcs.map((tc, i) => ({ index: i, id: tc.id, type: "function", function: tc.function }));
+
+    if (wantStream) {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+          send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
+          if (toolCalls.length) {
+            send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { tool_calls: streamDelta(toolCalls) }, finish_reason: null }] });
+          } else if (raw) {
+            send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: raw }, finish_reason: null }] });
+          }
+          send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: finish }] });
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+    }
+
+    return NextResponse.json({
+      id,
+      object: "chat.completion",
+      created,
+      model: modelId,
+      choices: [{ index: 0, message, finish_reason: finish }],
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    });
+  }
 
   if (wantStream) {
     const encoder = new TextEncoder();

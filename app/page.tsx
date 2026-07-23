@@ -109,6 +109,53 @@ export default function Home() {
   -d '{ "prompt": "a red apple on a table", "size": "1:1" }'
 # -> { "data": [{ "url": "https://..." }] }`}</code>
       </pre>
+      <p>
+        Models: <span className="tok">qwen-image-3.0</span> and{" "}
+        <span className="tok">qwen-image-2.0</span>. Set the aspect ratio with <code>size</code> —{" "}
+        <code>1:1</code>, <code>16:9</code>, <code>9:16</code>, <code>4:3</code> or <code>3:4</code>.
+      </p>
+
+      <h2>Watermark</h2>
+      <p>
+        Generated images carry a <code>Qwen3.8 API</code> watermark by default. Override it per
+        request with the <code>watermark</code> field: pass your own text, or <code>false</code> to
+        remove it. The mark is baked into the pixels, so it stays on the downloaded file.
+      </p>
+      <pre>
+        <code>{`# custom watermark text (up to 64 chars)
+-d '{ "prompt": "a red apple", "watermark": "yourbrand.com" }'
+
+# no watermark
+-d '{ "prompt": "a red apple", "watermark": false }'`}</code>
+      </pre>
+      <p>
+        The <code>watermark</code> field works the same on <code>/v1/chat/completions</code> when you
+        use an image model (e.g. <span className="tok">qwen-image-3.0</span>).
+      </p>
+
+      <h2>Tool / function calling</h2>
+      <p>
+        Standard OpenAI <code>tools</code> work on <code>/v1/chat/completions</code> — the schemas are
+        injected into the prompt and parsed back into <code>tool_calls</code>. Send tool results back
+        as <code>role: &quot;tool&quot;</code> messages, exactly like the OpenAI flow. Try it live in the{" "}
+        <a href="/playground">playground</a> or <a href="/chat">chat</a> (toggle 🔧 Tools).
+      </p>
+      <pre>
+        <code>{`curl https://qwen3-8-api.vercel.app/v1/chat/completions \\
+  -H "Authorization: Bearer qwen_sk_..." -H "Content-Type: application/json" \\
+  -d '{
+    "model": "qwen3.8-max-preview",
+    "messages": [{ "role": "user", "content": "Weather in Tokyo?" }],
+    "tools": [{ "type": "function", "function": {
+      "name": "get_weather",
+      "parameters": { "type": "object", "properties": { "city": { "type": "string" } } }
+    }}]
+  }'
+# -> choices[0].message.tool_calls = [{ function: { name: "get_weather", ... } }]`}</code>
+      </pre>
+      <p style={{ color: "var(--muted)", fontSize: 13 }}>
+        Tool-calling method credit: Discord user <code>.thereid</code>.
+      </p>
 
       <p className="foot">
         Model: <span className="tok">qwen3.8-max-preview</span>. Authenticate with{" "}

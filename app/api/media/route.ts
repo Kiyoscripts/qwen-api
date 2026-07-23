@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { applyWatermark } from "@/lib/watermark";
+import { applyWatermark, decryptMediaToken } from "@/lib/watermark";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -23,7 +23,20 @@ function allowed(u: URL): boolean {
 }
 
 export async function GET(req: NextRequest) {
-  const raw = req.nextUrl.searchParams.get("url");
+  // Preferred: an encrypted token carrying { url, wm }. Legacy plaintext ?url=&wm=
+  // is still accepted (e.g. displaying an un-watermarked generated image).
+  const token = req.nextUrl.searchParams.get("t");
+  let raw: string | null;
+  let wm: string | null;
+  if (token) {
+    const dec = decryptMediaToken(token);
+    if (!dec) return NextResponse.json({ error: "invalid or tampered token" }, { status: 400 });
+    raw = dec.url;
+    wm = dec.wm ?? null;
+  } else {
+    raw = req.nextUrl.searchParams.get("url");
+    wm = req.nextUrl.searchParams.get("wm");
+  }
   if (!raw) return NextResponse.json({ error: "url is required" }, { status: 400 });
 
   let target: URL;
@@ -56,8 +69,7 @@ export async function GET(req: NextRequest) {
 
   const upstreamType = upstream.headers.get("content-type") || "application/octet-stream";
 
-  // Optional watermark: composite the given text into the pixels before serving.
-  const wm = req.nextUrl.searchParams.get("wm");
+  // Optional watermark: composite the resolved text into the pixels before serving.
   if (wm) {
     const inBuf = new Uint8Array(await upstream.arrayBuffer());
     try {

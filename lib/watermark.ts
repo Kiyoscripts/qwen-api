@@ -15,11 +15,49 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from "node:crypto";
 import sharp from "sharp";
 import * as opentype from "opentype.js";
 
 export const DEFAULT_WATERMARK = "Qwen3.8 API";
 const MAX_LEN = 64;
+
+// --- encrypted media tokens -------------------------------------------------
+// The media-proxy URL carries an AES-256-GCM token instead of a plaintext
+// ?url=&wm=. That hides the underlying (signed) Qwen CDN URL and makes the
+// watermark tamper-evident: flipping a byte fails the GCM auth tag, so a viewer
+// can't strip the watermark or swap the image by editing the URL.
+
+function mediaKey(): Buffer {
+  const secret = process.env.MEDIA_SECRET || process.env.ADMIN_SECRET || "qwen-media-dev-secret";
+  return createHash("sha256").update(secret).digest(); // 32 bytes
+}
+
+export function encryptMediaToken(payload: { url: string; wm?: string }): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", mediaKey(), iv);
+  const pt = Buffer.from(JSON.stringify(payload), "utf8");
+  const ct = Buffer.concat([cipher.update(pt), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, ct]).toString("base64url");
+}
+
+export function decryptMediaToken(token: string): { url: string; wm?: string } | null {
+  try {
+    const raw = Buffer.from(token, "base64url");
+    if (raw.length < 29) return null;
+    const iv = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const ct = raw.subarray(28);
+    const decipher = createDecipheriv("aes-256-gcm", mediaKey(), iv);
+    decipher.setAuthTag(tag);
+    const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
+    const obj = JSON.parse(pt.toString("utf8"));
+    return obj && typeof obj.url === "string" ? obj : null;
+  } catch {
+    return null;
+  }
+}
 
 // Turn a request-supplied `watermark` value into the text to render, or null for
 // "no watermark". Undefined (field absent) keeps the branded default.
@@ -35,11 +73,11 @@ export function resolveWatermark(arg: unknown): string | null {
   return DEFAULT_WATERMARK;
 }
 
-// Build an absolute media-proxy URL that (optionally) watermarks on the fly.
+// Build an absolute media-proxy URL. The source URL + watermark are encrypted into
+// an opaque token so neither can be read or altered from the link.
 export function buildMediaUrl(origin: string, url: string, watermark: string | null): string {
-  const p = new URLSearchParams({ url });
-  if (watermark) p.set("wm", watermark);
-  return `${origin}/api/media?${p.toString()}`;
+  const token = encryptMediaToken({ url, wm: watermark || undefined });
+  return `${origin}/api/media?t=${token}`;
 }
 
 // Parse the bundled font once and reuse it.

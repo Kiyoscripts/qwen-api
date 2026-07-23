@@ -4,8 +4,8 @@ An **OpenAI-compatible** hosted API for `qwen3.8-max-preview` (with **vision**),
 built on **Next.js + Vercel**, with API keys managed in **Supabase**. It proxies
 to a chat.qwen.ai account (your token, server-side) and exposes a clean, keyed API.
 
-- `POST /v1/chat/completions` — all models, streaming, vision, reasoning (`reasoning_content`)
-- `POST /v1/images/generations` — text-to-image (OpenAI-compatible)
+- `POST /v1/chat/completions` — all models, streaming, vision, reasoning (`reasoning_content`), **tool/function calling**
+- `POST /v1/images/generations` — text-to-image (OpenAI-compatible); models `qwen-image-3.0` / `qwen-image-2.0`, `size` aspect ratio, and a `watermark` field (see below)
 - `POST /v1/videos/generations` — text-to-video; returns `202 { id, chat_id, status }` immediately
 - `GET  /v1/videos/status?task_id=…&chat_id=…` — poll a video task (**no timeout** — render as long as it needs)
 - `POST /v1/audio/speech` — text-to-speech → `audio/wav` (`{ "input": "...", "voice": "Cherry" }`)
@@ -13,6 +13,52 @@ to a chat.qwen.ai account (your token, server-side) and exposes a clean, keyed A
 - `GET  /v1/models` — lists **all** Qwen models
 - `POST /api/keys` — **public** self-serve API key creation (also on the homepage)
 - `/admin` — password-protected dashboard to manage the pooled Qwen tokens & view keys
+
+### Tool / function calling
+
+Standard OpenAI `tools` are supported on `POST /v1/chat/completions`. Qwen has no
+native tool API, so the schemas are injected into the prompt (Qwen-native
+`<tool_call>` convention) and parsed back into OpenAI `tool_calls`; send results
+back as `role:"tool"` messages. It's best-effort emulation, not a guarantee, but
+Qwen3 is trained for function calling so it's reliable for normal agent use.
+
+- `tool_choice`: `"auto"` (default), `"none"` (ignore tools), `"required"`, or a
+  specific `{ "type":"function","function":{"name":"..."} }`.
+- Parallel tool calls, streaming (`tool_calls` deltas), and multi-turn loops work.
+- Test it interactively in `/playground` and `/chat` (🔧 **Tools** toggle) — they
+  ship built-in demo tools (`get_weather`, `get_current_time`, `calculator`) that
+  execute in the browser so you can watch a full call loop.
+
+> Tool-calling method credit: Discord user `.thereid`.
+
+### Image watermark
+
+Generated images are stamped with a **`Qwen3.8 API`** watermark (bottom-right) by
+default. Callers control it per request with the `watermark` field — on both
+`POST /v1/images/generations` and `POST /v1/chat/completions` (image models):
+
+| `watermark` value | Result |
+| --- | --- |
+| *omitted* | default `Qwen3.8 API` |
+| `false` (or `""`, `"none"`) | no watermark |
+| `"your text"` | custom text (up to 64 chars) |
+
+```bash
+# custom text
+curl .../v1/images/generations -H "Authorization: Bearer qwen_sk_..." \
+  -d '{ "prompt": "a red apple", "watermark": "yourbrand.com" }'
+
+# no watermark
+  -d '{ "prompt": "a red apple", "watermark": false }'
+```
+
+The mark is composited into the pixels server-side, so it survives download. The
+`/chat` and playground UIs always use the default watermark. Watermarked images are
+served through `/api/media?t=…`, where the source URL + watermark are **AES-GCM
+encrypted** into an opaque token — the underlying (signed) Qwen CDN URL is hidden
+and the watermark is tamper-evident (editing the token fails the auth tag). Set
+`MEDIA_SECRET` in production so tokens can't be forged. The link lives as long as
+the underlying Qwen CDN signature.
 
 ### Multiple accounts (token pool)
 

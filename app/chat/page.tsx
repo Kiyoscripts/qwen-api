@@ -19,12 +19,22 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { Markdown } from "./Markdown";
+import { DEMO_TOOLS, DEMO_TOOL_NAMES, runDemoTool } from "@/lib/demoTools";
+
+interface ToolCallView {
+  id: string;
+  name: string;
+  arguments: string;
+}
 
 interface Msg {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   content: string;
   reasoning?: string;
   image?: string;
+  toolCalls?: ToolCallView[]; // assistant requested these
+  toolName?: string; // tool-result message
+  toolCallId?: string; // tool-result message
 }
 interface Conversation {
   id: string;
@@ -94,6 +104,7 @@ export default function Chat() {
   const [showOthers, setShowOthers] = useState(false);
   const [fast, setFast] = useState(false); // Think (default) vs Fast
   const [aspect, setAspect] = useState("1:1"); // image aspect ratio
+  const [toolsOn, setToolsOn] = useState(false); // enable demo tool calling
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -233,6 +244,18 @@ export default function Chat() {
         });
         continue;
       }
+      if (m.role === "assistant" && m.toolCalls?.length) {
+        out.push({
+          role: "assistant",
+          content: m.content || null,
+          tool_calls: m.toolCalls.map((tc) => ({ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.arguments } })),
+        });
+        continue;
+      }
+      if (m.role === "tool") {
+        out.push({ role: "tool", tool_call_id: m.toolCallId || "", name: m.toolName, content: m.content });
+        continue;
+      }
       // A reply cut off mid-reasoning has no visible content, only reasoning. Send
       // that instead, otherwise the turn is empty and the model loses everything
       // it had already drafted when you ask it to continue.
@@ -258,11 +281,13 @@ export default function Chat() {
   async function streamTurn(
     convo: Record<string, unknown>[],
     base: { content: string; reasoning: string },
-    signal: AbortSignal
-  ): Promise<{ content: string; reasoning: string; complete: boolean }> {
+    signal: AbortSignal,
+    tools?: unknown
+  ): Promise<{ content: string; reasoning: string; complete: boolean; toolCalls: ToolCallView[] }> {
     let content = base.content;
     let reasoning = base.reasoning;
     let complete = false;
+    const toolCalls: ToolCallView[] = [];
 
     const res = await fetch("/v1/chat/completions", {
       method: "POST",
@@ -274,6 +299,7 @@ export default function Chat() {
         messages: convo,
         ...(canPickThink ? { enable_thinking: !fast } : {}),
         ...(isImageModel ? { size: aspect } : {}),
+        ...(tools ? { tools, tool_choice: "auto" } : {}),
       }),
     });
     if (!res.ok || !res.body) {
@@ -301,9 +327,12 @@ export default function Chat() {
           const d = JSON.parse(data)?.choices?.[0]?.delta;
           if (d?.reasoning_content) reasoning += d.reasoning_content;
           if (d?.content) content += d.content;
+          if (Array.isArray(d?.tool_calls)) {
+            for (const tc of d.tool_calls) toolCalls.push({ id: tc.id, name: tc.function?.name, arguments: tc.function?.arguments || "{}" });
+          }
           patchActive((c) => {
             const msgs = [...c.messages];
-            msgs[msgs.length - 1] = { role: "assistant", content, reasoning };
+            msgs[msgs.length - 1] = { role: "assistant", content, reasoning, toolCalls: toolCalls.length ? [...toolCalls] : undefined };
             return { ...c, messages: msgs };
           });
         } catch {
@@ -311,7 +340,7 @@ export default function Chat() {
         }
       }
     }
-    return { content, reasoning, complete };
+    return { content, reasoning, complete, toolCalls };
   }
 
   async function send(text?: string) {
@@ -340,7 +369,33 @@ export default function Chat() {
       // One request per message. (Auto-continue was removed: each retry is a full
       // generation and burns account usage far too quickly. If a reply is cut off,
       // its partial text is kept and typing "continue" resumes from it.)
-      await streamTurn(toApi(history), { content: "", reasoning: "" }, ctrl.signal);
+      //
+      // With tools on, run the call loop: stream a reply, execute any requested demo
+      // tools, feed the results back, and repeat until the model answers.
+      const tools = toolsOn ? DEMO_TOOLS : undefined;
+      const convo = toApi(history);
+      for (let hop = 0; hop < 8; hop++) {
+        const { content, toolCalls } = await streamTurn(convo, { content: "", reasoning: "" }, ctrl.signal, tools);
+        convo.push({
+          role: "assistant",
+          content: content || null,
+          ...(toolCalls.length ? { tool_calls: toolCalls.map((tc) => ({ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.arguments } })) } : {}),
+        });
+        if (!tools || toolCalls.length === 0) break;
+
+        const toolMsgs: Msg[] = [];
+        for (const tc of toolCalls) {
+          let args: any = {};
+          try { args = JSON.parse(tc.arguments || "{}"); } catch {}
+          const result = DEMO_TOOL_NAMES.has(tc.name)
+            ? runDemoTool(tc.name, args)
+            : { error: `No executor for "${tc.name}". Only the demo tools run automatically.` };
+          const rc = JSON.stringify(result);
+          toolMsgs.push({ role: "tool", content: rc, toolName: tc.name, toolCallId: tc.id });
+          convo.push({ role: "tool", tool_call_id: tc.id, name: tc.name, content: rc });
+        }
+        patchActive((c) => ({ ...c, messages: [...c.messages, ...toolMsgs, { role: "assistant", content: "" }] }));
+      }
     } catch (e: any) {
       if (e.name === "AbortError") {
         setError(null);
@@ -458,6 +513,16 @@ export default function Chat() {
               <option value="4:3">4:3</option>
               <option value="3:4">3:4</option>
             </select>
+          )}
+          {!isImageModel && (
+            <button
+              type="button"
+              className={`c-tools-btn ${toolsOn ? "on" : ""}`}
+              onClick={() => setToolsOn((v) => !v)}
+              title="Enable tool calling — the model can call built-in demo tools (weather, time, calculator)"
+            >
+              🔧 Tools
+            </button>
           )}
           <div className="c-spacer" />
           {busy ? (
@@ -603,6 +668,16 @@ export default function Chat() {
                           <div>{m.reasoning}</div>
                         </details>
                       )}
+                      {m.toolCalls?.length ? (
+                        <div className="c-toolcalls">
+                          {m.toolCalls.map((tc) => (
+                            <div key={tc.id} className="c-toolcall">
+                              <span className="c-tool-badge">🔧 {tc.name}</span>
+                              <code>{tc.arguments}</code>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                       {m.role === "assistant" ? (
                         m.content ? (
                           <>
@@ -621,7 +696,8 @@ export default function Chat() {
                           </>
                         ) : (
                           busy &&
-                          i === messages.length - 1 && (
+                          i === messages.length - 1 &&
+                          !m.toolCalls?.length && (
                             <img
                               className="c-gen-logo"
                               src={active?.model?.startsWith("deepseek") ? "/deepseek.svg" : "/qwen.svg"}
@@ -631,6 +707,11 @@ export default function Chat() {
                             />
                           )
                         )
+                      ) : m.role === "tool" ? (
+                        <div className="c-toolresult">
+                          <span className="c-tool-badge">↩ {m.toolName}</span>
+                          <code>{m.content}</code>
+                        </div>
                       ) : (
                         <div className="c-user-text">{m.content}</div>
                       )}
