@@ -9,6 +9,7 @@ const nextConfig = {
   // The watermark font is read at runtime; force it into each function bundle that
   // composites images (Next won't trace a runtime-built path on its own).
   outputFileTracingIncludes: {
+    // /api/media watermarks images on the fly (font for the text badge).
     "/api/media": ["./assets/watermark-font.ttf"],
     "/api/v1/images/generations": ["./assets/watermark-font.ttf"],
     // Custom-model system prompts are read from prompts/ at runtime.

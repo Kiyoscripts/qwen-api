@@ -1,5 +1,5 @@
 // Image and video generation exposed as their own selectable models, so callers
-// pick e.g. `qwen-image-3.0` or `qwen-vlo` instead of switching to a chat model.
+// pick e.g. `qwen-image-3.0` or `qwen-wan` instead of switching to a chat model.
 //
 // Under the hood these all ride the same completions endpoint on a chat model
 // (BACKEND_MODEL) with a specific chat_type; the image-model *version*
@@ -21,9 +21,9 @@ import {
 // A chat model that drives the t2i / image_edit / t2v backends.
 export const MEDIA_BACKEND_MODEL = process.env.QWEN_MEDIA_MODEL || "qwen3-max-2026-01-23";
 
-// Video generation is off by default. Flip ENABLE_VIDEO_GENERATION=true to bring
-// back the `qwen-vlo` model and the /v1/videos/* endpoints.
-export const VIDEO_ENABLED = /^(1|true|yes)$/i.test(process.env.ENABLE_VIDEO_GENERATION || "");
+// Video generation is ON by default now. Set ENABLE_VIDEO_GENERATION=false to hide
+// the `qwen-wan` model and disable the /v1/videos/* endpoints.
+export const VIDEO_ENABLED = !/^(0|false|no|off)$/i.test(process.env.ENABLE_VIDEO_GENERATION || "true");
 
 export interface VirtualModel {
   id: string;
@@ -35,11 +35,22 @@ export interface VirtualModel {
 export const VIRTUAL_MODELS: VirtualModel[] = [
   { id: "qwen-image-3.0", name: "Qwen Image 3.0", kind: "image", imageModelId: "qwen-image-3.0-pro" },
   { id: "qwen-image-2.0", name: "Qwen Image 2.0", kind: "image", imageModelId: "qwen-image-2.0-pro" },
-  ...(VIDEO_ENABLED ? [{ id: "qwen-vlo", name: "Qwen VLo (video)", kind: "video" as const }] : []),
+  ...(VIDEO_ENABLED ? [{ id: "qwen-wan", name: "Qwen Wan", kind: "video" as const }] : []),
 ];
 
 export function virtualModel(id: string): VirtualModel | undefined {
   return VIRTUAL_MODELS.find((m) => m.id === id);
+}
+
+// Qwen's API exposes no real video-generation progress — the web UI animates a
+// time-based estimate, so we do the same: an eased curve that creeps toward ~95%
+// while the task runs and snaps to 100% on completion. `startedAt` is unix seconds
+// (from the generation response); without it we can't estimate, so return null.
+const VIDEO_PROGRESS_TAU = 45; // seconds; larger = slower creep
+export function estimateVideoProgress(startedAt?: number): number | null {
+  if (!startedAt || !Number.isFinite(startedAt)) return null;
+  const elapsed = Math.max(0, Date.now() / 1000 - startedAt);
+  return Math.min(95, Math.round(95 * (1 - Math.exp(-elapsed / VIDEO_PROGRESS_TAU))));
 }
 
 // Map an OpenAI-style size to a Qwen aspect ratio; pass ratios through.
@@ -92,14 +103,23 @@ export async function generateImage(
   }
 }
 
-// Kick off a video generation. Returns the chat id + WanX task id to poll.
-export async function startVideo(token: string, prompt: string): Promise<{ chatId: string; taskId: string }> {
+// Kick off a video generation. Optionally set an aspect ratio (`size`) and/or
+// attach reference image(s) for image-to-video. Returns the chat id + WanX task id.
+export async function startVideo(
+  token: string,
+  prompt: string,
+  opts: { size?: string; images?: string[] } = {}
+): Promise<{ chatId: string; taskId: string }> {
   let chatId: string | undefined;
   try {
+    const files = opts.images?.length ? await uploadImages(token, opts.images) : [];
+    const size = opts.size ? toRatio(opts.size) : undefined;
     chatId = await createChat(token, MEDIA_BACKEND_MODEL, "t2v");
-    const messages = [buildMessage([{ role: "user", content: prompt }], { model: MEDIA_BACKEND_MODEL, chatType: "t2v", thinking: false })];
+    const messages = [
+      buildMessage([{ role: "user", content: prompt }], { model: MEDIA_BACKEND_MODEL, chatType: "t2v", thinking: false, files, size }),
+    ];
     // Video is async: the non-stream request returns a task id.
-    const res = await openCompletion(token, chatId, { model: MEDIA_BACKEND_MODEL, messages, stream: false });
+    const res = await openCompletion(token, chatId, { model: MEDIA_BACKEND_MODEL, messages, stream: false, size });
     const json = await res.json().catch(() => ({}));
     const taskId = extractWanxTaskId(json);
     if (!taskId) throw new QwenError(`No video task returned: ${JSON.stringify(json).slice(0, 200)}`);

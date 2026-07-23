@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Aurora from "../Aurora";
 import { DEMO_TOOLS, DEMO_TOOL_NAMES, runDemoTool } from "@/lib/demoTools";
 
 type Mode = "chat" | "image" | "video" | "tts";
@@ -34,6 +35,7 @@ interface Turn {
   toolCalls?: ToolCallView[]; // assistant requested these
   toolName?: string; // tool-result turn
   toolCallId?: string; // tool-result turn
+  progress?: number | null; // media generation progress (0-100)
 }
 
 export default function Playground() {
@@ -58,10 +60,11 @@ export default function Playground() {
 
   // Image/video are dedicated models now, so they don't belong in the chat-model
   // picker and image generation no longer depends on the selected chat model.
-  const isMedia = (id: string) => id.startsWith("qwen-image") || id === "qwen-vlo";
+  const isMedia = (id: string) => id.startsWith("qwen-image") || id === "qwen-wan";
   const chatModels = models.filter((m) => !isMedia(m.id));
   const imageModels = models.filter((m) => m.id.startsWith("qwen-image"));
-  const videoAvailable = models.some((m) => m.id === "qwen-vlo");
+  const videoModels = models.filter((m) => m.id === "qwen-wan");
+  const videoAvailable = videoModels.length > 0;
   // Think/Fast is offered for thinking-capable chat models except 3.8 Max Preview,
   // which always reasons (thinking can't be turned off there).
   const thinkForced = model === "qwen3.8-max-preview";
@@ -80,7 +83,7 @@ export default function Playground() {
         thinking: Boolean(m.capabilities?.thinking),
       }));
       setModels(opts);
-      const chats = opts.filter((o) => !o.id.startsWith("qwen-image") && o.id !== "qwen-vlo");
+      const chats = opts.filter((o) => !o.id.startsWith("qwen-image") && o.id !== "qwen-wan");
       if (chats.length && !chats.find((o) => o.id === model)) setModel(chats[0].id);
       const imgs = opts.filter((o) => o.id.startsWith("qwen-image"));
       if (imgs.length && !imgs.find((o) => o.id === imageModel)) setImageModel(imgs[0].id);
@@ -282,33 +285,35 @@ export default function Playground() {
     const res = await fetch("/v1/videos/generations", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, prompt }),
+      body: JSON.stringify({ model: "qwen-wan", prompt, size: aspect, ...(image ? { image } : {}) }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok && res.status !== 202) throw new Error(j?.error?.message || `HTTP ${res.status}`);
     if (j?.data?.[0]?.url) return setResult(j.data[0].url, "video");
 
     const taskId = j?.id;
-    const chatId = j?.chat_id;
-    if (!taskId) throw new Error("No video task returned");
+    // The ticket pins polling to the account that owns the task (carries task/chat/
+    // started), so we don't have to send those separately.
+    const ticket = j?.ticket;
+    if (!taskId && !ticket) throw new Error("No video task returned");
 
-    const started = Date.now();
     for (;;) {
       await new Promise((r) => setTimeout(r, 5000));
-      const mins = Math.floor((Date.now() - started) / 60000);
-      const secs = Math.floor(((Date.now() - started) % 60000) / 1000);
-      setTurns((prev) => {
-        const c = [...prev];
-        c[c.length - 1] = { role: "assistant", content: `Rendering video… ${mins}m ${secs}s`, pending: true };
-        return c;
-      });
       const s = await fetch(
-        `/v1/videos/status?task_id=${encodeURIComponent(taskId)}${chatId ? `&chat_id=${encodeURIComponent(chatId)}` : ""}`,
+        ticket
+          ? `/v1/videos/status?ticket=${encodeURIComponent(ticket)}`
+          : `/v1/videos/status?task_id=${encodeURIComponent(taskId)}`,
         { headers: { Authorization: `Bearer ${apiKey}` } }
       );
       const sj = await s.json().catch(() => ({}));
       if (sj?.status === "completed" && sj?.data?.[0]?.url) return setResult(sj.data[0].url, "video");
       if (sj?.status === "failed") throw new Error("Video generation failed upstream");
+      const pct = typeof sj?.progress === "number" ? sj.progress : null;
+      setTurns((prev) => {
+        const c = [...prev];
+        c[c.length - 1] = { role: "assistant", content: "", pending: true, progress: pct };
+        return c;
+      });
     }
   }
 
@@ -384,6 +389,7 @@ export default function Playground() {
 
   return (
     <div className="pg">
+      <Aurora state={busy ? "responding" : "idle"} />
       <header className="pg-head">
         <a href="/" className="pg-back">← Qwen3.8 API</a>
         <span className="pg-title">Playground</span>
@@ -429,6 +435,22 @@ export default function Playground() {
               <option value="1:1">1:1 · Square</option>
               <option value="16:9">16:9 · Landscape</option>
               <option value="9:16">9:16 · Portrait</option>
+              <option value="4:3">4:3</option>
+              <option value="3:4">3:4</option>
+            </select>
+          </>
+        ) : mode === "video" ? (
+          <>
+            <select className="input pg-select" value="qwen-wan" disabled>
+              {videoModels.length === 0 && <option value="qwen-wan">qwen-wan</option>}
+              {videoModels.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+            <select className="input pg-select" value={aspect} onChange={(e) => setAspect(e.target.value)} title="Aspect ratio">
+              <option value="16:9">16:9 · Landscape</option>
+              <option value="9:16">9:16 · Portrait</option>
+              <option value="1:1">1:1 · Square</option>
               <option value="4:3">4:3</option>
               <option value="3:4">3:4</option>
             </select>
@@ -514,21 +536,28 @@ export default function Playground() {
                 <code>{t.content}</code>
               </div>
             )}
-            {t.pending && <span className="spin" />}
+            {t.pending && typeof t.progress === "number" ? (
+              <div className="gen-progress">
+                <div className="gen-progress-bar"><span style={{ width: `${t.progress}%` }} /></div>
+                <span className="gen-progress-pct">{t.progress}%</span>
+              </div>
+            ) : (
+              t.pending && <span className="spin" />
+            )}
           </div>
         ))}
       </div>
 
       <div className="pg-composer">
-        {mode === "chat" && image && (
+        {(mode === "chat" || mode === "video") && image && (
           <div className="pg-attach">
             <img src={image} alt="to send" />
             <button onClick={() => setImage(null)}>×</button>
           </div>
         )}
         <div className="pg-inputrow">
-          {mode === "chat" && (
-            <label className="btn ghost pg-attach-btn">
+          {(mode === "chat" || mode === "video") && (
+            <label className="btn ghost pg-attach-btn" title={mode === "video" ? "Optional reference image (image-to-video)" : "Attach an image"}>
               + Image
               <input type="file" accept="image/*" onChange={onImage} hidden />
             </label>
@@ -542,7 +571,7 @@ export default function Playground() {
             rows={1}
             disabled={!apiKey || busy}
           />
-          <button className="btn" onClick={send} disabled={busy || !apiKey || (!input.trim() && !(mode === "chat" && image))}>
+          <button className="btn" onClick={send} disabled={busy || !apiKey || (!input.trim() && !((mode === "chat" || mode === "video") && image))}>
             {busy ? "…" : mode === "chat" ? "Send" : "Generate"}
           </button>
         </div>

@@ -1,166 +1,144 @@
-const curlExample = `curl https://qwen3-8-api.vercel.app/v1/chat/completions \\
-  -H "Authorization: Bearer qwen_sk_..." \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "qwen3.8-max-preview",
-    "messages": [{ "role": "user", "content": "Hello!" }]
-  }'`;
+import Aurora from "./Aurora";
+import StatsBar from "./StatsBar";
+import KeyGenerator from "./KeyGenerator";
 
-const visionExample = `{
-  "model": "qwen3.8-max-preview",
-  "messages": [{
-    "role": "user",
-    "content": [
-      { "type": "text", "text": "What's in this image?" },
-      { "type": "image_url",
-        "image_url": { "url": "data:image/png;base64,iVBORw0..." } }
-    ]
-  }]
-}`;
+const BASE = "https://qwen3-8-api.vercel.app";
 
-const sdkExample = `import OpenAI from "openai";
+const MODELS = [
+  { name: "Qwen3.8-Max-Preview", icon: "/qwen.svg", desc: "Flagship reasoning + vision. Streaming, tools, 300s max.", tags: ["reasoning", "vision", "tools"] },
+  { name: "Qwen Image 3.0 / 2.0", icon: "/qwen.svg", desc: "Text-to-image & editing. Any aspect ratio, reference images.", tags: ["image", "edit"] },
+  { name: "Qwen Wan", icon: "/qwen.svg", desc: "Text & image-to-video with live progress. ~5s clips.", tags: ["video"] },
+  { name: "DeepSeek V4", icon: "/deepseek.svg", desc: "DeepSeek chat & reasoning, linkable with your own token.", tags: ["chat", "reasoning"] },
+  { name: "Qwen3-Omni", icon: "/qwen.svg", desc: "~78 voices of natural text-to-speech (WAV).", tags: ["speech"] },
+  { name: "Custom slugs", icon: "✨", desc: "Persona models with baked-in system prompts, e.g. friendly-qwen.", tags: ["persona"] },
+];
+
+const FEATURES = [
+  { icon: "🔌", title: "OpenAI-compatible", body: "Point any OpenAI SDK at the base URL and pass your key. Chat, streaming, vision, tools — all standard shapes." },
+  { icon: "🧠", title: "Reasoning & tools", body: "Toggle thinking on/off, get reasoning_content, and call functions with emulated tool-calling that respects your system prompt." },
+  { icon: "🎨", title: "Image, video & speech", body: "Generate and edit images, make videos with Qwen Wan, and synthesize speech — one keyed endpoint for all of it." },
+  { icon: "♻️", title: "Account pool + failover", body: "Requests rotate across a pool of accounts with automatic failover, so one rate-limited account never fails your call." },
+  { icon: "🔒", title: "Keyed & rate-limited", body: "Self-serve API keys, hashed at rest and shown once. Per-IP creation limits and abuse controls built in." },
+  { icon: "⚡", title: "Streaming everywhere", body: "Server-sent events for chat and tools, task-based polling with progress for long video renders." },
+];
+
+export default function Home() {
+  return (
+    <>
+      <Aurora state="idle" />
+      <div className="lp">
+        <nav className="lp-nav glass">
+          <div className="lp-brand"><span className="lp-logo" /> Qwen3.8&nbsp;API</div>
+          <div className="lp-links">
+            <a href="/models">Models</a>
+            <a href="/playground">Playground</a>
+            <a href="/chat">Chat</a>
+            <a href="/docs">Docs</a>
+          </div>
+          <div className="lp-navcta">
+            <a className="ghost" href="/login">Sign in</a>
+            <a className="g-btn" href="/signup">Sign up</a>
+          </div>
+        </nav>
+
+        <div className="lp-wrap">
+          <section className="lp-hero">
+            <div className="lp-pill glass"><span className="dot" /> OpenAI-compatible · Qwen &amp; DeepSeek</div>
+            <h1>Qwen &amp; DeepSeek,<br /><span className="grad">one keyed API.</span></h1>
+            <p className="lp-sub">
+              Point your OpenAI SDK at one base URL and reach every model — chat, reasoning, vision,
+              image, video and speech. No re-plumbing.
+            </p>
+            <div className="lp-ctarow">
+              <a className="g-btn lg" href="#get-a-key">Get an API key</a>
+              <a className="g-btn lg outline" href="/docs">Read the docs</a>
+            </div>
+
+            <StatsBar />
+          </section>
+
+          <section id="models">
+            <div className="lp-eyebrow">Browse the models</div>
+            <h2 className="lp-h2">Everything, one key</h2>
+            <div className="lp-models" style={{ marginTop: 26 }}>
+              {MODELS.map((m) => (
+                <div key={m.name} className="lp-mcard glass">
+                  <div className="mt">
+                    {m.icon.startsWith("/")
+                      ? <img className="chip-img" src={m.icon} alt="" width={22} height={22} />
+                      : <span className="chip" />}
+                    {m.name}
+                  </div>
+                  <div className="md">{m.desc}</div>
+                  <div className="lp-tags">{m.tags.map((t) => <span key={t} className="lp-tag">{t}</span>)}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <div className="lp-eyebrow">Why</div>
+            <h2 className="lp-h2">Built like a real API</h2>
+            <div className="lp-feats" style={{ marginTop: 26 }}>
+              {FEATURES.map((f, i) => (
+                <div key={f.title} className="lp-feat glass">
+                  <div className="fi">{String(i + 1).padStart(2, "0")}</div>
+                  <h3>{f.title}</h3>
+                  <p>{f.body}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section id="quickstart">
+            <div className="lp-eyebrow">Quickstart</div>
+            <h2 className="lp-h2">Two lines to switch</h2>
+            <div className="lp-code glass" style={{ marginTop: 26 }}>
+              <div className="lp-code-head">
+                <span className="lp-code-dot" style={{ background: "#ff5f57" }} />
+                <span className="lp-code-dot" style={{ background: "#febc2e" }} />
+                <span className="lp-code-dot" style={{ background: "#28c840" }} />
+                <span style={{ marginLeft: 8 }}>openai-sdk.ts</span>
+              </div>
+              <pre>{`import OpenAI from "openai";
 
 const client = new OpenAI({
-  baseURL: "https://qwen3-8-api.vercel.app/v1",
+  baseURL: "${BASE}/v1",
   apiKey: "qwen_sk_...",
 });
 
 const r = await client.chat.completions.create({
   model: "qwen3.8-max-preview",
   messages: [{ role: "user", content: "Hello!" }],
-});`;
+});`}</pre>
+            </div>
+          </section>
 
-import KeyGenerator from "./KeyGenerator";
+          <section id="get-a-key" style={{ marginTop: 64 }}>
+            <div className="lp-cta glass">
+              <h2>Get an API key</h2>
+              <p>
+                Free and instant. Copy it right after — shown once, then hidden for good.{" "}
+                <b style={{ color: "var(--text)" }}>Keys without an account are deleted after 3 days</b> —{" "}
+                <a href="/signup">sign up</a> to keep them and manage them in your dashboard.
+              </p>
+              <div style={{ maxWidth: 560, margin: "0 auto", textAlign: "left" }}>
+                <KeyGenerator />
+              </div>
+            </div>
+          </section>
 
-export default function Home() {
-  return (
-    <div className="wrap">
-      <span className="badge">qwen3.8-max-preview · vision</span>
-      <h1>
-        The <span className="grad">Qwen3.8 API</span>
-      </h1>
-      <p className="lead">
-        An OpenAI-compatible endpoint for <code>qwen3.8-max-preview</code>, with image
-        understanding built in. Point any OpenAI SDK at it, pass your API key, done.
-      </p>
-
-      <div className="grid">
-        <div className="card">
-          <h3>All Qwen models</h3>
-          <p>Every model from chat.qwen.ai — reasoning, vision, coding, omni and more.</p>
-        </div>
-        <div className="card">
-          <h3>Vision + thinking</h3>
-          <p>Image inputs via <code>image_url</code>, and the model&apos;s reasoning in <code>reasoning_content</code>.</p>
-        </div>
-        <div className="card">
-          <h3>Image &amp; video</h3>
-          <p>Generate images (<code>/v1/images/generations</code>) and video (<code>/v1/videos/generations</code>).</p>
+          <footer className="lp-foot">
+            <div className="lp-brand"><span className="lp-logo" /> Qwen3.8&nbsp;API</div>
+            <div style={{ display: "flex", gap: 20 }}>
+              <a href="/playground">Playground</a>
+              <a href="/chat">Chat</a>
+              <a href="/link">Link DeepSeek</a>
+              <a href="#get-a-key">Get a key</a>
+            </div>
+          </footer>
         </div>
       </div>
-
-      <p style={{ margin: "0 0 40px", display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <a className="btn" href="/chat" style={{ display: "inline-block" }}>
-          Open chat →
-        </a>
-        <a className="btn ghost" href="/playground" style={{ display: "inline-block" }}>
-          Playground
-        </a>
-        <a className="btn ghost" href="/link" style={{ display: "inline-block" }}>
-          Link DeepSeek
-        </a>
-      </p>
-
-      <h2 id="get-a-key">Get an API key</h2>
-      <KeyGenerator />
-
-      <h2>Quick start</h2>
-      <pre>
-        <code>{curlExample}</code>
-      </pre>
-
-      <h2>Using an OpenAI SDK</h2>
-      <pre>
-        <code>{sdkExample}</code>
-      </pre>
-
-      <h2>Vision request</h2>
-      <pre>
-        <code>{visionExample}</code>
-      </pre>
-
-      <h2>Endpoints</h2>
-      <pre>
-        <code>
-          POST /v1/chat/completions    — chat (streaming, vision, reasoning){"\n"}
-          POST /v1/images/generations  — text-to-image{"\n"}
-          POST /v1/videos/generations  — text-to-video (async){"\n"}
-          POST /v1/audio/speech        — text-to-speech (wav){"\n"}
-          GET  /v1/audio/voices        — ~78 TTS voices{"\n"}
-          GET  /v1/models              — lists all available models
-        </code>
-      </pre>
-
-      <h2>Image generation</h2>
-      <pre>
-        <code>{`curl https://qwen3-8-api.vercel.app/v1/images/generations \\
-  -H "Authorization: Bearer qwen_sk_..." \\
-  -H "Content-Type: application/json" \\
-  -d '{ "prompt": "a red apple on a table", "size": "1:1" }'
-# -> { "data": [{ "url": "https://..." }] }`}</code>
-      </pre>
-      <p>
-        Models: <span className="tok">qwen-image-3.0</span> and{" "}
-        <span className="tok">qwen-image-2.0</span>. Set the aspect ratio with <code>size</code> —{" "}
-        <code>1:1</code>, <code>16:9</code>, <code>9:16</code>, <code>4:3</code> or <code>3:4</code>.
-      </p>
-
-      <h2>Watermark</h2>
-      <p>
-        Generated images carry a <code>Qwen3.8 API</code> watermark by default. Override it per
-        request with the <code>watermark</code> field: pass your own text, or <code>false</code> to
-        remove it. The mark is baked into the pixels, so it stays on the downloaded file.
-      </p>
-      <pre>
-        <code>{`# custom watermark text (up to 64 chars)
--d '{ "prompt": "a red apple", "watermark": "yourbrand.com" }'
-
-# no watermark
--d '{ "prompt": "a red apple", "watermark": false }'`}</code>
-      </pre>
-      <p>
-        The <code>watermark</code> field works the same on <code>/v1/chat/completions</code> when you
-        use an image model (e.g. <span className="tok">qwen-image-3.0</span>).
-      </p>
-
-      <h2>Tool / function calling</h2>
-      <p>
-        Standard OpenAI <code>tools</code> work on <code>/v1/chat/completions</code> — the schemas are
-        injected into the prompt and parsed back into <code>tool_calls</code>. Send tool results back
-        as <code>role: &quot;tool&quot;</code> messages, exactly like the OpenAI flow. Try it live in the{" "}
-        <a href="/playground">playground</a> or <a href="/chat">chat</a> (toggle 🔧 Tools).
-      </p>
-      <pre>
-        <code>{`curl https://qwen3-8-api.vercel.app/v1/chat/completions \\
-  -H "Authorization: Bearer qwen_sk_..." -H "Content-Type: application/json" \\
-  -d '{
-    "model": "qwen3.8-max-preview",
-    "messages": [{ "role": "user", "content": "Weather in Tokyo?" }],
-    "tools": [{ "type": "function", "function": {
-      "name": "get_weather",
-      "parameters": { "type": "object", "properties": { "city": { "type": "string" } } }
-    }}]
-  }'
-# -> choices[0].message.tool_calls = [{ function: { name: "get_weather", ... } }]`}</code>
-      </pre>
-      <p style={{ color: "var(--muted)", fontSize: 13 }}>
-        Tool-calling method credit: Discord user <code>.thereid</code>.
-      </p>
-
-      <p className="foot">
-        Model: <span className="tok">qwen3.8-max-preview</span>. Authenticate with{" "}
-        <code>Authorization: Bearer &lt;your key&gt;</code>. Keys are issued by the operator.
-      </p>
-    </div>
+    </>
   );
 }

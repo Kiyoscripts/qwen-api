@@ -19,6 +19,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { Markdown } from "./Markdown";
+import Aurora, { type AuroraState } from "../Aurora";
 import { DEMO_TOOLS, DEMO_TOOL_NAMES, runDemoTool } from "@/lib/demoTools";
 
 interface ToolCallView {
@@ -74,6 +75,7 @@ const PRIMARY_IDS = [
   "qwen3.7-max",
   "qwen-image-3.0",
   "qwen-image-2.0",
+  "qwen-wan",
 ];
 
 const EXAMPLES = [
@@ -103,6 +105,7 @@ export default function Chat() {
   const [input, setInput] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [auroraState, setAuroraState] = useState<AuroraState>("idle");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,8 +125,10 @@ export default function Chat() {
   const messages = active?.messages ?? [];
   const activeModel = models.find((m) => m.id === active?.model);
   const isImageModel = (active?.model || "").startsWith("qwen-image");
+  const isVideoModel = active?.model === "qwen-wan";
+  const isMediaModel = isImageModel || isVideoModel;
   // Think/Fast: thinking-capable chat models, except 3.8 Max Preview (always reasons).
-  const canPickThink = (activeModel?.thinking ?? false) && active?.model !== "qwen3.8-max-preview" && !isImageModel;
+  const canPickThink = (activeModel?.thinking ?? false) && active?.model !== "qwen3.8-max-preview" && !isMediaModel;
 
   // --- boot: restore key + conversations ---
   useEffect(() => {
@@ -305,7 +310,7 @@ export default function Chat() {
         stream: true,
         messages: convo,
         ...(canPickThink ? { enable_thinking: !fast } : {}),
-        ...(isImageModel ? { size: aspect } : {}),
+        ...(isMediaModel ? { size: aspect } : {}),
         ...(tools ? { tools, tool_choice: "auto" } : {}),
       }),
     });
@@ -333,7 +338,7 @@ export default function Chat() {
         try {
           const d = JSON.parse(data)?.choices?.[0]?.delta;
           if (d?.reasoning_content) reasoning += d.reasoning_content;
-          if (d?.content) content += d.content;
+          if (d?.content) { content += d.content; setAuroraState("responding"); }
           if (Array.isArray(d?.tool_calls)) {
             for (const tc of d.tool_calls) toolCalls.push({ id: tc.id, name: tc.function?.name, arguments: tc.function?.arguments || "{}" });
           }
@@ -367,6 +372,7 @@ export default function Chat() {
     setImage(null);
     setError(null);
     setBusy(true);
+    setAuroraState("thinking");
     requestAnimationFrame(autoGrow);
 
     const ctrl = new AbortController();
@@ -417,6 +423,9 @@ export default function Chat() {
     } finally {
       setBusy(false);
       abortRef.current = null;
+      // Brief "settle" flash, then back to calm idle.
+      setAuroraState("done");
+      setTimeout(() => setAuroraState((s) => (s === "done" ? "idle" : s)), 2600);
     }
   }
 
@@ -512,7 +521,7 @@ export default function Chat() {
               <button type="button" className={fast ? "on" : ""} onClick={() => setFast(true)} title="Skip reasoning (faster)">Fast</button>
             </div>
           )}
-          {isImageModel && (
+          {isMediaModel && (
             <select className="c-aspect" value={aspect} onChange={(e) => setAspect(e.target.value)} title="Aspect ratio" aria-label="Aspect ratio">
               <option value="1:1">1:1</option>
               <option value="16:9">16:9</option>
@@ -521,7 +530,7 @@ export default function Chat() {
               <option value="3:4">3:4</option>
             </select>
           )}
-          {!isImageModel && (
+          {!isMediaModel && (
             <button
               type="button"
               className={`c-tools-btn ${toolsOn ? "on" : ""}`}
@@ -549,6 +558,7 @@ export default function Chat() {
 
   return (
     <div className="c-app">
+      <Aurora state={auroraState} />
       {/* ---------- sidebar ---------- */}
       <aside className={`c-side ${sidebarOpen ? "open" : ""}`}>
         <div className="c-side-top">

@@ -63,18 +63,75 @@ export async function validateApiKey(key: string): Promise<ApiKeyRecord | null> 
   return data as ApiKeyRecord;
 }
 
-// Generate a new key, store its hash, return the raw key ONCE.
-export async function createApiKey(name: string | null, ip?: string | null): Promise<{ id: string; key: string; key_prefix: string }> {
+// Generate a new key, store its hash, return the raw key ONCE. Pass userId to
+// attach it to an account (keys without a user auto-expire — see cleanup below).
+export async function createApiKey(
+  name: string | null,
+  ip?: string | null,
+  userId?: string | null
+): Promise<{ id: string; key: string; key_prefix: string }> {
   const key = "qwen_sk_" + randomBytes(24).toString("hex");
   const key_hash = hashKey(key);
   const key_prefix = key.slice(0, 16) + "…";
-  const { data, error } = await admin()
-    .from("api_keys")
-    .insert({ name, key_hash, key_prefix, created_ip: ip || null })
-    .select("id")
-    .single();
+  // Only reference user_id when we actually have a user, so anonymous key creation
+  // keeps working even before the account-system migration adds the column.
+  const row: Record<string, unknown> = { name, key_hash, key_prefix, created_ip: ip || null };
+  if (userId) row.user_id = userId;
+  const { data, error } = await admin().from("api_keys").insert(row).select("id").single();
   if (error) throw new Error(error.message);
   return { id: data.id, key, key_prefix };
+}
+
+// --- account-scoped key management -----------------------------------------
+
+export interface UserKey {
+  id: string;
+  name: string | null;
+  key_prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  request_count: number;
+  revoked: boolean;
+}
+
+export async function listUserKeys(userId: string): Promise<UserKey[]> {
+  const { data } = await admin()
+    .from("api_keys")
+    .select("id, name, key_prefix, created_at, last_used_at, request_count, revoked")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  return (data as UserKey[]) || [];
+}
+
+// Attach an existing anonymous key to a user ("convert key to account"). Only
+// works on a key that exists, isn't revoked, and isn't already owned.
+export async function claimKey(userId: string, rawKey: string): Promise<{ ok: boolean; error?: string; prefix?: string }> {
+  const key_hash = hashKey(rawKey.trim());
+  const { data } = await admin().from("api_keys").select("id, user_id, revoked, key_prefix").eq("key_hash", key_hash).maybeSingle();
+  if (!data) return { ok: false, error: "That key doesn't exist." };
+  if (data.revoked) return { ok: false, error: "That key has been revoked." };
+  if (data.user_id && data.user_id !== userId) return { ok: false, error: "That key is already linked to another account." };
+  if (data.user_id === userId) return { ok: true, prefix: data.key_prefix };
+  const { error } = await admin().from("api_keys").update({ user_id: userId }).eq("id", data.id);
+  if (error) return { ok: false, error: "Could not link the key." };
+  return { ok: true, prefix: data.key_prefix };
+}
+
+export async function revokeUserKey(userId: string, keyId: string): Promise<boolean> {
+  const { error } = await admin().from("api_keys").update({ revoked: true }).eq("id", keyId).eq("user_id", userId);
+  return !error;
+}
+
+// Delete anonymous (unlinked) keys older than 3 days. Returns how many went.
+export async function cleanupUnlinkedKeys(): Promise<number> {
+  const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await admin()
+    .from("api_keys")
+    .delete()
+    .is("user_id", null)
+    .lt("created_at", cutoff)
+    .select("id");
+  return (data || []).length;
 }
 
 // --- IP blacklist ----------------------------------------------------------

@@ -5,9 +5,10 @@ built on **Next.js + Vercel**, with API keys managed in **Supabase**. It proxies
 to a chat.qwen.ai account (your token, server-side) and exposes a clean, keyed API.
 
 - `POST /v1/chat/completions` — all models, streaming, vision, reasoning (`reasoning_content`), **tool/function calling**
-- `POST /v1/images/generations` — text-to-image (OpenAI-compatible); models `qwen-image-3.0` / `qwen-image-2.0`, `size` aspect ratio, and a `watermark` field (see below)
-- `POST /v1/videos/generations` — text-to-video; returns `202 { id, chat_id, status }` immediately
-- `GET  /v1/videos/status?task_id=…&chat_id=…` — poll a video task (**no timeout** — render as long as it needs)
+- `POST /v1/images/generations` — text-to-image **& image editing** (OpenAI-compatible); models `qwen-image-3.0` / `qwen-image-2.0`, `size` aspect ratio, `image`/`images` references, and a `watermark` field (see below)
+- `POST /v1/videos/generations` — text-to-video; returns `202 { id, chat_id, status, created }` immediately
+- `GET  /v1/videos/status?task_id=…&chat_id=…&started=…` — poll a video task (**no timeout**); pass
+  `started` (the `created` value from generation) to get an estimated `progress` back
 - `POST /v1/audio/speech` — text-to-speech → `audio/wav` (`{ "input": "...", "voice": "Cherry" }`)
 - `GET  /v1/audio/voices` — lists the ~78 TTS voices (name, gender, description)
 - `GET  /v1/models` — lists **all** Qwen models
@@ -59,6 +60,76 @@ encrypted** into an opaque token — the underlying (signed) Qwen CDN URL is hid
 and the watermark is tamper-evident (editing the token fails the auth tag). Set
 `MEDIA_SECRET` in production so tokens can't be forged. The link lives as long as
 the underlying Qwen CDN signature.
+
+### Image editing (reference images)
+
+Send one or more `image`s (or `images`) with a prompt to **edit / use a reference**
+instead of generating from scratch — the request switches from `t2i` to
+`image_edit` automatically. Images can be public URLs or `data:` URLs.
+
+```bash
+# edit an existing image
+curl .../v1/images/generations -H "Authorization: Bearer qwen_sk_..." \
+  -d '{
+    "model": "qwen-image-3.0",
+    "prompt": "make it night time, add neon signs",
+    "image": "https://example.com/street.jpg"
+  }'
+
+# multiple references
+  -d '{ "prompt": "combine these into one scene", "images": ["https://…/a.png", "data:image/png;base64,…"] }'
+```
+
+Accepted shapes for `image`/`images`: a URL string, an array of URL strings, or
+OpenAI-style `{ "url": "…" }` / `{ "image_url": { "url": "…" } }` objects. In the
+**`/chat`** UI, pick an image model, click the 📎 attach button, add a prompt, and
+send — the attached image becomes the edit reference. Same for the **playground**
+Image mode.
+
+### Video generation (`qwen-wan`)
+
+On by default — set `ENABLE_VIDEO_GENERATION=false` to hide the `qwen-wan` model
+and disable the `/v1/videos/*` endpoints. Generation is async (many minutes): the
+POST returns a task id immediately and you poll for the result.
+
+```bash
+# 1) kick it off (optional: size, image for image-to-video, watermark)
+curl .../v1/videos/generations -H "Authorization: Bearer qwen_sk_..." \
+  -d '{ "prompt": "someone walking in New York", "size": "16:9" }'
+# image-to-video:  -d '{ "prompt": "make it move", "image": "https://…/photo.jpg" }'
+# -> 202 { "id": "<task>", "chat_id": "<chat>", "status": "processing",
+#          "created": 1737…, "ticket": "<opaque>" }
+
+# 2) poll with the ticket (carries task/chat/started AND pins to the right account)
+curl ".../v1/videos/status?ticket=<opaque>" -H "Authorization: Bearer qwen_sk_..."
+# -> { "status": "processing", "progress": 62 }
+# -> { "status": "completed", "progress": 100, "data": [{ "url": "https://…mp4" }] }
+```
+
+**Always poll with the `ticket`.** A video task lives on exactly one pooled account,
+but each request otherwise picks a random account — so polling a random one gets
+"not found" and spins forever. The `ticket` (AES-GCM sealed) pins the poll to the
+account that created the task. You *can* poll by `task_id` instead, but then the
+server has to scan the whole pool each call to find the owner.
+
+**Progress is an estimate.** Qwen's API exposes no real progress value — the web UI
+animates a time-based curve, and so do we (an eased creep toward ~95%, snapping to
+100% on completion). It comes from the ticket's `created` (or a `started` query
+param). Image generation is synchronous (one request, returns the URL), so it has
+no progress to report.
+
+> Video status is polled at `GET /api/v1/tasks/status/{id}` upstream (Qwen moved it
+> from `v2` to `v1`; the old path 404s, which looks like "video never finishes").
+
+**Aspect ratio + reference image.** Pass `size` (`16:9`, `9:16`, `1:1`, `4:3`,
+`3:4`) for the video's shape, and `image` (a URL or data URL) to seed **image-to-
+video**. Video also works in `/v1/chat/completions` and the `/chat` UI: select
+`qwen-wan`, optionally attach an image, and send a prompt.
+
+**No watermark on video.** Unlike images, generated video is returned unwatermarked
+— burning text into an MP4 means re-encoding the clip, which broke playback, so the
+raw video is served (proxied through `/api/media` for display). The `watermark`
+field only affects image generation.
 
 ### Multiple accounts (token pool)
 

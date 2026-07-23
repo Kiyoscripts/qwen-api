@@ -69,8 +69,10 @@ export async function GET(req: NextRequest) {
 
   const upstreamType = upstream.headers.get("content-type") || "application/octet-stream";
 
-  // Optional watermark: composite the resolved text into the pixels before serving.
-  if (wm) {
+  // Optional watermark — images only. Video is served untouched (watermarking it
+  // re-encodes the clip and broke playback). Falls back to the original on failure.
+  const isVideo = /^video\//i.test(upstreamType) || /\.(?:mp4|webm|mov)(?:\?|$)/i.test(raw);
+  if (wm && !isVideo) {
     const inBuf = new Uint8Array(await upstream.arrayBuffer());
     try {
       const { buffer, contentType } = await applyWatermark(inBuf, wm, upstreamType);
@@ -78,7 +80,6 @@ export async function GET(req: NextRequest) {
         headers: { "Content-Type": contentType, "Cache-Control": "public, max-age=3600" },
       });
     } catch {
-      // If compositing fails (e.g. an unexpected format), serve the original.
       return new Response(inBuf, { headers: { "Content-Type": upstreamType, "Cache-Control": "public, max-age=3600" } });
     }
   }

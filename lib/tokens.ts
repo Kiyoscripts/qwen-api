@@ -36,6 +36,21 @@ export function invalidateTokenCache() {
   cache = null;
 }
 
+// Resolve a specific pooled account's token by its id ("env" / null = the env
+// token). Used to pin a follow-up request (video polling) to the exact account
+// that started the task. Returns null if that account is no longer in the pool.
+export async function tokenById(id: string | null): Promise<string | null> {
+  if (id === "env" || id === null) return process.env.QWEN_TOKEN || null;
+  const pool = await loadPool();
+  return pool.find((e) => e.id === id)?.token ?? null;
+}
+
+// All pooled account tokens (with ids), for the rare case we must scan every
+// account to find which one owns a task.
+export async function poolTokens(): Promise<PoolEntry[]> {
+  return loadPool();
+}
+
 function markUsed(entry: PoolEntry) {
   if (!entry.id) return;
   admin().from("qwen_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", entry.id).then(() => {}, () => {});
@@ -80,7 +95,7 @@ export async function withTokenFailover<T>(
   // An exhausted account rejects immediately without generating anything, so
   // trying several is cheap. Worth a higher ceiling when many are used up.
   maxAttempts = 8
-): Promise<{ token: string; result: T }> {
+): Promise<{ token: string; entryId: string | null; result: T }> {
   const pool = await loadPool();
   if (pool.length === 0) throw new Error("No Qwen tokens configured (add one in the admin dashboard or set QWEN_TOKEN).");
 
@@ -92,7 +107,8 @@ export async function withTokenFailover<T>(
     try {
       const result = await attempt(entry.token);
       markUsed(entry);
-      return { token: entry.token, result };
+      // entryId lets callers pin a follow-up request to this exact account.
+      return { token: entry.token, entryId: entry.id ?? "env", result };
     } catch (e: any) {
       lastError = e;
       if (!isTokenFailure(e?.message || "")) throw e; // a real error, not a bad account

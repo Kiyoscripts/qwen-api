@@ -332,7 +332,9 @@ export function extractWanxTaskId(json: any): string | null {
 }
 
 export interface TaskState {
-  status: "processing" | "completed" | "failed";
+  // "not_found" = this account doesn't own the task (tasks are per-account), so a
+  // caller scanning the pool should try the next account.
+  status: "processing" | "completed" | "failed" | "not_found";
   url?: string;
 }
 
@@ -341,19 +343,35 @@ export interface TaskState {
 export async function checkTask(token: string, taskId: string): Promise<TaskState> {
   let json: any;
   try {
-    const res = await fetch(`${QWEN_BASE}/api/v2/tasks/status/${encodeURIComponent(taskId)}`, {
+    // Qwen moved task status from v2 -> v1. The v1 body is flat:
+    // { chat_type, task_status: "running"|"success"|"failed", content: <url when done> }.
+    const res = await fetch(`${QWEN_BASE}/api/v1/tasks/status/${encodeURIComponent(taskId)}`, {
       headers: qwenHeaders(token),
     });
     json = await res.json();
   } catch {
     return { status: "processing" };
   }
-  const blob = JSON.stringify(json);
-  const m = blob.match(/https?:\/\/[^"\\]+\.(?:mp4|mov|webm)[^"\\]*/);
-  if (m) return { status: "completed", url: m[0] };
-  const status = (json?.data?.task_status || json?.data?.status || "").toString().toLowerCase();
+  const url = taskMediaUrl(json);
+  if (url) return { status: "completed", url };
+  // Wrong account: { success:false, data:{ code:"not found" } }.
+  if (json?.success === false && /not\s*found/i.test(`${json?.data?.code || ""} ${json?.data?.details || ""}`)) {
+    return { status: "not_found" };
+  }
+  const status = taskStatus(json);
   if (status === "failed" || status === "failure") return { status: "failed" };
   return { status: "processing" };
+}
+
+// Read the status string / media URL from either the flat v1 shape (top-level
+// task_status + content) or the older data-wrapped shape.
+function taskStatus(json: any): string {
+  return (json?.task_status || json?.data?.task_status || json?.data?.status || "").toString().toLowerCase();
+}
+function taskMediaUrl(json: any): string | null {
+  if (typeof json?.content === "string" && /\.(?:mp4|mov|webm)/i.test(json.content)) return json.content;
+  const m = JSON.stringify(json).match(/https?:\/\/[^"\\]+\.(?:mp4|mov|webm)[^"\\]*/);
+  return m ? m[0] : null;
 }
 
 // Poll a WanX (video) task until it produces a media URL. Returns the URL.
@@ -363,17 +381,15 @@ export async function pollTask(token: string, taskId: string, timeoutMs = 240_00
     await new Promise((r) => setTimeout(r, 5000));
     let json: any;
     try {
-      const res = await fetch(`${QWEN_BASE}/api/v2/tasks/status/${encodeURIComponent(taskId)}`, { headers: qwenHeaders(token) });
+      const res = await fetch(`${QWEN_BASE}/api/v1/tasks/status/${encodeURIComponent(taskId)}`, { headers: qwenHeaders(token) });
       json = await res.json();
     } catch {
       continue;
     }
-    const blob = JSON.stringify(json);
-    if (looksLikeChallenge(200, blob)) throw new QwenError("Qwen anti-bot challenge while polling video task.", 503);
-    const status = (json?.data?.task_status || json?.data?.status || "").toString().toLowerCase();
-    const m = blob.match(/https?:\/\/[^"\\]+\.(?:mp4|mov|webm)[^"\\]*/);
-    if (m) return m[0];
-    if (status === "failed" || status === "failure") throw new QwenError("Video generation failed upstream.");
+    if (looksLikeChallenge(200, JSON.stringify(json))) throw new QwenError("Qwen anti-bot challenge while polling video task.", 503);
+    const url = taskMediaUrl(json);
+    if (url) return url;
+    if (taskStatus(json) === "failed" || taskStatus(json) === "failure") throw new QwenError("Video generation failed upstream.");
     // otherwise keep polling (pending / running / succeeded-without-url-yet)
   }
   throw new QwenError("Video generation timed out.", 504);
