@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { applyWatermark } from "@/lib/watermark";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -53,8 +54,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `upstream ${upstream.status}` }, { status: 502 });
   }
 
+  const upstreamType = upstream.headers.get("content-type") || "application/octet-stream";
+
+  // Optional watermark: composite the given text into the pixels before serving.
+  const wm = req.nextUrl.searchParams.get("wm");
+  if (wm) {
+    const inBuf = new Uint8Array(await upstream.arrayBuffer());
+    try {
+      const { buffer, contentType } = await applyWatermark(inBuf, wm, upstreamType);
+      return new Response(buffer, {
+        headers: { "Content-Type": contentType, "Cache-Control": "public, max-age=3600" },
+      });
+    } catch {
+      // If compositing fails (e.g. an unexpected format), serve the original.
+      return new Response(inBuf, { headers: { "Content-Type": upstreamType, "Cache-Control": "public, max-age=3600" } });
+    }
+  }
+
   const headers = new Headers();
-  headers.set("Content-Type", upstream.headers.get("content-type") || "application/octet-stream");
+  headers.set("Content-Type", upstreamType);
   const len = upstream.headers.get("content-length");
   if (len) headers.set("Content-Length", len);
   // Generated media is immutable; let the browser cache it.

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateImage, virtualModel, VIRTUAL_MODELS } from "@/lib/media";
+import { resolveWatermark, buildMediaUrl, applyWatermark } from "@/lib/watermark";
 import { QwenError } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
 import { extractApiKey, validateApiKey, logUsage } from "@/lib/supabase";
@@ -41,7 +42,8 @@ function collectImages(body: any): string[] {
 
 // POST /v1/images/generations
 //   { "prompt": "...", "model"?: "qwen-image-3.0", "size"?: "1:1",
-//     "image"?: <ref image(s) for editing>, "response_format"?: "url"|"b64_json" }
+//     "image"?: <ref image(s) for editing>, "response_format"?: "url"|"b64_json",
+//     "watermark"?: false | "My Brand" }  // default "Qwen3.8 API"; false removes it
 export async function POST(req: NextRequest) {
   const key = extractApiKey(req.headers);
   if (!key) return err("Missing API key.", 401);
@@ -61,6 +63,8 @@ export async function POST(req: NextRequest) {
   const imageModelId = resolveImageModel(typeof body.model === "string" ? body.model : undefined);
   const size = typeof body.size === "string" ? body.size : undefined;
   const wantB64 = body.response_format === "b64_json";
+  // Default watermark "Qwen3.8 API"; pass watermark:false to remove or a string to customize.
+  const watermark = resolveWatermark(body.watermark);
 
   let url = "";
   try {
@@ -77,13 +81,23 @@ export async function POST(req: NextRequest) {
   if (wantB64) {
     try {
       const imgRes = await fetch(url);
-      const b64 = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
-      return NextResponse.json({ created, data: [{ b64_json: b64 }] });
+      let bytes: Uint8Array = new Uint8Array(await imgRes.arrayBuffer());
+      if (watermark) {
+        try {
+          bytes = (await applyWatermark(bytes, watermark, imgRes.headers.get("content-type") || undefined)).buffer;
+        } catch {
+          /* keep the un-watermarked bytes if compositing fails */
+        }
+      }
+      return NextResponse.json({ created, data: [{ b64_json: Buffer.from(bytes).toString("base64") }] });
     } catch {
       return NextResponse.json({ created, data: [{ url }] });
     }
   }
-  return NextResponse.json({ created, data: [{ url }] });
+  // With a watermark we hand back a media-proxy URL that brands the image on the
+  // fly; without one, the original CDN URL (clean image) is returned as before.
+  const outUrl = watermark ? buildMediaUrl(req.nextUrl.origin, url, watermark) : url;
+  return NextResponse.json({ created, data: [{ url: outUrl }] });
 }
 
 // GET /v1/images/generations -> lists the available image models (handy).

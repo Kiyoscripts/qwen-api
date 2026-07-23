@@ -17,6 +17,7 @@ import {
 } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
 import { virtualModel, generateImage, startVideo, type VirtualModel } from "@/lib/media";
+import { resolveWatermark, buildMediaUrl } from "@/lib/watermark";
 import {
   isDeepSeekModel,
   resolveDeepSeekModel,
@@ -84,7 +85,15 @@ export async function POST(req: NextRequest) {
   // media, so picking e.g. `qwen-image-3.0` in a chat just produces an image.
   const vm = virtualModel(modelId);
   if (vm) {
-    return handleMedia({ vm, messages, wantStream, size: typeof body.size === "string" ? body.size : undefined, recordId: record.id });
+    return handleMedia({
+      vm,
+      messages,
+      wantStream,
+      size: typeof body.size === "string" ? body.size : undefined,
+      watermark: resolveWatermark(body.watermark),
+      origin: req.nextUrl.origin,
+      recordId: record.id,
+    });
   }
 
   // Run the whole setup under token failover: if an account is out of quota,
@@ -308,9 +317,11 @@ async function handleMedia(args: {
   messages: OpenAIMessage[];
   wantStream: boolean;
   size?: string;
+  watermark: string | null;
+  origin: string;
   recordId: string;
 }) {
-  const { vm, messages, wantStream, size, recordId } = args;
+  const { vm, messages, wantStream, size, watermark, origin, recordId } = args;
   const last = messages[messages.length - 1];
   const prompt = messageText(last).trim();
   const images = imageUrlsIn(last);
@@ -324,7 +335,8 @@ async function handleMedia(args: {
       const { result: url } = await withTokenFailover((token) =>
         generateImage(token, { prompt, images, imageModelId: vm.imageModelId, size })
       );
-      markdown = `![${(prompt || "edited image").slice(0, 80)}](${url})`;
+      const shown = watermark ? buildMediaUrl(origin, url, watermark) : url;
+      markdown = `![${(prompt || "edited image").slice(0, 80)}](${shown})`;
     } else {
       // Video: start the task, then poll (bounded by this function's duration).
       const { token, result } = await withTokenFailover((t) => startVideo(t, prompt));
