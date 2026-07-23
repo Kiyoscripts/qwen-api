@@ -2,14 +2,21 @@
 // by default; API callers can override the text or turn it off entirely via the
 // `watermark` request field:
 //
-//   watermark omitted            -> default "Qwen3.8 API"
+//   watermark omitted              -> default "Qwen3.8 API"
 //   watermark: false | "" | "none" -> no watermark
-//   watermark: "My Brand"        -> that text
+//   watermark: "My Brand"          -> that text
 //
 // The watermark is composited into the pixels (not a CSS overlay), so it can't be
 // stripped just by ignoring the UI — an API caller has to explicitly opt out.
+//
+// Text is drawn as VECTOR PATHS (via opentype.js against a bundled font), not SVG
+// <text>. Serverless Linux has no system fonts, so librsvg would render <text> as
+// nothing; glyph outlines render identically everywhere.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import sharp from "sharp";
+import * as opentype from "opentype.js";
 
 export const DEFAULT_WATERMARK = "Qwen3.8 API";
 const MAX_LEN = 64;
@@ -35,12 +42,22 @@ export function buildMediaUrl(origin: string, url: string, watermark: string | n
   return `${origin}/api/media?${p.toString()}`;
 }
 
+// Parse the bundled font once and reuse it.
+let fontCache: opentype.Font | null = null;
+function font(): opentype.Font {
+  if (!fontCache) {
+    const buf = readFileSync(join(process.cwd(), "assets", "watermark-font.ttf"));
+    fontCache = opentype.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  }
+  return fontCache;
+}
+
 function escapeXml(s: string): string {
   return s.replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[c] as string));
 }
 
-// Composite `text` into the bottom-right corner of the image. Returns the encoded
-// bytes and their content type (format preserved for JPEG, otherwise PNG).
+// Composite `text` into the bottom-right corner of the image, on a translucent
+// rounded plate for legibility. Returns the encoded bytes and their content type.
 export async function applyWatermark(
   input: Uint8Array,
   text: string,
@@ -50,16 +67,36 @@ export async function applyWatermark(
   const meta = await img.metadata();
   const W = meta.width || 1024;
   const H = meta.height || 1024;
+  const minDim = Math.min(W, H);
 
-  const fontSize = Math.max(16, Math.round(W * 0.028));
-  const pad = Math.round(fontSize * 0.9);
-  const stroke = Math.max(1, fontSize * 0.06);
-  const safe = escapeXml(text);
+  const f = font();
+  // Drop characters the font has no glyph for (emoji, etc.) so they don't render
+  // as ".notdef" tofu boxes; fall back to the default if nothing is left.
+  const drawn = ([...text].filter((ch) => ch === " " || f.charToGlyphIndex(ch) !== 0).join("").trim()) || DEFAULT_WATERMARK;
+  text = drawn;
+  const fontSize = Math.min(160, Math.max(26, Math.round(minDim * 0.045)));
+  const scale = fontSize / f.unitsPerEm;
+  const ascent = f.ascender * scale;
+  const descent = Math.abs(f.descender) * scale;
+  const textW = f.getAdvanceWidth(text, fontSize);
+
+  const padX = Math.round(fontSize * 0.5);
+  const padY = Math.round(fontSize * 0.32);
+  const margin = Math.round(minDim * 0.022);
+  const plateW = textW + padX * 2;
+  const plateH = ascent + descent + padY * 2;
+  const plateX = W - margin - plateW;
+  const plateY = H - margin - plateH;
+  const radius = Math.round(plateH * 0.25);
+
+  // Glyph outlines at the text baseline inside the plate.
+  const baselineX = plateX + padX;
+  const baselineY = plateY + padY + ascent;
+  const d = f.getPath(text, baselineX, baselineY, fontSize).toPathData(2);
+
   const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-    <text x="${W - pad}" y="${H - pad}" text-anchor="end"
-      font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="600"
-      fill="#ffffff" fill-opacity="0.9"
-      stroke="#000000" stroke-opacity="0.35" stroke-width="${stroke}" paint-order="stroke">${safe}</text>
+    <rect x="${plateX.toFixed(1)}" y="${plateY.toFixed(1)}" width="${plateW.toFixed(1)}" height="${plateH.toFixed(1)}" rx="${radius}" fill="#000000" fill-opacity="0.42"/>
+    <path d="${escapeXml(d)}" fill="#ffffff" fill-opacity="0.96"/>
   </svg>`;
 
   const composited = img.composite([{ input: Buffer.from(svg), top: 0, left: 0 }]);
