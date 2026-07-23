@@ -11,7 +11,8 @@ const nextConfig = {
   outputFileTracingIncludes: {
     "/api/media": ["./assets/watermark-font.ttf"],
     "/api/v1/images/generations": ["./assets/watermark-font.ttf"],
-    "/api/v1/chat/completions": ["./assets/watermark-font.ttf"],
+    // Custom-model system prompts are read from prompts/ at runtime.
+    "/api/v1/chat/completions": ["./assets/watermark-font.ttf", "./prompts/**"],
   },
   // Expose the OpenAI-style /v1/* paths, backed by the route handlers in app/api/v1/*.
   async rewrites() {

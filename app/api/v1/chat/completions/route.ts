@@ -19,6 +19,7 @@ import { withTokenFailover } from "@/lib/tokens";
 import { virtualModel, generateImage, startVideo, type VirtualModel } from "@/lib/media";
 import { resolveWatermark, buildMediaUrl } from "@/lib/watermark";
 import { hasTools, preprocessToolMessages, parseToolCalls, type OAIToolCall } from "@/lib/tools";
+import { customModel, systemPromptFor } from "@/lib/customModels";
 import {
   isDeepSeekModel,
   resolveDeepSeekModel,
@@ -91,9 +92,20 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Custom slugs (e.g. unlocked-qwen-3.8-max-preview) run on a real Qwen model with
+  // a baked-in system prompt. `modelId` stays the requested slug for responses and
+  // logging; `backendModel` is what actually gets called.
+  const cm = customModel(modelId);
+  const backendModel = cm?.baseModel || modelId;
+
   // With tools on, flatten the OpenAI tool-flow (assistant tool_calls, role:"tool"
   // results) into text and append the tool-protocol system section.
-  const effMessages = toolsOn ? preprocessToolMessages(messages, body.tools, body.tool_choice) : messages;
+  let effMessages: any[] = toolsOn ? preprocessToolMessages(messages, body.tools, body.tool_choice) : messages;
+  // The persona goes first so the caller's own system prompt layers on top of it.
+  if (cm) {
+    const persona = systemPromptFor(cm);
+    if (persona) effMessages = [{ role: "system", content: persona }, ...effMessages];
+  }
 
   // Run the whole setup under token failover: if an account is out of quota,
   // rate-limited or expired, transparently retry on a different pooled account.
@@ -102,21 +114,21 @@ export async function POST(req: NextRequest) {
   let qwenRes: Response;
   try {
     const { token: usedToken, result } = await withTokenFailover(async (candidate) => {
-      const model = await resolveModel(candidate, modelId);
+      const model = await resolveModel(candidate, backendModel);
       if (!model) throw new QwenError(`Model '${modelId}' is not available.`, 404);
       const files = await uploadImages(candidate, imageUrlsIn(messages[messages.length - 1]));
 
       let cid: string | undefined;
       try {
-        cid = await createChat(candidate, modelId, "t2t");
+        cid = await createChat(candidate, backendModel, "t2t");
         // Think (default) vs Fast: callers can pass `enable_thinking: false` to skip
         // reasoning on models that support it. Models in REQUIRE_THINKING stay on.
-        const thinking = REQUIRE_THINKING.has(modelId)
+        const thinking = REQUIRE_THINKING.has(backendModel)
           ? true
           : model.thinking && body.enable_thinking !== false;
-        const qwenMessages = [buildMessage(effMessages, { model: modelId, chatType: "t2t", files, thinking })];
+        const qwenMessages = [buildMessage(effMessages, { model: backendModel, chatType: "t2t", files, thinking })];
         // Always stream from Qwen (it returns SSE); we buffer it for non-streaming clients.
-        const res = await openCompletion(candidate, cid, { model: modelId, messages: qwenMessages, stream: true });
+        const res = await openCompletion(candidate, cid, { model: backendModel, messages: qwenMessages, stream: true });
         return { chatId: cid, res };
       } catch (e) {
         // Don't leave an orphan chat behind on the account we're abandoning.

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getModels } from "@/lib/qwen";
 import { DEEPSEEK_MODELS } from "@/lib/deepseek";
 import { VIRTUAL_MODELS } from "@/lib/media";
+import { CUSTOM_MODELS } from "@/lib/customModels";
 import { withTokenFailover } from "@/lib/tokens";
 import { extractApiKey, validateApiKey } from "@/lib/supabase";
 
@@ -19,6 +20,17 @@ const mediaEntries = VIRTUAL_MODELS.map((m) => ({
     thinking: false,
     chat_types: m.kind === "image" ? ["t2i", "image_edit"] : ["t2v"],
   },
+}));
+
+// Custom slugs (persona + system prompt over a real Qwen model).
+const customEntries = CUSTOM_MODELS.map((m) => ({
+  id: m.id,
+  object: "model" as const,
+  created: 0,
+  owned_by: "qwen",
+  display_name: m.name,
+  description: m.description,
+  capabilities: { vision: true, thinking: true, chat_types: ["t2t"] },
 }));
 
 const deepseekEntries = DEEPSEEK_MODELS.map((m) => ({
@@ -52,7 +64,7 @@ export async function GET(req: NextRequest) {
     } catch {
       /* Qwen pool unavailable -> still return DeepSeek models */
     }
-    return NextResponse.json({ object: "list", data: [...mediaEntries, ...deepseekEntries, ...qwenEntries] });
+    return NextResponse.json({ object: "list", data: [...customEntries, ...mediaEntries, ...deepseekEntries, ...qwenEntries] });
   } catch (e: any) {
     return NextResponse.json({ error: { message: e.message, type: "upstream_error" } }, { status: 503 });
   }

@@ -67,7 +67,14 @@ const DEFAULT_MODEL = "qwen3.8-max-preview";
 
 // Shown at the top level of the picker, in this order. Everything else is
 // tucked behind "Other models".
-const PRIMARY_IDS = ["qwen3.8-max-preview", "qwen3.7-plus", "qwen3.7-max", "qwen-image-3.0", "qwen-image-2.0"];
+const PRIMARY_IDS = [
+  "qwen3.8-max-preview",
+  "unlocked-qwen-3.8-max-preview",
+  "qwen3.7-plus",
+  "qwen3.7-max",
+  "qwen-image-3.0",
+  "qwen-image-2.0",
+];
 
 const EXAMPLES = [
   "Explain closures in JavaScript with a short example",
