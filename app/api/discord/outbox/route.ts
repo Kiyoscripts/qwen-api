@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchPendingDMs, ackDM } from "@/lib/discord";
+import { claimPendingDMs, ackDM } from "@/lib/discord";
 
 export const runtime = "nodejs";
 
@@ -8,10 +8,11 @@ function authed(req: NextRequest): boolean {
   return Boolean(secret) && req.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-// The bot polls this for DMs to send (no public URL on the bot needed).
+// The bot polls this for DMs to send. Claiming is atomic (pending -> sending), so
+// the same DM is never handed to two polls (no double-sends).
 export async function GET(req: NextRequest) {
   if (!authed(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  return NextResponse.json({ dms: await fetchPendingDMs() });
+  return NextResponse.json({ dms: await claimPendingDMs() });
 }
 
 // The bot reports the result of each DM: { id, status: "sent"|"dms_closed"|"failed" }.

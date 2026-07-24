@@ -52,13 +52,18 @@ export async function queueDM(discordId: string, message: string): Promise<void>
 }
 
 // --- bot polling helpers (used by /api/discord/outbox) ---------------------
-export async function fetchPendingDMs(limit = 10): Promise<{ id: string; discord_id: string; message: string }[]> {
+// Atomically CLAIM pending DMs: flip them pending -> sending and return them, so
+// two overlapping polls can never grab the same row (no double-sends). Rows stuck
+// in "sending" for >2 min (bot crashed mid-send) are reclaimed first.
+export async function claimPendingDMs(): Promise<{ id: string; discord_id: string; message: string }[]> {
+  const staleCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  await admin().from("discord_dm_queue").update({ status: "pending" }).eq("status", "sending").lt("updated_at", staleCutoff);
+
   const { data } = await admin()
     .from("discord_dm_queue")
-    .select("id, discord_id, message")
+    .update({ status: "sending", updated_at: new Date().toISOString() })
     .eq("status", "pending")
-    .order("created_at", { ascending: true })
-    .limit(limit);
+    .select("id, discord_id, message");
   return (data as any[]) || [];
 }
 export async function ackDM(id: string, status: "sent" | "dms_closed" | "failed"): Promise<void> {
