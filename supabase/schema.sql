@@ -104,3 +104,60 @@ as $$
          request_count = request_count + 1
    where key_hash = p_key_hash;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Accounts (signup system). Custom lightweight auth — no Supabase Auth, no email
+-- verification. Passwords are scrypt-hashed server-side. Sessions are signed
+-- cookies (no session table). API keys can be attached to a user; keys with NO
+-- user are anonymous and auto-deleted after 3 days.
+-- ---------------------------------------------------------------------------
+create table if not exists public.users (
+  id            uuid primary key default gen_random_uuid(),
+  email         text not null unique,
+  password_hash text not null,
+  created_at    timestamptz not null default now()
+);
+alter table public.users enable row level security;
+-- (No policies on purpose — only the service role touches it.)
+
+-- Attach keys to an account. NULL user_id = anonymous (expires in 3 days).
+alter table public.api_keys add column if not exists user_id uuid references public.users(id) on delete cascade;
+create index if not exists api_keys_user_id_idx on public.api_keys (user_id);
+
+-- ---------------------------------------------------------------------------
+-- Discord-based login (replaces email/password). A user links their Discord via
+-- the bot's /link command -> gets a code -> enters it on the site -> the site
+-- DMs them a login key. They log in with that key. Role (owner/admin/member)
+-- comes from their Discord server permissions.
+-- ---------------------------------------------------------------------------
+alter table public.users add column if not exists discord_id           text unique;
+alter table public.users add column if not exists discord_username      text;
+alter table public.users add column if not exists discord_global_name   text;
+alter table public.users add column if not exists discord_avatar        text;
+alter table public.users add column if not exists discord_role          text;  -- owner|admin|member
+alter table public.users add column if not exists login_key_hash        text;
+alter table public.users add column if not exists updated_at            timestamptz;
+
+-- Email/password are no longer required (Discord is the identity now).
+do $$ begin
+  if exists (select 1 from information_schema.columns where table_name='users' and column_name='email') then
+    alter table public.users alter column email drop not null;
+  end if;
+  if exists (select 1 from information_schema.columns where table_name='users' and column_name='password_hash') then
+    alter table public.users alter column password_hash drop not null;
+  end if;
+end $$;
+
+create index if not exists users_login_key_hash_idx on public.users (login_key_hash);
+
+-- Short-lived link codes the bot creates for /link.
+create table if not exists public.discord_link_codes (
+  code                text primary key,
+  discord_id          text not null,
+  discord_username    text,
+  discord_global_name text,
+  discord_avatar      text,
+  discord_role        text,
+  expires_at          timestamptz not null
+);
+alter table public.discord_link_codes enable row level security;
