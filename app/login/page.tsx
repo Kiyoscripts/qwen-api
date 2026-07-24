@@ -91,7 +91,7 @@ export default function LoginPage() {
                 <>
                   <ol className="auth-steps">
                     <li>Join the <a href={INVITE} target="_blank" rel="noreferrer">Discord server</a>.</li>
-                    <li>Run <code>/link</code> in any channel — the bot DMs/replies with a code.</li>
+                    <li>Run <code>/link</code> in the link channel — the bot DMs/replies with a code.</li>
                     <li>Enter that code below.</li>
                   </ol>
                   <form onSubmit={verify}>
