@@ -1,6 +1,5 @@
 import Aurora from "./Aurora";
 import StatsBar from "./StatsBar";
-import KeyGenerator from "./KeyGenerator";
 
 const BASE = "https://qwen3-8-api.vercel.app";
 
@@ -50,7 +49,7 @@ export default function Home() {
               image, video and speech. No re-plumbing.
             </p>
             <div className="lp-ctarow">
-              <a className="g-btn lg" href="#get-a-key">Get an API key</a>
+              <a className="g-btn lg" href="/login">Get an API key</a>
               <a className="g-btn lg outline" href="/docs">Read the docs</a>
             </div>
 
@@ -118,12 +117,11 @@ const r = await client.chat.completions.create({
             <div className="lp-cta glass">
               <h2>Get an API key</h2>
               <p>
-                Free and instant. Copy it right after — shown once, then hidden for good.{" "}
-                <b style={{ color: "var(--text)" }}>Keys without an account are deleted after 3 days</b> —{" "}
-                <a href="/login">link your Discord</a> to keep them and manage them in your dashboard.
+                Link your Discord to create keys and manage them from your dashboard — usage,
+                analytics and revocation, all in one place.
               </p>
-              <div style={{ maxWidth: 560, margin: "0 auto", textAlign: "left" }}>
-                <KeyGenerator />
+              <div style={{ marginTop: 22 }}>
+                <a className="g-btn lg" href="/login">Log in with Discord</a>
               </div>
             </div>
           </section>

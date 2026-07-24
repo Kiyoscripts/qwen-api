@@ -28,7 +28,6 @@ export default function KeysDashboard() {
   const [loading, setLoading] = useState(true);
   const [keys, setKeys] = useState<Key[]>([]);
   const [name, setName] = useState("");
-  const [claim, setClaim] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [fresh, setFresh] = useState<{ key: string; left: number } | null>(null);
 
@@ -64,18 +63,6 @@ export default function KeysDashboard() {
     if (!r.ok) { setMsg(j.error || "Could not create key."); return; }
     setName("");
     setFresh({ key: j.key, left: REVEAL_SECONDS });
-    load();
-  }
-
-  async function claimKey() {
-    setMsg(null);
-    const r = await fetch("/api/account/keys/claim", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: claim.trim() }),
-    });
-    const j = await r.json();
-    if (!r.ok) { setMsg(j.error || "Could not link key."); return; }
-    setClaim("");
-    setMsg("Key linked to your account ✓");
     load();
   }
 
@@ -119,7 +106,7 @@ export default function KeysDashboard() {
           <UsageCharts />
 
           <h2 className="lp-h2" style={{ textAlign: "left", fontSize: 24, marginTop: 44 }}>API keys</h2>
-          <p className="auth-sub">Create keys, link keys made on the homepage, and manage them here.</p>
+          <p className="auth-sub">Create and manage your API keys here.</p>
 
           {fresh && (
             <div className="dash-fresh glass">
@@ -137,13 +124,6 @@ export default function KeysDashboard() {
               <div className="kg-row">
                 <input className="kg-input" placeholder="Label (optional)" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
                 <button className="g-btn" onClick={createKey}>Create</button>
-              </div>
-            </div>
-            <div className="dash-act glass">
-              <label className="auth-label">Link an existing key</label>
-              <div className="kg-row">
-                <input className="kg-input" placeholder="qwen_sk_…" value={claim} onChange={(e) => setClaim(e.target.value)} />
-                <button className="g-btn outline" onClick={claimKey}>Link</button>
               </div>
             </div>
           </div>
