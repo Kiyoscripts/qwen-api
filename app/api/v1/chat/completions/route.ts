@@ -152,8 +152,89 @@ export async function POST(req: NextRequest) {
   };
   const withReasoning = showReasoning();
 
-  // Tool calls can only be recognized once the full reply is in hand, so when tools
-  // are active we buffer, parse, and emit tool_calls (streamed or not).
+  const streamDelta = (tcs: OAIToolCall[]) =>
+    tcs.map((tc, i) => ({ index: i, id: tc.id, type: "function", function: tc.function }));
+
+  // Tools + streaming: stream text token-by-token while pulling out <tool_call>
+  // blocks as they complete (only the tool JSON is withheld from the text stream).
+  if (toolsOn && wantStream) {
+    const encoder = new TextEncoder();
+    const OPEN = "<tool_call>";
+    const CLOSE = "</tool_call>";
+    // Longest suffix of s that is a proper prefix of tag — so a tag split across
+    // chunks isn't emitted as visible text.
+    const partialTail = (s: string, tag: string) => {
+      const max = Math.min(s.length, tag.length - 1);
+      for (let k = max; k > 0; k--) if (s.slice(s.length - k) === tag.slice(0, k)) return k;
+      return 0;
+    };
+    const parseOne = (inner: string): OAIToolCall | undefined => parseToolCalls(`${OPEN}${inner}${CLOSE}`).toolCalls[0];
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (delta: any, finish: string | null = null) =>
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`));
+        send({ role: "assistant" });
+
+        let hold = "";
+        let inTool = false;
+        let toolBuf = "";
+        const toolCalls: OAIToolCall[] = [];
+
+        try {
+          for await (const { phase, text } of qwenDeltas(qwenRes)) {
+            if (phase === "think") { if (withReasoning && text) send({ reasoning_content: text }); continue; }
+            let buf = hold + text;
+            hold = "";
+            while (buf.length) {
+              if (!inTool) {
+                const i = buf.indexOf(OPEN);
+                if (i === -1) {
+                  const keep = partialTail(buf, OPEN);
+                  const out = buf.slice(0, buf.length - keep);
+                  if (out) send({ content: out });
+                  hold = buf.slice(buf.length - keep);
+                  buf = "";
+                } else {
+                  const out = buf.slice(0, i);
+                  if (out) send({ content: out });
+                  inTool = true; toolBuf = "";
+                  buf = buf.slice(i + OPEN.length);
+                }
+              } else {
+                const j = buf.indexOf(CLOSE);
+                if (j === -1) {
+                  const keep = partialTail(buf, CLOSE);
+                  toolBuf += buf.slice(0, buf.length - keep);
+                  hold = buf.slice(buf.length - keep);
+                  buf = "";
+                } else {
+                  toolBuf += buf.slice(0, j);
+                  const tc = parseOne(toolBuf);
+                  if (tc) toolCalls.push(tc);
+                  inTool = false; toolBuf = "";
+                  buf = buf.slice(j + CLOSE.length);
+                }
+              }
+            }
+          }
+          if (inTool) { const tc = parseOne(toolBuf + hold); if (tc) toolCalls.push(tc); }
+          else if (hold) send({ content: hold });
+        } catch (e: any) {
+          send({ content: `\n[error: ${e.message}]` });
+        }
+        await cleanup();
+        logUsage(record.id, modelId, hadImage, true, 200);
+        if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
+        send({}, toolCalls.length ? "tool_calls" : "stop");
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  }
+
+  // Tools without streaming: buffer the whole reply, parse, return JSON.
   if (toolsOn) {
     let raw = "";
     let reasoning = "";
@@ -172,42 +253,16 @@ export async function POST(req: NextRequest) {
     logUsage(record.id, modelId, hadImage, wantStream, 200);
 
     const { content: toolContent, toolCalls } = parseToolCalls(raw);
-    const finish = toolCalls.length ? "tool_calls" : "stop";
-    const message: Record<string, unknown> = {
-      role: "assistant",
-      content: toolCalls.length ? toolContent : raw,
-    };
+    const message: Record<string, unknown> = { role: "assistant", content: toolCalls.length ? toolContent : raw };
     if (toolCalls.length) message.tool_calls = toolCalls;
     if (withReasoning && reasoning) message.reasoning_content = reasoning;
-
-    const streamDelta = (tcs: OAIToolCall[]) =>
-      tcs.map((tc, i) => ({ index: i, id: tc.id, type: "function", function: tc.function }));
-
-    if (wantStream) {
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream({
-        start(controller) {
-          const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
-          send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
-          if (toolCalls.length) {
-            send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { tool_calls: streamDelta(toolCalls) }, finish_reason: null }] });
-          } else if (raw) {
-            send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: raw }, finish_reason: null }] });
-          }
-          send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: finish }] });
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-        },
-      });
-      return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
-    }
 
     return NextResponse.json({
       id,
       object: "chat.completion",
       created,
       model: modelId,
-      choices: [{ index: 0, message, finish_reason: finish }],
+      choices: [{ index: 0, message, finish_reason: toolCalls.length ? "tool_calls" : "stop" }],
       usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     });
   }
