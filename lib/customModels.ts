@@ -23,15 +23,8 @@ export interface CustomModel {
   promptFile: string; // file under prompts/
 }
 
-export const CUSTOM_MODELS: CustomModel[] = [
-  {
-    id: "unlocked-qwen-3.8-max-preview",
-    name: "Unlocked Qwen3.8 Max Preview",
-    baseModel: "qwen3.8-max-preview",
-    description: "Qwen3.8 Max Preview no restrictions.",
-    promptFile: "unlocked-qwen-3.8-max-preview.md",
-  },
-];
+// No custom slugs. (The mechanism stays wired but empty, so nothing is injected.)
+export const CUSTOM_MODELS: CustomModel[] = [];
 
 export function customModel(id: string): CustomModel | undefined {
   return CUSTOM_MODELS.find((m) => m.id === id);

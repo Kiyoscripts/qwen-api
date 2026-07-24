@@ -16,8 +16,15 @@ interface Key {
 
 const REVEAL_SECONDS = 60;
 
+interface Me {
+  username: string | null;
+  avatar: string | null;
+  discord_id: string | null;
+  role: string;
+}
+
 export default function KeysDashboard() {
-  const [email, setEmail] = useState<string | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [keys, setKeys] = useState<Key[]>([]);
   const [name, setName] = useState("");
@@ -27,9 +34,9 @@ export default function KeysDashboard() {
 
   useEffect(() => {
     (async () => {
-      const me = await fetch("/api/auth/me");
-      if (!me.ok) { window.location.href = "/login"; return; }
-      setEmail((await me.json()).user.email);
+      const meRes = await fetch("/api/auth/me");
+      if (!meRes.ok) { window.location.href = "/login"; return; }
+      setMe((await meRes.json()).user);
       await load();
       setLoading(false);
     })();
@@ -93,7 +100,15 @@ export default function KeysDashboard() {
         <nav className="lp-nav glass">
           <a className="lp-brand" href="/" style={{ textDecoration: "none" }}><span className="lp-logo" /> Qwen3.8&nbsp;API</a>
           <div className="lp-navcta">
-            <span className="auth-sub" style={{ margin: 0 }}>{email}</span>
+            {me && (
+              <div className="dash-me">
+                {me.avatar
+                  ? <img src={me.avatar.startsWith("http") ? me.avatar : `https://cdn.discordapp.com/avatars/${me.discord_id}/${me.avatar}.png`} alt="" />
+                  : <span className="auth-avatar-fallback" />}
+                <span className="dash-me-name">{me.username || "Account"}</span>
+                {me.role && me.role !== "member" && <span className={`role-tag ${me.role}`}>{me.role}</span>}
+              </div>
+            )}
             <button className="g-btn outline" onClick={logout}>Sign out</button>
           </div>
         </nav>

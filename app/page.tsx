@@ -36,8 +36,8 @@ export default function Home() {
             <a href="/docs">Docs</a>
           </div>
           <div className="lp-navcta">
-            <a className="ghost" href="/login">Sign in</a>
-            <a className="g-btn" href="/signup">Sign up</a>
+            <a className="ghost" href="/link">Link DeepSeek</a>
+            <a className="g-btn" href="/login">Log in</a>
           </div>
         </nav>
 
@@ -120,7 +120,7 @@ const r = await client.chat.completions.create({
               <p>
                 Free and instant. Copy it right after — shown once, then hidden for good.{" "}
                 <b style={{ color: "var(--text)" }}>Keys without an account are deleted after 3 days</b> —{" "}
-                <a href="/signup">sign up</a> to keep them and manage them in your dashboard.
+                <a href="/login">link your Discord</a> to keep them and manage them in your dashboard.
               </p>
               <div style={{ maxWidth: 560, margin: "0 auto", textAlign: "left" }}>
                 <KeyGenerator />

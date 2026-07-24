@@ -799,3 +799,28 @@ code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, mo
 .usage-bar-track { height: 7px; background: rgba(255,255,255,.06); border-radius: 999px; overflow: hidden; }
 .usage-bar-fill { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
 .usage-bar-num { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
+
+/* --- Discord auth (login/link) extras -------------------------------------- */
+.auth-tabs { display: flex; gap: 4px; padding: 4px; background: rgba(0,0,0,.25); border: 1px solid var(--glass-brd); border-radius: 12px; margin-bottom: 22px; }
+.auth-tabs button { flex: 1; background: transparent; border: none; color: var(--muted); font-size: 14px; font-weight: 600; padding: 9px; border-radius: 9px; cursor: pointer; }
+.auth-tabs button.on { background: var(--glass-strong); color: var(--text); }
+.auth-steps { margin: 0 0 20px; padding-left: 20px; color: var(--muted); font-size: 14px; line-height: 1.8; }
+.auth-steps code { background: rgba(255,255,255,.06); border: 1px solid var(--glass-brd); border-radius: 5px; padding: 1px 6px; color: var(--accent-2); }
+.auth-linked { }
+.auth-profile { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.auth-profile img, .dash-me img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
+.dash-me img { width: 26px; height: 26px; }
+.auth-avatar-fallback { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-2)); display: inline-block; }
+.auth-profile-name { font-weight: 650; font-size: 16px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.auth-ok { background: rgba(56,224,176,.10); border: 1px solid rgba(56,224,176,.30); color: #7ff0cf; font-size: 13.5px; padding: 11px 13px; border-radius: 10px; line-height: 1.5; }
+.auth-warn { background: rgba(255,176,60,.09); border: 1px solid rgba(255,176,60,.28); color: #ffca8a; font-size: 13.5px; padding: 11px 13px; border-radius: 10px; line-height: 1.55; }
+.auth-ok a, .auth-warn a { color: inherit; text-decoration: underline; }
+
+/* role tag (owner / admin) */
+.role-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 2px 7px; border-radius: 6px; }
+.role-tag.owner { color: #ffd27a; background: rgba(255,180,60,.14); border: 1px solid rgba(255,180,60,.4); }
+.role-tag.admin { color: #9db4ff; background: rgba(90,141,255,.14); border: 1px solid rgba(90,141,255,.4); }
+
+/* dashboard account chip */
+.dash-me { display: flex; align-items: center; gap: 8px; }
+.dash-me-name { font-size: 13.5px; color: var(--text); font-weight: 600; }

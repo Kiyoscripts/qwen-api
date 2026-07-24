@@ -1,39 +1,41 @@
-// Lightweight custom auth: scrypt password hashing + signed (AES-GCM) session
-// cookies. No Supabase Auth, no email verification, no session table.
+// Discord-based auth. Identity comes from Discord (via the /link bot flow). We
+// store a high-entropy "login key" (hashed) per account; the user logs in with it.
+// Sessions are signed (AES-GCM) cookies — no session table.
 
-import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { admin } from "./supabase";
 import { seal, unseal } from "./secureToken";
 
 const COOKIE = "qwen_session";
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
-// --- passwords --------------------------------------------------------------
-export function hashPassword(pw: string): string {
-  const salt = randomBytes(16);
-  const hash = scryptSync(pw, salt, 32);
-  return `scrypt$${salt.toString("hex")}$${hash.toString("hex")}`;
+export type Role = "owner" | "admin" | "member";
+
+export interface User {
+  id: string;
+  discord_id: string | null;
+  discord_username: string | null;
+  discord_global_name: string | null;
+  discord_avatar: string | null;
+  discord_role: Role | null;
+  created_at: string;
 }
-export function verifyPassword(pw: string, stored: string): boolean {
-  const [scheme, saltHex, hashHex] = (stored || "").split("$");
-  if (scheme !== "scrypt" || !saltHex || !hashHex) return false;
-  try {
-    const got = scryptSync(pw, Buffer.from(saltHex, "hex"), 32);
-    const want = Buffer.from(hashHex, "hex");
-    return got.length === want.length && timingSafeEqual(got, want);
-  } catch {
-    return false;
-  }
+
+// --- login keys -------------------------------------------------------------
+export function newLoginKey(): string {
+  return "qkey_" + randomBytes(20).toString("hex");
+}
+export function hashLoginKey(key: string): string {
+  return createHash("sha256").update(key.trim()).digest("hex");
 }
 
 // --- session cookie ---------------------------------------------------------
-export interface Session {
+interface Session {
   uid: string;
-  email: string;
   iat: number;
 }
-export function sessionCookie(user: { id: string; email: string }): string {
-  const token = seal({ uid: user.id, email: user.email, iat: Date.now() });
+export function sessionCookie(user: { id: string }): string {
+  const token = seal({ uid: user.id, iat: Date.now() });
   const secure = process.env.NODE_ENV === "production" ? " Secure;" : "";
   return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE};${secure}`;
 }
@@ -41,7 +43,7 @@ export function clearSessionCookie(): string {
   const secure = process.env.NODE_ENV === "production" ? " Secure;" : "";
   return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0;${secure}`;
 }
-export function readSession(req: Request): Session | null {
+function readSession(req: Request): Session | null {
   const cookie = req.headers.get("cookie") || "";
   const m = cookie.match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
   if (!m) return null;
@@ -49,40 +51,58 @@ export function readSession(req: Request): Session | null {
   return s && typeof s.uid === "string" ? s : null;
 }
 
+const USER_COLS = "id, discord_id, discord_username, discord_global_name, discord_avatar, discord_role, created_at";
+
 // --- users ------------------------------------------------------------------
-export interface User {
-  id: string;
-  email: string;
-  created_at: string;
-}
-export function normalizeEmail(email: string): string {
-  return String(email || "").trim().toLowerCase();
-}
-export function validEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-export async function getUserByEmail(email: string): Promise<{ id: string; email: string; password_hash: string } | null> {
-  const { data } = await admin().from("users").select("id, email, password_hash").eq("email", normalizeEmail(email)).maybeSingle();
-  return (data as any) || null;
-}
 export async function getUserById(id: string): Promise<User | null> {
-  const { data } = await admin().from("users").select("id, email, created_at").eq("id", id).maybeSingle();
+  const { data } = await admin().from("users").select(USER_COLS).eq("id", id).maybeSingle();
   return (data as any) || null;
 }
-export async function createUser(email: string, password: string): Promise<User> {
-  const { data, error } = await admin()
-    .from("users")
-    .insert({ email: normalizeEmail(email), password_hash: hashPassword(password) })
-    .select("id, email, created_at")
-    .single();
-  if (error) throw error;
-  return data as User;
-}
 
-// Resolve the logged-in user from the request cookie (verifies they still exist).
 export async function currentUser(req: Request): Promise<User | null> {
   const s = readSession(req);
   if (!s) return null;
   return getUserById(s.uid);
+}
+
+// Find the account whose login key matches (for login).
+export async function getUserByLoginKey(key: string): Promise<User | null> {
+  const { data } = await admin().from("users").select(USER_COLS).eq("login_key_hash", hashLoginKey(key)).maybeSingle();
+  return (data as any) || null;
+}
+
+export interface DiscordProfile {
+  discord_id: string;
+  discord_username?: string;
+  discord_global_name?: string;
+  discord_avatar?: string;
+  discord_role?: Role;
+}
+
+// Create the account if new / refresh Discord fields if it exists, then set a
+// fresh login key. Returns the account plus the RAW key (to DM once).
+export async function linkDiscordAndIssueKey(p: DiscordProfile): Promise<{ user: User; loginKey: string }> {
+  const loginKey = newLoginKey();
+  const fields = {
+    discord_id: p.discord_id,
+    discord_username: p.discord_username ?? null,
+    discord_global_name: p.discord_global_name ?? null,
+    discord_avatar: p.discord_avatar ?? null,
+    discord_role: (p.discord_role as string) ?? "member",
+    login_key_hash: hashLoginKey(loginKey),
+    updated_at: new Date().toISOString(),
+  };
+
+  const existing = await admin().from("users").select("id").eq("discord_id", p.discord_id).maybeSingle();
+  let id: string;
+  if (existing.data?.id) {
+    id = existing.data.id;
+    await admin().from("users").update(fields).eq("id", id);
+  } else {
+    const { data, error } = await admin().from("users").insert(fields).select("id").single();
+    if (error) throw error;
+    id = data.id;
+  }
+  const user = (await getUserById(id))!;
+  return { user, loginKey };
 }
