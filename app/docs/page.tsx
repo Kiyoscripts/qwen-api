@@ -58,6 +58,7 @@ Header:    Authorization: Bearer qwen_sk_...`}</Code>
           <div className="docs-sec">
             <h3>Tool / function calling</h3>
             <p>Pass OpenAI-style <code>tools</code>; the model replies with <code>tool_calls</code>. Send results back as <code>role:"tool"</code> messages. <code>tool_choice</code> supports auto / none / required / a named function.</p>
+            <p style={{ color: "var(--faint)", fontSize: 13 }}>Tool-calling method credit: Discord user <code>.thereid</code>.</p>
           </div>
 
           <div className="docs-sec">
