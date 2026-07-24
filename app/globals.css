@@ -679,8 +679,9 @@ code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, mo
 
 /* CTA + footer */
 .lp-cta { padding: 40px; border-radius: 20px; margin: 8px 0; overflow: hidden; position: relative; }
-.lp-cta::before { content: ""; position: absolute; inset: 0;
+.lp-cta::before { content: ""; position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(90% 130% at 50% -10%, color-mix(in oklab, var(--accent) 16%, transparent), transparent 60%); }
+.lp-cta .g-btn { position: relative; }
 .lp-cta h2 { position: relative; font-size: 28px; font-weight: 680; letter-spacing: -.6px; margin: 0 0 8px; color: var(--text); }
 .lp-cta p { position: relative; color: var(--muted); margin: 0 0 22px; }
 .lp-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
