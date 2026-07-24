@@ -5,6 +5,7 @@ built on **Next.js + Vercel**, with API keys managed in **Supabase**. It proxies
 to a chat.qwen.ai account (your token, server-side) and exposes a clean, keyed API.
 
 - `POST /v1/chat/completions` — all models, streaming, vision, reasoning (`reasoning_content`), **tool/function calling**
+- `POST /v1/messages` — **Anthropic Messages API compatible** (use the Anthropic SDK: `baseURL` = the root, `x-api-key` auth); system/blocks/images/tools/streaming all translate to the same backend
 - `POST /v1/images/generations` — text-to-image **& image editing** (OpenAI-compatible); models `qwen-image-3.0` / `qwen-image-2.0`, `size` aspect ratio, `image`/`images` references, and a `watermark` field (see below)
 - `POST /v1/videos/generations` — text-to-video; returns `202 { id, chat_id, status, created }` immediately
 - `GET  /v1/videos/status?task_id=…&chat_id=…&started=…` — poll a video task (**no timeout**); pass

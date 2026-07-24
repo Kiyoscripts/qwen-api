@@ -41,9 +41,26 @@ export default function DocsPage() {
 
           <div className="docs-sec">
             <h3>Base URL &amp; auth</h3>
-            <p>The API is OpenAI-compatible. Point any OpenAI SDK at the base URL and send your key as a bearer token.</p>
-            <Code>{`Base URL:  ${BASE}/v1
-Header:    Authorization: Bearer qwen_sk_...`}</Code>
+            <p>The API speaks <b>both</b> the OpenAI and Anthropic formats. Point either SDK at the base URL with your key.</p>
+            <Code>{`OpenAI SDK:     baseURL ${BASE}/v1   ·  Authorization: Bearer qwen_sk_...
+Anthropic SDK:  baseURL ${BASE}       ·  x-api-key: qwen_sk_...`}</Code>
+          </div>
+
+          <div className="docs-sec">
+            <h3>Anthropic-compatible</h3>
+            <p>
+              <code>POST /v1/messages</code> implements Anthropic&apos;s Messages API — system prompt, content
+              blocks, images, tools (<code>tool_use</code> / <code>tool_result</code>) and streaming all translate
+              to the same Qwen backend. Point the Anthropic SDK at the base URL and it just works; any{" "}
+              <code>claude-*</code> model name maps to the flagship, or pass a Qwen model id.
+            </p>
+            <Code>{`import Anthropic from "@anthropic-ai/sdk";
+const client = new Anthropic({ baseURL: "${BASE}", apiKey: "qwen_sk_..." });
+const msg = await client.messages.create({
+  model: "qwen3.8-max-preview",   // or any claude-* name
+  max_tokens: 512,
+  messages: [{ role: "user", content: "Hello!" }],
+});`}</Code>
           </div>
 
           <div className="docs-sec">
