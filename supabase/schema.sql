@@ -161,3 +161,18 @@ create table if not exists public.discord_link_codes (
   expires_at          timestamptz not null
 );
 alter table public.discord_link_codes enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- DM outbox: the site queues login-key DMs here; the bot POLLS for them (so the
+-- bot needs no public URL / open port — it can run anywhere with outbound net).
+-- ---------------------------------------------------------------------------
+create table if not exists public.discord_dm_queue (
+  id          uuid primary key default gen_random_uuid(),
+  discord_id  text not null,
+  message     text not null,
+  status      text not null default 'pending',  -- pending|sent|dms_closed|failed
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz
+);
+create index if not exists discord_dm_queue_status_idx on public.discord_dm_queue (status, created_at);
+alter table public.discord_dm_queue enable row level security;

@@ -44,22 +44,36 @@ export async function consumeLinkCode(code: string): Promise<DiscordProfile | nu
   };
 }
 
-// Ask the bot to DM a user. Returns whether it landed (false ~ DMs closed).
-export async function botDM(discordId: string, message: string): Promise<{ ok: boolean; reason?: string }> {
-  const url = process.env.BOT_URL;
-  const secret = process.env.LINK_BOT_SECRET;
-  if (!url || !secret) return { ok: false, reason: "bot_not_configured" };
-  try {
-    const r = await fetch(`${url.replace(/\/$/, "")}/dm`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` },
-      body: JSON.stringify({ discord_id: discordId, message }),
-    });
-    const j = await r.json().catch(() => ({}));
-    return { ok: Boolean(j.ok), reason: j.reason };
-  } catch {
-    return { ok: false, reason: "bot_unreachable" };
-  }
+// Queue a DM for the bot to send (the bot polls /api/discord/outbox). Clears any
+// older pending DM to the same user so only the newest key is delivered.
+export async function queueDM(discordId: string, message: string): Promise<void> {
+  await admin().from("discord_dm_queue").delete().eq("discord_id", discordId).eq("status", "pending");
+  await admin().from("discord_dm_queue").insert({ discord_id: discordId, message, status: "pending" });
+}
+
+// --- bot polling helpers (used by /api/discord/outbox) ---------------------
+export async function fetchPendingDMs(limit = 10): Promise<{ id: string; discord_id: string; message: string }[]> {
+  const { data } = await admin()
+    .from("discord_dm_queue")
+    .select("id, discord_id, message")
+    .eq("status", "pending")
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  return (data as any[]) || [];
+}
+export async function ackDM(id: string, status: "sent" | "dms_closed" | "failed"): Promise<void> {
+  await admin().from("discord_dm_queue").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+}
+// Latest delivery status for a user's most recent DM (for the UI to poll).
+export async function latestDMStatus(discordId: string): Promise<string | null> {
+  const { data } = await admin()
+    .from("discord_dm_queue")
+    .select("status")
+    .eq("discord_id", discordId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as any)?.status ?? null;
 }
 
 const LOGIN_MSG = (key: string) =>

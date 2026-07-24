@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { consumeLinkCode, botDM, loginKeyDM } from "@/lib/discord";
+import { consumeLinkCode, queueDM, loginKeyDM } from "@/lib/discord";
 import { linkDiscordAndIssueKey } from "@/lib/auth";
 import { seal } from "@/lib/secureToken";
 
@@ -18,12 +18,11 @@ export async function POST(req: NextRequest) {
   if (!profile) return NextResponse.json({ error: "That code is invalid or expired — run /link again." }, { status: 400 });
 
   const { loginKey } = await linkDiscordAndIssueKey(profile);
-  const dm = await botDM(profile.discord_id, loginKeyDM(loginKey));
+  await queueDM(profile.discord_id, loginKeyDM(loginKey));
 
   return NextResponse.json({
     ok: true,
-    dmSent: dm.ok,
-    reason: dm.reason,
+    queued: true,
     discord: {
       username: profile.discord_global_name || profile.discord_username,
       avatar: profile.discord_avatar,

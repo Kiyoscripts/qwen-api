@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Aurora from "../Aurora";
 
 const INVITE = "https://discord.gg/Wcw95ZR8KU";
@@ -17,8 +17,26 @@ export default function LoginPage() {
   const [code, setCode] = useState("");
   const [linkErr, setLinkErr] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
-  const [linked, setLinked] = useState<{ username: string; avatar?: string; role: string; dmSent: boolean; relay: string } | null>(null);
-  const [reDmMsg, setReDmMsg] = useState<string | null>(null);
+  const [linked, setLinked] = useState<{ username: string; avatar?: string; role: string; relay: string } | null>(null);
+  const [dmStatus, setDmStatus] = useState<"sending" | "sent" | "dms_closed" | "failed">("sending");
+
+  // After linking, poll for whether the bot delivered the DM (or DMs are closed).
+  useEffect(() => {
+    if (!linked || dmStatus === "sent" || dmStatus === "dms_closed") return;
+    let alive = true;
+    let tries = 0;
+    const id = setInterval(async () => {
+      tries++;
+      try {
+        const r = await fetch(`/api/auth/discord/dm-status?relay=${encodeURIComponent(linked.relay)}`);
+        const j = await r.json();
+        if (!alive) return;
+        if (j.status === "sent" || j.status === "dms_closed" || j.status === "failed") setDmStatus(j.status);
+      } catch { /* keep polling */ }
+      if (tries >= 15) clearInterval(id); // ~30s then stop
+    }, 2000);
+    return () => { alive = false; clearInterval(id); };
+  }, [linked, dmStatus]);
 
   async function login(e: React.FormEvent) {
     e.preventDefault();
@@ -38,23 +56,20 @@ export default function LoginPage() {
   async function verify(e: React.FormEvent) {
     e.preventDefault();
     if (linking) return;
-    setLinking(true); setLinkErr(null); setReDmMsg(null);
+    setLinking(true); setLinkErr(null);
     try {
       const r = await fetch("/api/auth/discord/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Could not verify.");
-      setLinked({ username: j.discord.username, avatar: j.discord.avatar, role: j.discord.role, dmSent: j.dmSent, relay: j.relay });
+      setDmStatus("sending");
+      setLinked({ username: j.discord.username, avatar: j.discord.avatar, role: j.discord.role, relay: j.relay });
     } catch (e: any) { setLinkErr(e.message); } finally { setLinking(false); }
   }
 
   async function reDm() {
     if (!linked) return;
-    setReDmMsg("Sending…");
-    const r = await fetch("/api/auth/discord/redm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ relay: linked.relay }) });
-    const j = await r.json();
-    if (!r.ok) { setReDmMsg(j.error || "Could not re-DM."); return; }
-    setLinked({ ...linked, dmSent: j.dmSent });
-    setReDmMsg(j.dmSent ? "Sent ✓ — check your DMs." : "Still can't DM you — make sure DMs are on for the server.");
+    setDmStatus("sending");
+    await fetch("/api/auth/discord/redm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ relay: linked.relay }) }).catch(() => {});
   }
 
   const avatarUrl = linked?.avatar
@@ -91,7 +106,7 @@ export default function LoginPage() {
                 <>
                   <ol className="auth-steps">
                     <li>Join the <a href={INVITE} target="_blank" rel="noreferrer">Discord server</a>.</li>
-                    <li>Run <code>/link</code> in any channel — the bot DMs/replies with a code.</li>
+                    <li>Run <code>/link</code> in the link channel — the bot DMs/replies with a code.</li>
                     <li>Enter that code below.</li>
                   </ol>
                   <form onSubmit={verify}>
@@ -112,16 +127,17 @@ export default function LoginPage() {
                       <div className="auth-sub" style={{ margin: 0 }}>Linked ✓</div>
                     </div>
                   </div>
-                  {linked.dmSent ? (
-                    <p className="auth-ok">📬 We DM'd your login key on Discord. Copy it, then <a onClick={() => setTab("login")} style={{ cursor: "pointer" }}>log in</a>.</p>
+                  {dmStatus === "sent" ? (
+                    <p className="auth-ok">📬 Login key sent to your Discord DMs. Copy it, then <a onClick={() => setTab("login")} style={{ cursor: "pointer" }}>log in</a>.</p>
+                  ) : dmStatus === "dms_closed" ? (
+                    <p className="auth-warn">⚠️ Your DMs are off, so we couldn't send it. In the server: <b>right-click the server → Privacy Settings → enable Direct Messages</b>, then Re-DM.</p>
                   ) : (
-                    <p className="auth-warn">⚠️ We couldn't DM you — your DMs are off. In the server: <b>right-click the server → Privacy Settings → enable Direct Messages</b>, then re-DM.</p>
+                    <p className="auth-ok">⏳ Sending your login key to your Discord DMs… (this needs the bot online — give it a few seconds.)</p>
                   )}
                   <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
                     <button className="g-btn outline" onClick={reDm}>Re-DM my key</button>
                     <button className="g-btn" onClick={() => setTab("login")}>I have my key → Log in</button>
                   </div>
-                  {reDmMsg && <p className="auth-sub" style={{ marginTop: 10 }}>{reDmMsg}</p>}
                 </div>
               )}
             </div>
