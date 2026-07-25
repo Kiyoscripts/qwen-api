@@ -291,7 +291,6 @@ export default function DocsPage() {
                   ["qwen-image-3.0 / 2.0", "image", "Text-to-image, and editing when given references."],
                   ["qwen-wan", "video", "Text-to-video and image-to-video, roughly 5s clips."],
                   ["deepseek-v4-*", "chat", "DeepSeek, through your own linked token — see /link."],
-                  ["Custom slugs", "chat", "Persona models with a system prompt baked in at the gateway."],
                 ]}
               />
             </Section>

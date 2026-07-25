@@ -60,9 +60,15 @@ interface ModelOpt {
 
 // Short capability line under each model name, ChatGPT-style.
 function describeModel(m: ModelOpt): string {
-  // Image/video models don't answer in text, so don't advertise that they do.
-  if (m.chatTypes.includes("t2v")) return "Video generation";
-  if (m.chatTypes.includes("t2i")) return m.chatTypes.includes("image_edit") ? "Image · Editing" : "Image generation";
+  // Upstream lists every chat_type a model could route to, so nearly every chat
+  // model advertises "t2v" and "t2i" — reading those directly labelled
+  // Qwen3.7-Plus as "Video generation". Media generation is only reachable here
+  // through the dedicated qwen-image-* / qwen-wan ids, and those are the only
+  // models that cannot also do plain text.
+  if (!m.chatTypes.includes("t2t")) {
+    if (m.chatTypes.includes("t2v")) return "Video generation";
+    if (m.chatTypes.includes("t2i")) return m.chatTypes.includes("image_edit") ? "Image · Editing" : "Image generation";
+  }
   const bits = ["Text"];
   if (m.thinking) bits.push("Reasoning");
   if (m.vision) bits.push("Vision");
@@ -77,8 +83,6 @@ const DEFAULT_MODEL = "qwen3.8-max-preview";
 // tucked behind "Other models".
 const PRIMARY_IDS = [
   "qwen3.8-max-preview",
-  "qwen3.7-plus",
-  "qwen3.7-max",
   "qwen-image-3.0",
   "qwen-image-2.0",
   "qwen-wan",

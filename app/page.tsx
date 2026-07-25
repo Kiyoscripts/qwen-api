@@ -11,7 +11,6 @@ const MODELS = [
   { name: "Qwen Wan", id: "qwen-wan", icon: "/qwen.svg", desc: "Text- and image-to-video with live progress. Roughly 5s clips.", tags: ["video"] },
   { name: "DeepSeek V4", id: "deepseek-v4-pro", icon: "/deepseek.svg", desc: "DeepSeek chat and reasoning, linkable with your own token.", tags: ["chat", "reasoning"] },
   { name: "Qwen3-Omni", id: "qwen3-omni-flash", icon: "/qwen.svg", desc: "Around 78 voices of natural text-to-speech, returned as WAV.", tags: ["speech"] },
-  { name: "Custom slugs", id: "friendly-qwen", icon: null, desc: "Persona models with a system prompt baked in at the gateway.", tags: ["persona"] },
 ];
 
 const FEATURES = [
