@@ -452,10 +452,15 @@ export default function Chat() {
 
     try {
       const convo = toApi(messages);
+      // Two different failures need two different instructions. Cut off with text
+      // written: carry on from the last character. Cut off while still reasoning:
+      // more deliberation is precisely what exhausted the budget, so tell it to
+      // stop thinking and answer — which is also the cheaper continuation.
       convo.push({
         role: "user",
-        content:
-          "Continue your previous message from exactly where it stopped. Do not repeat any of it, do not restate the question, and do not add a preamble — carry straight on from the final character.",
+        content: last.content
+          ? "Continue your previous message from exactly where it stopped. Do not repeat any of it, do not restate the question, and do not add a preamble — carry straight on from the final character."
+          : "You ran out of room while still planning, and never began the answer. Stop deliberating now and write the final answer directly, using the thinking you already did.",
       });
       const { complete } = await streamTurn(
         convo,
@@ -851,7 +856,8 @@ export default function Chat() {
                         </div>
                       ) : null}
                       {m.role === "assistant" ? (
-                        m.content ? (
+                        <>
+                        {m.content ? (
                           <>
                             <div className={busy && i === messages.length - 1 ? "c-streaming" : undefined}>
                               <Markdown>{m.content}</Markdown>
@@ -864,14 +870,6 @@ export default function Chat() {
                                   aria-label="Copy response"
                                 >
                                   {copiedIdx === i ? <Check size={15} /> : <Copy size={15} />}
-                                </button>
-                              </div>
-                            )}
-                            {m.truncated && i === messages.length - 1 && !busy && (
-                              <div className="c-cutoff">
-                                <span>This reply was cut short by the upstream limit.</span>
-                                <button className="c-continue" onClick={continueReply}>
-                                  Continue from here
                                 </button>
                               </div>
                             )}
@@ -888,7 +886,23 @@ export default function Chat() {
                               height={26}
                             />
                           )
-                        )
+                        )}
+                        {/* Outside the content check on purpose: a reply severed
+                            during reasoning has no visible text at all, and that
+                            is exactly the turn most worth resuming. */}
+                        {m.truncated && i === messages.length - 1 && !busy && (
+                          <div className="c-cutoff">
+                            <span>
+                              {m.content
+                                ? "This reply was cut short by the upstream limit."
+                                : "Ran out of room while thinking — the answer never started."}
+                            </span>
+                            <button className="c-continue" onClick={continueReply}>
+                              {m.content ? "Continue from here" : "Write the answer"}
+                            </button>
+                          </div>
+                        )}
+                        </>
                       ) : m.role === "tool" ? (
                         <div className="c-toolresult">
                           <span className="c-tool-badge"><ArrowUp size={13} weight="bold" style={{ transform: "rotate(180deg)" }} /> {m.toolName}</span>

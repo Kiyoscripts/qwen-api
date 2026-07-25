@@ -45,6 +45,21 @@ const DEFAULT_MODEL = "qwen3.8-max-preview";
 // "Fast" (non-thinking) mode, so `enable_thinking: false` is ignored for them.
 const REQUIRE_THINKING = new Set(["qwen3.8-max-preview"]);
 
+/**
+ * finish_reason for a Qwen stream, logging the ones that were severed.
+ *
+ * The elapsed time is the diagnostic: truncations clustering just under
+ * maxDuration mean the function ceiling is the binding constraint (raise it, or
+ * shorten the reasoning), while a spread of shorter times means the upstream is
+ * dropping us and no amount of extra duration would help.
+ */
+function finishFor(st: StreamStatus, createdSec: number, modelId: string): "stop" | "length" {
+  if (st.complete) return "stop";
+  const secs = Math.max(0, Math.round(Date.now() / 1000 - createdSec));
+  console.warn(`[truncated] model=${modelId} after ~${secs}s of ${maxDuration}s`);
+  return "length";
+}
+
 function err(message: string, status: number, type = "invalid_request_error") {
   return NextResponse.json({ error: { message, type } }, { status });
 }
@@ -192,7 +207,7 @@ export async function POST(req: NextRequest) {
         if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
         // "length" is how OpenAI reports a reply that ran out of room, so every
         // client already knows to treat it as resumable rather than finished.
-        send({}, toolCalls.length ? "tool_calls" : st.complete ? "stop" : "length");
+        send({}, toolCalls.length ? "tool_calls" : finishFor(st, created, modelId));
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       },
@@ -229,7 +244,7 @@ export async function POST(req: NextRequest) {
       object: "chat.completion",
       created,
       model: modelId,
-      choices: [{ index: 0, message, finish_reason: toolCalls.length ? "tool_calls" : st.complete ? "stop" : "length" }],
+      choices: [{ index: 0, message, finish_reason: toolCalls.length ? "tool_calls" : finishFor(st, created, modelId) }],
       usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     });
   }
@@ -256,7 +271,7 @@ export async function POST(req: NextRequest) {
         }
         // "length" is OpenAI's signal for a reply that ran out of room, so clients
         // already treat it as resumable rather than finished.
-        send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: st.complete ? "stop" : "length" }] });
+        send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: finishFor(st, created, modelId) }] });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
         await cleanup();
@@ -291,7 +306,7 @@ export async function POST(req: NextRequest) {
     object: "chat.completion",
     created,
     model: modelId,
-    choices: [{ index: 0, message, finish_reason: st.complete ? "stop" : "length" }],
+    choices: [{ index: 0, message, finish_reason: finishFor(st, created, modelId) }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
 }
