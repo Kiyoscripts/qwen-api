@@ -330,14 +330,18 @@ export interface CompletionOpts {
 
 export async function openCompletion(token: string, opts: CompletionOpts): Promise<Response> {
   const pow = await powHeaderFor(token, "/api/v0/chat/completion");
+  // Field-for-field what the web client sends, in its order. `parent_message_id`
+  // is deliberately ABSENT rather than null: we always send a first turn, and a
+  // key the real client omits is a difference worth not having.
   const body = {
     chat_session_id: opts.sessionId,
-    parent_message_id: null, // stateless: always a fresh first turn
     model_type: opts.modelType,
     prompt: opts.prompt,
     ref_file_ids: opts.refFileIds || [],
-    thinking_enabled: opts.thinking,
-    search_enabled: Boolean(opts.search),
+    // The client turns reasoning on for the expert model; callers can also ask
+    // for it explicitly on the others.
+    thinking_enabled: opts.modelType === "expert" || opts.thinking,
+    search_enabled: opts.search !== false,
     action: null,
     preempt: false,
   };
@@ -416,7 +420,7 @@ export async function* deepseekDeltas(res: Response): AsyncGenerator<DeepSeekDel
         if (typeof v === "string" && v) yield { kind: curType, text: v };
         return;
       }
-      // Anything else (elapsed_secs, status, token usage, BATCH) — not content.
+      // Anything else (elapsed_secs, status, token usage) — not content.
       return;
     }
 
@@ -427,6 +431,12 @@ export async function* deepseekDeltas(res: Response): AsyncGenerator<DeepSeekDel
     }
   }
 
+  // The stream is framed with `event:` lines. `close` ends it; the rest are
+  // housekeeping (session title, readiness) carrying no answer text. Returning
+  // on the terminators — rather than reading until the socket drops — is what
+  // lets the caller delete the session promptly.
+  let event = "";
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -435,9 +445,19 @@ export async function* deepseekDeltas(res: Response): AsyncGenerator<DeepSeekDel
     while ((idx = buffer.indexOf("\n")) !== -1) {
       const line = buffer.slice(0, idx).trim();
       buffer = buffer.slice(idx + 1);
+
+      if (line.startsWith("event:")) {
+        event = line.slice(6).trim();
+        continue;
+      }
       if (!line.startsWith("data:")) continue;
+
       const data = line.slice(5).trim();
-      if (data === "[DONE]") return;
+      const frameEvent = event;
+      event = "";
+      if (data === "[DONE]" || frameEvent === "close") return;
+      if (frameEvent === "ready" || frameEvent === "update_session" || frameEvent === "title") continue;
+
       let msg: any;
       try {
         msg = JSON.parse(data);
@@ -446,6 +466,11 @@ export async function* deepseekDeltas(res: Response): AsyncGenerator<DeepSeekDel
       }
       if (msg?.error) throw new DeepSeekError(`DeepSeek stream error: ${msg.error?.message || "unknown"}`);
       yield* apply(msg);
+      // {"o":"BATCH","v":[...,{"p":"quasi_status","v":"FINISHED"}]} — the answer
+      // is complete even though the connection may stay open.
+      if (msg?.o === "BATCH" && Array.isArray(msg.v)) {
+        if (msg.v.some((it: any) => it?.p === "quasi_status" && it?.v === "FINISHED")) return;
+      }
     }
   }
 }
