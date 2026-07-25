@@ -22,6 +22,7 @@ import { Markdown } from "./Markdown";
 import Aurora, { type AuroraState } from "../Aurora";
 import Select from "../Select";
 import { useMe, AccountChip } from "../Account";
+import { PhaseTimer } from "../PhaseTimer";
 import { DEMO_TOOLS, DEMO_TOOL_NAMES, runDemoTool } from "@/lib/demoTools";
 
 interface ToolCallView {
@@ -39,6 +40,9 @@ interface Msg {
   toolName?: string; // tool-result message
   toolCallId?: string; // tool-result message
   truncated?: boolean; // stream was severed before the model finished
+  thinkMs?: number; // request start -> first visible token
+  answerMs?: number; // first visible token -> end of stream
+  startedAt?: number; // epoch ms, so a live turn can tick without re-rendering
 }
 interface Conversation {
   id: string;
@@ -354,6 +358,12 @@ export default function Chat() {
     let content = base.content;
     let reasoning = base.reasoning;
     let finish: string | null = null;
+    // Split the wait in two: everything before the first visible character is
+    // the model deciding what to say, everything after is it saying it. On a
+    // reasoning model those are very different numbers and only the second one
+    // looks like progress.
+    const startedAt = Date.now();
+    let firstContentAt: number | null = null;
     const toolCalls: ToolCallView[] = [];
 
     const res = await fetch("/v1/chat/completions", {
@@ -392,13 +402,25 @@ export default function Chat() {
           if (choice?.finish_reason) finish = choice.finish_reason;
           const d = choice?.delta;
           if (d?.reasoning_content) { reasoning += d.reasoning_content; pulseRef.current++; }
-          if (d?.content) { content += d.content; pulseRef.current++; setAuroraState("responding"); }
+          if (d?.content) {
+            if (firstContentAt === null) firstContentAt = Date.now();
+            content += d.content;
+            pulseRef.current++;
+            setAuroraState("responding");
+          }
           if (Array.isArray(d?.tool_calls)) {
             for (const tc of d.tool_calls) toolCalls.push({ id: tc.id, name: tc.function?.name, arguments: tc.function?.arguments || "{}" });
           }
           patchActive((c) => {
             const msgs = [...c.messages];
-            msgs[msgs.length - 1] = { role: "assistant", content, reasoning, toolCalls: toolCalls.length ? [...toolCalls] : undefined };
+            msgs[msgs.length - 1] = {
+              role: "assistant",
+              content,
+              reasoning,
+              startedAt,
+              thinkMs: firstContentAt === null ? undefined : firstContentAt - startedAt,
+              toolCalls: toolCalls.length ? [...toolCalls] : undefined,
+            };
             return { ...c, messages: msgs };
           });
         } catch {
@@ -406,6 +428,22 @@ export default function Chat() {
         }
       }
     }
+    // Freeze the final split onto the message so it survives a reload.
+    const endedAt = Date.now();
+    patchActive((c) => {
+      const msgs = [...c.messages];
+      const i = msgs.length - 1;
+      if (msgs[i]?.role === "assistant") {
+        msgs[i] = {
+          ...msgs[i],
+          startedAt: undefined,
+          thinkMs: (firstContentAt ?? endedAt) - startedAt,
+          answerMs: firstContentAt === null ? 0 : endedAt - firstContentAt,
+        };
+      }
+      return { ...c, messages: msgs };
+    });
+
     // No finish_reason at all means the connection dropped before the final
     // chunk, which is a truncation too.
     return { content, reasoning, complete: finish !== null && finish !== "length", toolCalls };
@@ -491,7 +529,7 @@ export default function Chat() {
     patchActive((c) => ({
       ...c,
       title: isFirst ? body.slice(0, 40) || "Image" : c.title,
-      messages: [...history, { role: "assistant", content: "" }],
+      messages: [...history, { role: "assistant", content: "", startedAt: Date.now() }],
     }));
     setInput("");
     setImage(null);
@@ -538,7 +576,7 @@ export default function Chat() {
           toolMsgs.push({ role: "tool", content: rc, toolName: tc.name, toolCallId: tc.id });
           convo.push({ role: "tool", tool_call_id: tc.id, name: tc.name, content: rc });
         }
-        patchActive((c) => ({ ...c, messages: [...c.messages, ...toolMsgs, { role: "assistant", content: "" }] }));
+        patchActive((c) => ({ ...c, messages: [...c.messages, ...toolMsgs, { role: "assistant", content: "", startedAt: Date.now() }] }));
       }
     } catch (e: any) {
       if (e.name === "AbortError") {
@@ -834,6 +872,15 @@ export default function Chat() {
                   <div key={i} className={`c-msg ${m.role}`}>
                     <div className="c-msg-body">
                       {m.image && <img className="c-msg-img" src={m.image} alt="attached" />}
+                      {m.role === "assistant" && (
+                        <PhaseTimer
+                          live={busy && i === messages.length - 1}
+                          startedAt={m.startedAt}
+                          thinkMs={m.thinkMs}
+                          answerMs={m.answerMs}
+                          writing={Boolean(m.content)}
+                        />
+                      )}
                       {m.reasoning && (() => {
                         // Open it live while the model is still reasoning, then let
                         // it collapse itself once the answer starts arriving.

@@ -1262,3 +1262,21 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 .pgx-acct img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
 .pgx-acct .auth-avatar-fallback { width: 24px; height: 24px; }
 .pgx-acct .dash-me-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --- Phase timing (chat + playground) ---------------------------------------
+   How long the model spent deciding versus writing. Kept quiet: it is reference
+   information, not part of the reply. */
+.ptimer-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.ptimer {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.ptimer.total { opacity: .75; }
+.ptimer.live { color: var(--accent-2); }
+.ptimer-dot {
+  width: 5px; height: 5px; border-radius: 999px; background: currentColor;
+  animation: ptimer-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ptimer-pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ptimer-dot { animation: none; opacity: .7; } }

@@ -21,6 +21,7 @@ import {
 import Aurora, { type AuroraState } from "../Aurora";
 import Select from "../Select";
 import { useMe, AccountChip } from "../Account";
+import { PhaseTimer } from "../PhaseTimer";
 import { DEMO_TOOLS, DEMO_TOOL_NAMES, runDemoTool } from "@/lib/demoTools";
 
 type Mode = "chat" | "image" | "video" | "tts";
@@ -62,6 +63,9 @@ interface Turn {
   pending?: boolean;
   error?: boolean;
   ms?: number; // wall time for a finished assistant turn
+  thinkMs?: number; // request start -> first visible token
+  answerMs?: number; // first visible token -> end of stream
+  startedAt?: number; // epoch ms, lets a live turn tick without re-rendering
   toolCalls?: ToolCallView[]; // assistant requested these
   toolName?: string; // tool-result turn
   toolCallId?: string; // tool-result turn
@@ -272,6 +276,10 @@ export default function Playground() {
     const decoder = new TextDecoder();
     let buffer = "", content = "", reasoning = "";
     const toolCalls: ToolCallView[] = [];
+    // Everything before the first visible character is deliberation; everything
+    // after is output. On a model that always reasons those differ a lot.
+    const startedAt = Date.now();
+    let firstContentAt: number | null = null;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -286,7 +294,11 @@ export default function Playground() {
         try {
           const d = JSON.parse(data)?.choices?.[0]?.delta;
           if (d?.reasoning_content) { reasoning += d.reasoning_content; pulseRef.current++; }
-          if (d?.content) { content += d.content; pulseRef.current++; }
+          if (d?.content) {
+            if (firstContentAt === null) firstContentAt = Date.now();
+            content += d.content;
+            pulseRef.current++;
+          }
           if (Array.isArray(d?.tool_calls)) {
             for (const tc of d.tool_calls) {
               toolCalls.push({ id: tc.id, name: tc.function?.name, arguments: tc.function?.arguments || "{}" });
@@ -294,12 +306,32 @@ export default function Playground() {
           }
           setTurns((prev) => {
             const c = [...prev];
-            c[c.length - 1] = { role: "assistant", content, reasoning, pending: true, toolCalls: toolCalls.length ? [...toolCalls] : undefined };
+            c[c.length - 1] = {
+              role: "assistant", content, reasoning, pending: true,
+              startedAt,
+              thinkMs: firstContentAt === null ? undefined : firstContentAt - startedAt,
+              toolCalls: toolCalls.length ? [...toolCalls] : undefined,
+            };
             return c;
           });
         } catch {}
       }
     }
+    // Freeze the split once the stream ends.
+    const endedAt = Date.now();
+    setTurns((prev) => {
+      const c = [...prev];
+      const i = c.length - 1;
+      if (c[i]?.role === "assistant") {
+        c[i] = {
+          ...c[i],
+          startedAt: undefined,
+          thinkMs: (firstContentAt ?? endedAt) - startedAt,
+          answerMs: firstContentAt === null ? 0 : endedAt - firstContentAt,
+        };
+      }
+      return c;
+    });
     return { content, toolCalls };
   }
 
@@ -331,7 +363,7 @@ export default function Playground() {
         apiMessages.push({ role: "tool", tool_call_id: tc.id, name: tc.name, content });
       }
       // Add tool-result turns + a fresh assistant placeholder for the next hop.
-      setTurns((prev) => [...prev, ...resultTurns, { role: "assistant", content: "", pending: true }]);
+      setTurns((prev) => [...prev, ...resultTurns, { role: "assistant", content: "", pending: true, startedAt: Date.now() }]);
     }
   }
 
@@ -445,7 +477,7 @@ export default function Playground() {
     const label = text || (mode === "image" ? "(edit these images)" : "(image)");
     const userTurn: Turn = { role: "user", content: label, images: refs.length ? refs : undefined };
     const history = [...turns, userTurn];
-    setTurns([...history, { role: "assistant", content: "", pending: true }]);
+    setTurns([...history, { role: "assistant", content: "", pending: true, startedAt: Date.now() }]);
     setInput("");
     setAttach([]);
     setBusy(true);
@@ -833,6 +865,15 @@ export default function Playground() {
                     </div>
                   ) : null}
 
+                  {t.role === "assistant" && (
+                    <PhaseTimer
+                      live={Boolean(t.pending) && i === turns.length - 1 && busy}
+                      startedAt={t.startedAt}
+                      thinkMs={t.thinkMs}
+                      answerMs={t.answerMs}
+                      writing={Boolean(t.content)}
+                    />
+                  )}
                   {t.role === "assistant" && showThinking && t.reasoning ? (
                     <details className="pgx-think" open={Boolean(t.pending) && !t.content}>
                       <summary>{t.pending && !t.content ? "Thinking…" : "Thought process"}</summary>
@@ -879,7 +920,9 @@ export default function Playground() {
                     <div className="pgx-dots"><i /><i /><i /></div>
                   ) : null}
 
-                  {t.ms != null && !t.error && <div className="pgx-ms">{(t.ms / 1000).toFixed(2)}s</div>}
+                  {t.ms != null && !t.error && t.thinkMs == null && (
+                    <div className="pgx-ms">{(t.ms / 1000).toFixed(2)}s</div>
+                  )}
                 </div>
               </div>
             ))
