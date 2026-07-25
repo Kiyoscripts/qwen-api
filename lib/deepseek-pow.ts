@@ -17,6 +17,8 @@
 // web client produced), cross-checked against a BigInt reference and against
 // Node's built-in sha3-256 for the standard 24-round case.
 
+import { wasmSolvePow } from "./deepseek-pow-wasm";
+
 // Round constants, split into hi/lo 32-bit halves (RC[0..23]).
 const RC_HI = [
   0x00000000, 0x00000000, 0x80000000, 0x80000000, 0x00000000, 0x00000000, 0x80000000, 0x80000000,
@@ -155,6 +157,11 @@ export interface PowChallenge {
 }
 
 // Recover the hidden nonce for a challenge by brute force over [0, difficulty].
+//
+// SLOW — see deepseek-pow-wasm.ts. This is a synchronous loop that blocks the
+// event loop for seconds at a real difficulty, so it is the fallback, not the
+// path a request normally takes. Kept because it is verified correct and means
+// a failure to instantiate the WASM degrades instead of breaking.
 export function solvePowAnswer(c: PowChallenge): number {
   const prefix = `${c.salt}_${c.expire_at}_`;
   const max = c.difficulty > 0 ? c.difficulty : 1_000_000;
@@ -166,11 +173,20 @@ export function solvePowAnswer(c: PowChallenge): number {
 
 // Solve a challenge and produce the value for the `x-ds-pow-response` header:
 // base64 of {algorithm, challenge, salt, answer, signature, target_path}.
-export function solvePowHeader(c: PowChallenge): string {
+export async function solvePowHeader(c: PowChallenge): Promise<string> {
   if (c.algorithm && c.algorithm !== "DeepSeekHashV1") {
     throw new Error(`DeepSeek PoW: unsupported algorithm '${c.algorithm}'`);
   }
-  const answer = solvePowAnswer(c);
+
+  // DeepSeek's own module first; the TypeScript search only if it is unusable.
+  let answer: number | null = null;
+  try {
+    answer = await wasmSolvePow(c.challenge, c.salt, c.expire_at, c.difficulty);
+  } catch (e: any) {
+    console.warn(`[deepseek] PoW WASM unavailable, falling back to the slow solver: ${e?.message || e}`);
+  }
+  if (answer === null) answer = solvePowAnswer(c);
+
   const payload = {
     algorithm: c.algorithm || "DeepSeekHashV1",
     challenge: c.challenge,
