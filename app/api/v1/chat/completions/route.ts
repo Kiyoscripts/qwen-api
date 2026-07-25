@@ -18,7 +18,7 @@ import {
 import { withTokenFailover } from "@/lib/tokens";
 import { virtualModel, generateImage, startVideo, type VirtualModel } from "@/lib/media";
 import { resolveWatermark, buildMediaUrl } from "@/lib/watermark";
-import { hasTools, preprocessToolMessages, parseToolCalls, type OAIToolCall } from "@/lib/tools";
+import { hasTools, preprocessToolMessages, buildRegistry, ToolStream, extractToolCalls, type OAIToolCall } from "@/lib/tools";
 import { customModel, systemPromptFor } from "@/lib/customModels";
 import {
   isDeepSeekModel,
@@ -31,7 +31,8 @@ import {
   uploadImages as uploadDeepSeekImages,
   DeepSeekError,
 } from "@/lib/deepseek";
-import { extractApiKey, validateApiKey, logUsage, getDeepSeekToken, noteDeepSeekTokenError } from "@/lib/supabase";
+import { logUsage, getDeepSeekToken, noteDeepSeekTokenError } from "@/lib/supabase";
+import { authenticate } from "@/lib/apiAuth";
 import { randomUUID } from "node:crypto";
 
 export const runtime = "nodejs";
@@ -48,10 +49,9 @@ function err(message: string, status: number, type = "invalid_request_error") {
 }
 
 export async function POST(req: NextRequest) {
-  const key = extractApiKey(req.headers);
-  if (!key) return err("Missing API key. Send 'Authorization: Bearer <key>'.", 401);
-  const record = await validateApiKey(key);
-  if (!record) return err("Invalid or revoked API key.", 401);
+  // Either a key, or the session cookie when the request comes from our own UI.
+  const record = await authenticate(req);
+  if (!record) return err("Missing or invalid API key. Send 'Authorization: Bearer <key>'.", 401);
 
   let body: any;
   try {
@@ -155,20 +155,12 @@ export async function POST(req: NextRequest) {
   const streamDelta = (tcs: OAIToolCall[]) =>
     tcs.map((tc, i) => ({ index: i, id: tc.id, type: "function", function: tc.function }));
 
-  // Tools + streaming: stream text token-by-token while pulling out <tool_call>
-  // blocks as they complete (only the tool JSON is withheld from the text stream).
+  // Tools + streaming: stream text token-by-token while pulling out tool calls as
+  // they complete. ToolStream is the same machine the buffered path uses, so both
+  // agree on what counts as a call; only the tool JSON is withheld from the text.
   if (toolsOn && wantStream) {
     const encoder = new TextEncoder();
-    const OPEN = "<tool_call>";
-    const CLOSE = "</tool_call>";
-    // Longest suffix of s that is a proper prefix of tag — so a tag split across
-    // chunks isn't emitted as visible text.
-    const partialTail = (s: string, tag: string) => {
-      const max = Math.min(s.length, tag.length - 1);
-      for (let k = max; k > 0; k--) if (s.slice(s.length - k) === tag.slice(0, k)) return k;
-      return 0;
-    };
-    const parseOne = (inner: string): OAIToolCall | undefined => parseToolCalls(`${OPEN}${inner}${CLOSE}`).toolCalls[0];
+    const registry = buildRegistry(body.tools);
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -176,51 +168,21 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`));
         send({ role: "assistant" });
 
-        let hold = "";
-        let inTool = false;
-        let toolBuf = "";
-        const toolCalls: OAIToolCall[] = [];
+        const parser = new ToolStream(registry);
+        let toolCalls: OAIToolCall[] = [];
 
         try {
           for await (const { phase, text } of qwenDeltas(qwenRes)) {
             if (phase === "think") { if (withReasoning && text) send({ reasoning_content: text }); continue; }
-            let buf = hold + text;
-            hold = "";
-            while (buf.length) {
-              if (!inTool) {
-                const i = buf.indexOf(OPEN);
-                if (i === -1) {
-                  const keep = partialTail(buf, OPEN);
-                  const out = buf.slice(0, buf.length - keep);
-                  if (out) send({ content: out });
-                  hold = buf.slice(buf.length - keep);
-                  buf = "";
-                } else {
-                  const out = buf.slice(0, i);
-                  if (out) send({ content: out });
-                  inTool = true; toolBuf = "";
-                  buf = buf.slice(i + OPEN.length);
-                }
-              } else {
-                const j = buf.indexOf(CLOSE);
-                if (j === -1) {
-                  const keep = partialTail(buf, CLOSE);
-                  toolBuf += buf.slice(0, buf.length - keep);
-                  hold = buf.slice(buf.length - keep);
-                  buf = "";
-                } else {
-                  toolBuf += buf.slice(0, j);
-                  const tc = parseOne(toolBuf);
-                  if (tc) toolCalls.push(tc);
-                  inTool = false; toolBuf = "";
-                  buf = buf.slice(j + CLOSE.length);
-                }
-              }
-            }
+            const out = parser.push(text);
+            if (out) send({ content: out });
           }
-          if (inTool) { const tc = parseOne(toolBuf + hold); if (tc) toolCalls.push(tc); }
-          else if (hold) send({ content: hold });
+          const fin = parser.end();
+          if (fin.text) send({ content: fin.text });
+          toolCalls = fin.toolCalls;
         } catch (e: any) {
+          // Salvage whatever the parser already resolved before the stream broke.
+          try { toolCalls = parser.end().toolCalls; } catch { /* nothing to salvage */ }
           send({ content: `\n[error: ${e.message}]` });
         }
         await cleanup();
@@ -252,7 +214,7 @@ export async function POST(req: NextRequest) {
     await cleanup();
     logUsage(record.id, modelId, hadImage, wantStream, 200);
 
-    const { content: toolContent, toolCalls } = parseToolCalls(raw);
+    const { content: toolContent, toolCalls } = extractToolCalls(raw, body.tools);
     const message: Record<string, unknown> = { role: "assistant", content: toolCalls.length ? toolContent : raw };
     if (toolCalls.length) message.tool_calls = toolCalls;
     if (withReasoning && reasoning) message.reasoning_content = reasoning;
