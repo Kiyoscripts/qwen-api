@@ -2,7 +2,7 @@ import Aurora from "../Aurora";
 import AccountNav from "../Account";
 
 export const metadata = { title: "Docs · Qwen3.8 API" };
-const BASE = "https://qwen3-8-api.vercel.app";
+const BASE = "https://qwen38-api-production.up.railway.app";
 
 function Code({ children }: { children: string }) {
   return (

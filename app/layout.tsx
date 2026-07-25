@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "highlight.js/styles/github-dark.css";
 import "./globals.css";
 import Cursor from "./Cursor";
+import MovedNotice from "./MovedNotice";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
@@ -18,6 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {children}
         <Cursor />
+        <MovedNotice />
       </body>
     </html>
   );

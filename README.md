@@ -209,16 +209,16 @@ The owner can always create keys out-of-band (bypasses BotID) via the admin
 endpoint, and list/revoke keys there:
 
 ```bash
-curl -X POST https://qwen3-8-api.vercel.app/api/admin/keys \
+curl -X POST https://qwen38-api-production.up.railway.app/api/admin/keys \
   -H "x-admin-secret: <ADMIN_SECRET>" -H "Content-Type: application/json" \
   -d '{"name":"my key"}'
-curl https://qwen3-8-api.vercel.app/api/admin/keys -H "x-admin-secret: <ADMIN_SECRET>"
+curl https://qwen38-api-production.up.railway.app/api/admin/keys -H "x-admin-secret: <ADMIN_SECRET>"
 ```
 
 ## 6. Use it
 
 ```bash
-curl https://qwen3-8-api.vercel.app/v1/chat/completions \
+curl https://qwen38-api-production.up.railway.app/v1/chat/completions \
   -H "Authorization: Bearer qwen_sk_..." \
   -H "Content-Type: application/json" \
   -d '{"model":"qwen3.8-max-preview","messages":[{"role":"user","content":"Hi"}]}'
@@ -247,13 +247,13 @@ as long as you like.
 
 ```bash
 # 1. start the render -> 202
-curl -X POST https://qwen3-8-api.vercel.app/v1/videos/generations \
+curl -X POST https://qwen38-api-production.up.railway.app/v1/videos/generations \
   -H "Authorization: Bearer qwen_sk_..." -H "Content-Type: application/json" \
   -d '{"prompt":"a man waving hello"}'
 # -> {"id":"<task>","chat_id":"<chat>","status":"processing"}
 
 # 2. poll until done (as long as it takes)
-curl "https://qwen3-8-api.vercel.app/v1/videos/status?task_id=<task>&chat_id=<chat>" \
+curl "https://qwen38-api-production.up.railway.app/v1/videos/status?task_id=<task>&chat_id=<chat>" \
   -H "Authorization: Bearer qwen_sk_..."
 # -> {"status":"processing"}  ... then {"status":"completed","data":[{"url":"…mp4"}]}
 ```
@@ -270,7 +270,7 @@ in a browser `<img>`/`<video>`. Re-serve them through `GET /api/media?url=<encod
 ## Text-to-speech
 
 ```bash
-curl -X POST https://qwen3-8-api.vercel.app/v1/audio/speech \
+curl -X POST https://qwen38-api-production.up.railway.app/v1/audio/speech \
   -H "Authorization: Bearer qwen_sk_..." -H "Content-Type: application/json" \
   -d '{"input":"Hello there","voice":"Cherry"}' --output speech.wav
 ```

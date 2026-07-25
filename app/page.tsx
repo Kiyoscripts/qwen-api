@@ -3,7 +3,7 @@ import StatsBar from "./StatsBar";
 import { BaseUrl, CopyButton } from "./Copy";
 import AccountNav from "./Account";
 
-const BASE = "https://qwen3-8-api.vercel.app";
+const BASE = "https://qwen38-api-production.up.railway.app";
 
 const MODELS = [
   { name: "Qwen3.8 Max Preview", id: "qwen3.8-max-preview", icon: "/qwen.svg", desc: "Flagship reasoning and vision. Streaming, tool calls, 300s ceiling.", tags: ["reasoning", "vision", "tools"] },
