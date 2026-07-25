@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { AuroraDrive, orbAlpha, RIPPLE_ALPHA, type AuroraState } from "./auroraDrive";
 
 /**
  * The animated backdrop used on every page.
@@ -10,26 +11,23 @@ import { useEffect, useRef } from "react";
  *   - `state` — how alive the scene is. `ambient` is the resting look for normal
  *     pages; /chat and /playground swap through the others as the model works.
  *   - `pulseRef` — a plain counter a caller bumps per streamed token. The loop
- *     diffs it each frame and answers with an energy kick plus a ripple, so
- *     output rate is visible without re-rendering React.
+ *     diffs it each frame, so output rate is visible without re-rendering React.
+ *
+ * Intensity comes from AuroraDrive, which splits the reaction into a
+ * slew-limited brightness signal and a free-running motion signal. That split is
+ * a photosensitivity guarantee, not a style choice: token arrival rate is an
+ * uncontrolled input, and feeding it into the brightness of a full-viewport
+ * element used to modulate the whole page at the token rate — 10 Hz output
+ * meant a 10 Hz flicker. See tests/aurora.flash.test.mts.
  *
  * Cheap by construction: the scene is drawn at 1/4 resolution into a small
  * canvas and the compositor blurs it, so pixel cost is a fraction of full-res
  * and the blur is free. Nothing is allocated per frame past the ripple list.
  */
-export type AuroraState = "ambient" | "idle" | "thinking" | "responding" | "done";
+export type { AuroraState } from "./auroraDrive";
 
 const DOWN = 4; // render scale divisor
-const MAX_RIPPLES = 12;
-
-// Energy each state settles at. Energy drives brightness, orbit speed and spread.
-const ENERGY: Record<AuroraState, number> = {
-  ambient: 0.32,
-  idle: 0.1,
-  thinking: 0.66,
-  responding: 0.92,
-  done: 0.42,
-};
+const MAX_RIPPLES = 8;
 
 type Rgb = readonly [number, number, number];
 
@@ -116,10 +114,9 @@ export default function Aurora({
     };
     document.addEventListener("visibilitychange", onVis);
 
-    let energy = ENERGY[state] ?? ENERGY.ambient;
-    let kick = 0; // short-lived boost, one per token
+    const drive = new AuroraDrive(state);
     let seenPulse = pulseRef?.current ?? 0;
-    let lastRipple = 0;
+    let prevT = 0;
     const ripples: Ripple[] = [];
     let raf = 0;
 
@@ -128,30 +125,27 @@ export default function Aurora({
       const S = Math.max(w, h);
 
       // --- drive ------------------------------------------------------------
-      const target = ENERGY[stateRef.current] ?? ENERGY.ambient;
-      energy += (target - energy) * 0.045;
+      const dt = prevT ? (t - prevT) / 1000 : 1 / 60;
+      prevT = t;
 
       const pulse = pulseRef?.current ?? 0;
-      if (pulse !== seenPulse) {
-        seenPulse = pulse;
-        kick = Math.min(1, kick + 0.35);
-        if (t - lastRipple > 110 && ripples.length < MAX_RIPPLES) {
-          lastRipple = t;
-          const o = ORBS[(Math.random() * ORBS.length) | 0];
-          ripples.push({
-            x: (o.ax + (Math.random() - 0.5) * 0.3) * w,
-            y: (o.ay + (Math.random() - 0.5) * 0.3) * h,
-            born: t,
-            c: o.c,
-          });
-        }
+      const tokens = pulse - seenPulse;
+      seenPulse = pulse;
+
+      const { luma, motion, ripple } = drive.step(dt, stateRef.current, Math.max(0, tokens), t);
+
+      if (ripple && ripples.length < MAX_RIPPLES) {
+        const o = ORBS[(Math.random() * ORBS.length) | 0];
+        ripples.push({
+          x: (o.ax + (Math.random() - 0.5) * 0.3) * w,
+          y: (o.ay + (Math.random() - 0.5) * 0.3) * h,
+          born: t,
+          c: o.c,
+        });
       }
-      kick *= 0.93;
 
       px += (mx - px) * 0.05;
       py += (my - py) * 0.05;
-
-      const live = Math.min(1, energy + kick * 0.5);
 
       // --- scene ------------------------------------------------------------
       ctx.globalCompositeOperation = "source-over";
@@ -164,17 +158,19 @@ export default function Aurora({
 
       for (let i = 0; i < ORBS.length; i++) {
         const o = ORBS[i];
-        // Orbit speeds up with energy; the bodies also drift outward as it rises.
-        const a = o.ph + t * o.sp * (0.5 + live * 2.6);
-        const spread = 1 + live * 0.35;
+        // Movement carries the reaction to output: orbit speed and how far the
+        // bodies swing both rise with activity. Geometry, not opacity.
+        const a = o.ph + t * o.sp * (0.5 + motion * 2.9);
+        const spread = 1 + motion * 0.4;
         const x = o.ax * w + Math.cos(a) * o.ox * w * spread + shiftX;
         const y = o.ay * h + Math.sin(a) * o.oy * h * spread + shiftY;
 
-        // Each body breathes on its own phase — much harder while the model is
-        // working, so the whole field visibly beats.
-        const breathe = 1 + Math.sin(t * 0.0011 + o.ph * 2) * (0.05 + live * 0.16);
+        // Breathing is a size change at a fixed 0.18 Hz — far below the 3 Hz
+        // floor, so its depth can track activity freely.
+        const breathe = 1 + Math.sin(t * 0.0011 + o.ph * 2) * (0.05 + motion * 0.14);
         const r = o.r * S * breathe;
-        const alpha = (0.1 + live * 0.3) * (i === 0 ? 1 : 0.85);
+        // Opacity follows the slew-limited signal only.
+        const alpha = orbAlpha(luma, i);
 
         const g = ctx.createRadialGradient(x, y, 0, x, y, r);
         g.addColorStop(0, rgba(o.c, alpha));
@@ -188,8 +184,9 @@ export default function Aurora({
 
       // Curtain: a wide soft band sweeping across. Reads as an aurora sheet once
       // the blur lands on it.
-      if (live > 0.22) {
-        const band = (live - 0.22) / 0.78;
+      if (luma > 0.22) {
+        // Brightness again, so it rides the slew-limited signal.
+        const band = (luma - 0.22) / 0.78;
         const cx = ((Math.sin(t * 0.00019) + 1) / 2) * w;
         const bw = w * 0.5;
         const g = ctx.createLinearGradient(cx - bw, 0, cx + bw, h);
