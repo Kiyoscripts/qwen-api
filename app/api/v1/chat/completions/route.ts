@@ -19,7 +19,7 @@ import {
 import { withTokenFailover } from "@/lib/tokens";
 import { virtualModel, generateImage, startVideo, type VirtualModel } from "@/lib/media";
 import { resolveWatermark, buildMediaUrl } from "@/lib/watermark";
-import { hasTools, preprocessToolMessages, buildRegistry, ToolStream, extractToolCalls, type OAIToolCall } from "@/lib/tools";
+import { hasTools, preprocessToolMessages, buildRegistry, ToolStream, extractToolCalls, applyToolPolicy, type OAIToolCall } from "@/lib/tools";
 import { customModel, systemPromptFor } from "@/lib/customModels";
 import {
   isDeepSeekModel,
@@ -34,6 +34,7 @@ import {
 } from "@/lib/deepseek";
 import { logUsage, getDeepSeekToken, noteDeepSeekTokenError } from "@/lib/supabase";
 import { authenticate } from "@/lib/apiAuth";
+import { publicOrigin } from "@/lib/canonicalHost";
 import { randomUUID } from "node:crypto";
 
 export const runtime = "nodejs";
@@ -135,7 +136,7 @@ export async function POST(req: NextRequest) {
       wantStream,
       size: typeof body.size === "string" ? body.size : undefined,
       watermark: resolveWatermark(body.watermark),
-      origin: req.nextUrl.origin,
+      origin: publicOrigin(req),
       recordId: record.id,
     });
   }
@@ -231,10 +232,12 @@ export async function POST(req: NextRequest) {
           }
           const fin = parser.end();
           if (fin.text) send({ content: fin.text });
-          toolCalls = fin.toolCalls;
+          // Enforce what the request asked for — a named tool_choice,
+          // parallel_tool_calls:false, strict schemas — before the client sees it.
+          toolCalls = applyToolPolicy(fin.toolCalls, body, registry);
         } catch (e: any) {
           // Salvage whatever the parser already resolved before the stream broke.
-          try { toolCalls = parser.end().toolCalls; } catch { /* nothing to salvage */ }
+          try { toolCalls = applyToolPolicy(parser.end().toolCalls, body, registry); } catch { /* nothing to salvage */ }
           send({ content: `\n[error: ${e.message}]` });
         }
         await cleanup();
@@ -270,7 +273,8 @@ export async function POST(req: NextRequest) {
     await cleanup();
     logUsage(record.id, modelId, hadImage, wantStream, 200);
 
-    const { content: toolContent, toolCalls } = extractToolCalls(raw, body.tools);
+    const { content: toolContent, toolCalls: parsed } = extractToolCalls(raw, body.tools);
+    const toolCalls = applyToolPolicy(parsed, body, buildRegistry(body.tools));
     const message: Record<string, unknown> = { role: "assistant", content: toolCalls.length ? toolContent : raw };
     if (toolCalls.length) message.tool_calls = toolCalls;
     if (withReasoning && reasoning) message.reasoning_content = reasoning;

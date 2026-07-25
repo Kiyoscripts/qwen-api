@@ -79,3 +79,32 @@ export function movedPage(pathname: string): string {
   </main>
 </body></html>`;
 }
+
+/**
+ * The origin a browser can actually reach us on.
+ *
+ * `req.nextUrl.origin` is wrong behind a proxy: the standalone server builds it
+ * from the address it binds to, which the Dockerfile sets to 0.0.0.0:8080, so
+ * generated media URLs came out as https://0.0.0.0:8080/api/media?t=… and
+ * loaded nowhere. Vercel happened to paper over this; Railway does not.
+ *
+ * Reading the host from headers is safe here specifically because middleware
+ * has already rejected every host except the canonical one and local/LAN dev —
+ * so an attacker cannot use a forged Host to make us mint URLs on their domain.
+ * Anything unexpected still falls back to the canonical origin.
+ */
+export function publicOrigin(req: Request): string {
+  const h = req.headers;
+  const host = (h.get("x-forwarded-host") || h.get("host") || "").split(",")[0].trim();
+  if (!host || !isAllowedHost(host)) return CANONICAL_URL;
+
+  const fwdProto = (h.get("x-forwarded-proto") || "").split(",")[0].trim();
+  if (fwdProto) return `${fwdProto}://${host}`;
+
+  // No proxy header: local and LAN development is plain http.
+  const bare = host.replace(/:\d+$/, "");
+  const local =
+    bare === "localhost" || bare === "127.0.0.1" || bare === "[::1]" || bare === "::1" ||
+    bare.endsWith(".local") || /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(bare);
+  return `${local ? "http" : "https"}://${host}`;
+}

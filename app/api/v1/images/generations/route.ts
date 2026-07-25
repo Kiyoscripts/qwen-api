@@ -5,6 +5,7 @@ import { QwenError } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
 import { logUsage } from "@/lib/supabase";
 import { authenticate } from "@/lib/apiAuth";
+import { publicOrigin } from "@/lib/canonicalHost";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -95,7 +96,7 @@ export async function POST(req: NextRequest) {
   }
   // With a watermark we hand back a media-proxy URL that brands the image on the
   // fly; without one, the original CDN URL (clean image) is returned as before.
-  const outUrl = watermark ? buildMediaUrl(req.nextUrl.origin, url, watermark) : url;
+  const outUrl = watermark ? buildMediaUrl(publicOrigin(req), url, watermark) : url;
   return NextResponse.json({ created, data: [{ url: outUrl }] });
 }
 
