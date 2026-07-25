@@ -62,25 +62,38 @@ export async function POST(req: NextRequest) {
         // Get the text into an assistant message.
         chatId = await createChat(token, TTS_HELPER_MODEL, "t2t");
         const prompt = `Repeat the following text back exactly as written, with no extra words, no quotes and no commentary:\n\n${input}`;
+        // Thinking stays on: reasoning adds nothing to repeating a string back,
+        // but the default helper (qwen3.8-max-preview) rejects a request with it
+        // disabled — upstream answers "invalid_input" and generates nothing.
         const messages = [buildMessage([{ role: "user", content: prompt }], { model: TTS_HELPER_MODEL, chatType: "t2t", thinking: true })];
         const res = await openCompletion(token, chatId, { model: TTS_HELPER_MODEL, messages, stream: true });
 
-        // We only need the assistant message id (response_id) from the stream.
+        // We need the assistant message id (response_id), and proof that the
+        // echo actually produced text: synthesis reads the *stored* message, so
+        // an account that streams an empty completion (quota exhausted, or the
+        // spurious "invalid_input" a degraded account returns) yields silence
+        // rather than an error. Checking here turns that into a failover.
         const raw = await res.text();
         let messageId: string | null = null;
+        let echoed = "";
+        let upstreamError = "";
         for (const line of raw.split("\n")) {
           if (!line.startsWith("data:")) continue;
           try {
             const evt = JSON.parse(line.slice(5).trim());
-            if (evt?.["response.created"]?.response_id) {
-              messageId = evt["response.created"].response_id;
-              break;
-            }
+            if (!messageId && evt?.["response.created"]?.response_id) messageId = evt["response.created"].response_id;
+            const delta = evt?.choices?.[0]?.delta;
+            if (delta?.phase === "answer" && typeof delta.content === "string") echoed += delta.content;
+            const e = evt?.error ?? delta?.error;
+            if (e && !upstreamError) upstreamError = [e.code, e.details].filter(Boolean).join(": ") || String(e);
           } catch {
             /* skip */
           }
         }
         if (!messageId) throw new QwenError("Could not prepare text for speech.");
+        if (!echoed.trim()) {
+          throw new QwenError(upstreamError || "The speech helper generated no text.", 502, true);
+        }
 
         const pcm = await synthesize(token, chatId, messageId);
         await Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);

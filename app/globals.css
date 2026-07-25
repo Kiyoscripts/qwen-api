@@ -1458,3 +1458,9 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
   color: #ffca8a; background: rgba(255, 176, 60, .08);
   border: 1px solid rgba(255, 176, 60, .26);
 }
+
+/* Read-aloud: active state on the message action row. */
+.c-action.on { color: var(--accent-2); background: rgba(79, 211, 172, .12); }
+.c-action:disabled { opacity: .4; cursor: default; }
+.c-action:disabled:hover { background: none; }
+.ra-spin { animation: spin .9s linear infinite; }

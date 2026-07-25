@@ -27,9 +27,16 @@ export function showReasoning(): boolean {
 
 export class QwenError extends Error {
   status: number;
-  constructor(message: string, status = 502) {
+  /**
+   * Set when the failure is the account's fault rather than the request's, but
+   * the wording doesn't look like a quota message (see `isTokenFailover`). The
+   * pool then moves to another account instead of failing the request.
+   */
+  retryable: boolean;
+  constructor(message: string, status = 502, retryable = false) {
     super(message);
     this.status = status;
+    this.retryable = retryable;
   }
 }
 

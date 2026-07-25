@@ -23,6 +23,7 @@ import Aurora, { type AuroraState } from "../Aurora";
 import Select from "../Select";
 import { useMe, AccountChip } from "../Account";
 import { PhaseTimer } from "../PhaseTimer";
+import { useReadAloud, ReadAloudButton } from "./ReadAloud";
 import { DEMO_TOOLS, DEMO_TOOL_NAMES, runDemoTool } from "@/lib/demoTools";
 
 interface ToolCallView {
@@ -143,6 +144,9 @@ export default function Chat() {
   const authed = Boolean(apiKey) || Boolean(me);
   const authHeaders = (): Record<string, string> => (apiKey ? { Authorization: `Bearer ${apiKey}` } : {});
 
+  // One player for the thread: starting a second message stops the first.
+  const readAloud = useReadAloud(authHeaders);
+
   const active = conversations.find((c) => c.id === activeId);
   const messages = active?.messages ?? [];
   const activeModel = models.find((m) => m.id === active?.model);
@@ -257,6 +261,7 @@ export default function Chat() {
   function openConversation(id: string) {
     if (id === activeId) { setSidebarOpen(false); return; }
     abortRef.current?.abort();
+    readAloud.stop();
     setActiveId(id);
     setSidebarOpen(false);
     setError(null);
@@ -919,9 +924,16 @@ export default function Chat() {
                                   className="c-action"
                                   onClick={() => copyMessage(m.content, i)}
                                   aria-label="Copy response"
+                                  title="Copy response"
                                 >
                                   {copiedIdx === i ? <Check size={15} /> : <Copy size={15} />}
                                 </button>
+                                <ReadAloudButton
+                                  idx={i}
+                                  status={readAloud.status}
+                                  disabled={!authed}
+                                  onClick={() => readAloud.speak(m.content, i)}
+                                />
                               </div>
                             )}
                           </>
@@ -967,6 +979,7 @@ export default function Chat() {
                 ))}
 
                 {error && <div className="c-error">{error}</div>}
+                {readAloud.error && <div className="c-error">{readAloud.error}</div>}
               </div>
             </div>
               {!atBottom && (

@@ -111,7 +111,9 @@ export async function withTokenFailover<T>(
       return { token: entry.token, entryId: entry.id ?? "env", result };
     } catch (e: any) {
       lastError = e;
-      if (!isTokenFailure(e?.message || "")) throw e; // a real error, not a bad account
+      // `retryable` covers account failures whose wording isn't quota-shaped —
+      // e.g. an account that streams a completion but generates no text.
+      if (!e?.retryable && !isTokenFailure(e?.message || "")) throw e; // a real error, not a bad account
       noteFailure(entry);
     }
   }
