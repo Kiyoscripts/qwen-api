@@ -9,6 +9,7 @@ import {
   openCompletion,
   pollTask,
   qwenDeltas,
+  type StreamStatus,
   resolveModel,
   showReasoning,
   uploadImages,
@@ -170,9 +171,10 @@ export async function POST(req: NextRequest) {
 
         const parser = new ToolStream(registry);
         let toolCalls: OAIToolCall[] = [];
+        const st: StreamStatus = { complete: false };
 
         try {
-          for await (const { phase, text } of qwenDeltas(qwenRes)) {
+          for await (const { phase, text } of qwenDeltas(qwenRes, st)) {
             if (phase === "think") { if (withReasoning && text) send({ reasoning_content: text }); continue; }
             const out = parser.push(text);
             if (out) send({ content: out });
@@ -188,7 +190,9 @@ export async function POST(req: NextRequest) {
         await cleanup();
         logUsage(record.id, modelId, hadImage, true, 200);
         if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
-        send({}, toolCalls.length ? "tool_calls" : "stop");
+        // "length" is how OpenAI reports a reply that ran out of room, so every
+        // client already knows to treat it as resumable rather than finished.
+        send({}, toolCalls.length ? "tool_calls" : st.complete ? "stop" : "length");
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       },
@@ -200,8 +204,9 @@ export async function POST(req: NextRequest) {
   if (toolsOn) {
     let raw = "";
     let reasoning = "";
+    const st: StreamStatus = { complete: false };
     try {
-      for await (const { phase, text } of qwenDeltas(qwenRes)) {
+      for await (const { phase, text } of qwenDeltas(qwenRes, st)) {
         if (phase === "think") reasoning += text;
         else raw += text;
       }
@@ -224,7 +229,7 @@ export async function POST(req: NextRequest) {
       object: "chat.completion",
       created,
       model: modelId,
-      choices: [{ index: 0, message, finish_reason: toolCalls.length ? "tool_calls" : "stop" }],
+      choices: [{ index: 0, message, finish_reason: toolCalls.length ? "tool_calls" : st.complete ? "stop" : "length" }],
       usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     });
   }
@@ -235,8 +240,9 @@ export async function POST(req: NextRequest) {
       async start(controller) {
         const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
         send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
+        const st: StreamStatus = { complete: false };
         try {
-          for await (const { phase, text } of qwenDeltas(qwenRes)) {
+          for await (const { phase, text } of qwenDeltas(qwenRes, st)) {
             const delta =
               phase === "think"
                 ? withReasoning
@@ -248,7 +254,9 @@ export async function POST(req: NextRequest) {
         } catch (e: any) {
           send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: `\n[error: ${e.message}]` }, finish_reason: null }] });
         }
-        send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
+        // "length" is OpenAI's signal for a reply that ran out of room, so clients
+        // already treat it as resumable rather than finished.
+        send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: st.complete ? "stop" : "length" }] });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
         await cleanup();
@@ -260,8 +268,9 @@ export async function POST(req: NextRequest) {
 
   let content = "";
   let reasoning = "";
+  const st: StreamStatus = { complete: false };
   try {
-    for await (const { phase, text } of qwenDeltas(qwenRes)) {
+    for await (const { phase, text } of qwenDeltas(qwenRes, st)) {
       if (phase === "think") reasoning += text;
       else content += text;
     }
@@ -282,7 +291,7 @@ export async function POST(req: NextRequest) {
     object: "chat.completion",
     created,
     model: modelId,
-    choices: [{ index: 0, message, finish_reason: "stop" }],
+    choices: [{ index: 0, message, finish_reason: st.complete ? "stop" : "length" }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
 }

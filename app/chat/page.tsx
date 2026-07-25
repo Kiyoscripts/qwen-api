@@ -38,6 +38,7 @@ interface Msg {
   toolCalls?: ToolCallView[]; // assistant requested these
   toolName?: string; // tool-result message
   toolCallId?: string; // tool-result message
+  truncated?: boolean; // stream was severed before the model finished
 }
 interface Conversation {
   id: string;
@@ -338,10 +339,11 @@ export default function Chat() {
   /**
    * Stream one turn, appending onto whatever we already have.
    *
-   * `complete` is the important bit: our API always ends a healthy stream with
-   * `[DONE]`. If the serverless function is killed mid-generation (Vercel caps a
-   * request at 300s) the stream just dies without it, which is an exact signal
-   * that the reply was truncated rather than finished.
+   * `complete` comes from finish_reason. The API reports "length" when the
+   * upstream stream was severed mid-reply — the 300s function cap, a dropped
+   * connection — and "stop" when the model finished on its own. (Watching for
+   * `[DONE]` does not work: we always send that, whether or not the reply
+   * survived, so it was true even on a truncated turn.)
    */
   async function streamTurn(
     convo: Record<string, unknown>[],
@@ -351,7 +353,7 @@ export default function Chat() {
   ): Promise<{ content: string; reasoning: string; complete: boolean; toolCalls: ToolCallView[] }> {
     let content = base.content;
     let reasoning = base.reasoning;
-    let complete = false;
+    let finish: string | null = null;
     const toolCalls: ToolCallView[] = [];
 
     const res = await fetch("/v1/chat/completions", {
@@ -384,12 +386,11 @@ export default function Chat() {
         buffer = buffer.slice(idx + 1);
         if (!line.startsWith("data:")) continue;
         const data = line.slice(5).trim();
-        if (data === "[DONE]") {
-          complete = true;
-          continue;
-        }
+        if (data === "[DONE]") continue;
         try {
-          const d = JSON.parse(data)?.choices?.[0]?.delta;
+          const choice = JSON.parse(data)?.choices?.[0];
+          if (choice?.finish_reason) finish = choice.finish_reason;
+          const d = choice?.delta;
           if (d?.reasoning_content) { reasoning += d.reasoning_content; pulseRef.current++; }
           if (d?.content) { content += d.content; pulseRef.current++; setAuroraState("responding"); }
           if (Array.isArray(d?.tool_calls)) {
@@ -405,7 +406,73 @@ export default function Chat() {
         }
       }
     }
-    return { content, reasoning, complete, toolCalls };
+    // No finish_reason at all means the connection dropped before the final
+    // chunk, which is a truncation too.
+    return { content, reasoning, complete: finish !== null && finish !== "length", toolCalls };
+  }
+
+  function markTruncated() {
+    patchActive((c) => {
+      const msgs = [...c.messages];
+      const i = msgs.length - 1;
+      if (msgs[i]?.role === "assistant") msgs[i] = { ...msgs[i], truncated: true };
+      return { ...c, messages: msgs };
+    });
+  }
+
+  /**
+   * Resume a severed reply.
+   *
+   * The partial text is sent back as the assistant's own turn, so the model
+   * continues from it instead of restarting — the cost is the remainder, not a
+   * second full generation. The continuation is appended to the same message so
+   * the thread still reads as one answer.
+   */
+  async function continueReply() {
+    if (busy || !authed || !active) return;
+    const idx = messages.length - 1;
+    const last = messages[idx];
+    if (last?.role !== "assistant" || !last.truncated) return;
+
+    setError(null);
+    setBusy(true);
+    setAuroraState("thinking");
+    stickRef.current = true;
+    setAtBottom(true);
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    // Drop the flag while it runs so the button can't be pressed twice.
+    patchActive((c) => {
+      const msgs = [...c.messages];
+      msgs[idx] = { ...msgs[idx], truncated: false };
+      return { ...c, messages: msgs };
+    });
+
+    try {
+      const convo = toApi(messages);
+      convo.push({
+        role: "user",
+        content:
+          "Continue your previous message from exactly where it stopped. Do not repeat any of it, do not restate the question, and do not add a preamble — carry straight on from the final character.",
+      });
+      const { complete } = await streamTurn(
+        convo,
+        { content: last.content, reasoning: last.reasoning || "" },
+        ctrl.signal,
+        toolsOn ? DEMO_TOOLS : undefined
+      );
+      if (!complete) markTruncated();
+    } catch (e: any) {
+      if (e.name !== "AbortError") setError(e.message);
+      markTruncated(); // still resumable
+    } finally {
+      setBusy(false);
+      abortRef.current = null;
+      setAuroraState("done");
+      setTimeout(() => setAuroraState((s) => (s === "done" ? "idle" : s)), 2600);
+    }
   }
 
   async function send(text?: string) {
@@ -443,7 +510,11 @@ export default function Chat() {
       const tools = toolsOn ? DEMO_TOOLS : undefined;
       const convo = toApi(history);
       for (let hop = 0; hop < 8; hop++) {
-        const { content, toolCalls } = await streamTurn(convo, { content: "", reasoning: "" }, ctrl.signal, tools);
+        const { content, toolCalls, complete } = await streamTurn(convo, { content: "", reasoning: "" }, ctrl.signal, tools);
+        // Nothing auto-retries: a full regeneration would burn a pooled account
+        // usage for work we already have. The partial is kept and flagged, and
+        // Continue picks up from it — generating only the missing remainder.
+        if (!complete) markTruncated();
         convo.push({
           role: "assistant",
           content: content || null,
@@ -793,6 +864,14 @@ export default function Chat() {
                                   aria-label="Copy response"
                                 >
                                   {copiedIdx === i ? <Check size={15} /> : <Copy size={15} />}
+                                </button>
+                              </div>
+                            )}
+                            {m.truncated && i === messages.length - 1 && !busy && (
+                              <div className="c-cutoff">
+                                <span>This reply was cut short by the upstream limit.</span>
+                                <button className="c-continue" onClick={continueReply}>
+                                  Continue from here
                                 </button>
                               </div>
                             )}

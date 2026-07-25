@@ -629,6 +629,19 @@ code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, mo
 
 .c-error { border: 1px solid #6b3a3a; background: rgba(239, 68, 68, 0.1); color: #f5a3a3; border-radius: 12px; padding: 11px 14px; font-size: 14px; }
 
+/* Truncated reply: says so, and offers to generate only the missing remainder. */
+.c-cutoff {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px;
+  padding: 10px 13px; border-radius: 12px; font-size: 13px; color: #ffca8a;
+  background: rgba(255, 176, 60, .08); border: 1px solid rgba(255, 176, 60, .26);
+}
+.c-continue {
+  padding: 6px 13px; border-radius: 999px; cursor: pointer; font-family: inherit;
+  font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  background: rgba(255, 176, 60, .16); border: 1px solid rgba(255, 176, 60, .45); color: #ffd9a3;
+}
+.c-continue:hover { background: rgba(255, 176, 60, .26); }
+
 /* ---------- composer ---------- */
 .c-composer-wrap { flex-shrink: 0; padding: 6px 20px 12px; }
 .c-composer {

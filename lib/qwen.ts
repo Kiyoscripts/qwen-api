@@ -293,8 +293,22 @@ export interface QwenDelta {
   text: string;
 }
 
+/**
+ * Set by qwenDeltas so the caller can tell a finished reply from a severed one.
+ *
+ * The generator has two exits: `[DONE]`, meaning the model stopped on its own,
+ * and the reader running dry, meaning the upstream stream died mid-sentence —
+ * the serverless time limit, a dropped upstream connection, an account hitting
+ * its ceiling. They are not the same thing, and reporting both as "stop" told
+ * every client that a truncated answer was complete.
+ */
+export interface StreamStatus {
+  complete: boolean;
+}
+
 // Async generator over SSE deltas. Yields {phase, text}. Throws on stream errors.
-export async function* qwenDeltas(res: Response): AsyncGenerator<QwenDelta> {
+// Pass `status` to learn whether the stream actually finished.
+export async function* qwenDeltas(res: Response, status?: StreamStatus): AsyncGenerator<QwenDelta> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -308,7 +322,10 @@ export async function* qwenDeltas(res: Response): AsyncGenerator<QwenDelta> {
       buffer = buffer.slice(idx + 1);
       if (!line.startsWith("data:")) continue;
       const data = line.slice(5).trim();
-      if (data === "[DONE]") return;
+      if (data === "[DONE]") {
+        if (status) status.complete = true;
+        return;
+      }
       let evt: any;
       try {
         evt = JSON.parse(data);
