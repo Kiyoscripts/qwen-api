@@ -23,6 +23,9 @@ import type { OpenAIMessage } from "./qwen";
 
 export const DEEPSEEK_BASE = "https://chat.deepseek.com";
 const DEEPSEEK_CLIENT_VERSION = process.env.DEEPSEEK_CLIENT_VERSION || "2.2.0";
+// Minutes west of UTC, as the web client sends it. 0 (UTC) is fine but uniform
+// across every account; override per deployment if that matters.
+const DEEPSEEK_TZ_OFFSET = process.env.DEEPSEEK_TZ_OFFSET || "0";
 
 export class DeepSeekError extends Error {
   status: number;
@@ -63,21 +66,36 @@ export function resolveDeepSeekModel(id: string): DeepSeekModel | null {
 // traffic runs on their own account (and only their account bears any ban risk).
 // `DEEPSEEK_TOKEN` in the env is only an optional owner-wide fallback.
 
+// Kept as one constant so the User-Agent and the client hints can't drift apart:
+// a request claiming Chrome while omitting sec-ch-ua (or naming a different
+// version in it) is inconsistent in a way no real browser is.
+const CHROME_VERSION = "140";
+const USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+  `(KHTML, like Gecko) Chrome/${CHROME_VERSION}.0.0.0 Safari/537.36`;
+
 function headers(token: string, extra: Record<string, string> = {}): Record<string, string> {
   return {
     "Content-Type": "application/json",
     Accept: "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
     Authorization: `Bearer ${token}`,
     Origin: DEEPSEEK_BASE,
     Referer: `${DEEPSEEK_BASE}/`,
-    "User-Agent":
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "User-Agent": USER_AGENT,
+    "sec-ch-ua": `"Chromium";v="${CHROME_VERSION}", "Not=A?Brand";v="24", "Google Chrome";v="${CHROME_VERSION}"`,
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"macOS"',
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+    Pragma: "no-cache",
+    "Cache-Control": "no-cache",
     "x-client-platform": "web",
     "x-client-version": DEEPSEEK_CLIENT_VERSION,
     "x-client-bundle-id": "com.deepseek.chat",
     "x-client-locale": "en_US",
-    "x-client-timezone-offset": "0",
+    "x-client-timezone-offset": DEEPSEEK_TZ_OFFSET,
     ...extra,
   };
 }
@@ -128,17 +146,57 @@ export async function createSession(token: string): Promise<string> {
   return id;
 }
 
+// Best effort, but NOT silent: we create a session per request, so if deletion
+// stops working the account accumulates thousands of abandoned sessions — which
+// is both untidy and exactly the sort of thing that gets an account flagged.
+// A failure here can't fail the user's request, so it is logged instead.
+//
+// Two request shapes are in circulation for this endpoint, so if the POST form
+// is rejected we try the REST form before giving up. Whichever succeeds is
+// remembered for the life of the process, so this costs one extra call at most.
+type DeleteShape = "post" | "rest";
+let preferredDeleteShape: DeleteShape | null = null;
+
+async function attemptDelete(token: string, id: string, shape: DeleteShape): Promise<{ ok: boolean; detail: string }> {
+  const res =
+    shape === "post"
+      ? await fetch(`${DEEPSEEK_BASE}/api/v0/chat_session/delete`, {
+          method: "POST",
+          headers: headers(token),
+          body: JSON.stringify({ chat_session_id: id }),
+        })
+      : await fetch(`${DEEPSEEK_BASE}/api/v0/chat_session/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: headers(token),
+        });
+  const text = await res.text().catch(() => "");
+  let json: any = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    /* non-JSON body */
+  }
+  const ok = res.ok && (!json || !json.code || json.code === 0);
+  return { ok, detail: `${res.status} ${json?.msg || text.slice(0, 120) || ""}`.trim() };
+}
+
 export async function deleteSession(token: string, chatSessionId: string | undefined): Promise<void> {
   if (!chatSessionId) return;
-  try {
-    await fetch(`${DEEPSEEK_BASE}/api/v0/chat_session/delete`, {
-      method: "POST",
-      headers: headers(token),
-      body: JSON.stringify({ chat_session_id: chatSessionId }),
-    });
-  } catch {
-    /* best effort */
+  const order: DeleteShape[] = preferredDeleteShape === "rest" ? ["rest", "post"] : ["post", "rest"];
+  const failures: string[] = [];
+  for (const shape of order) {
+    try {
+      const { ok, detail } = await attemptDelete(token, chatSessionId, shape);
+      if (ok) {
+        preferredDeleteShape = shape;
+        return;
+      }
+      failures.push(`${shape}: ${detail}`);
+    } catch (e: any) {
+      failures.push(`${shape}: threw ${e?.message || e}`);
+    }
   }
+  console.warn(`[deepseek] session ${chatSessionId} NOT deleted — ${failures.join(" | ")}`);
 }
 
 // Cheap liveness check for a token (used when a user links one). Hits the PoW

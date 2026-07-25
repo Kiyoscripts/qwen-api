@@ -407,29 +407,55 @@ async function handleDeepSeek(args: {
 
   const id = "chatcmpl-" + randomUUID();
   const created = Math.floor(Date.now() / 1000);
-  const cleanup = () => deleteSession(token, sessionId);
+  // Deleting the session must happen exactly once, on every exit path — normal
+  // finish, upstream error, or the client hanging up mid-stream. A leaked
+  // session stays on the user's DeepSeek account forever.
+  let cleaned = false;
+  const cleanup = async () => {
+    if (cleaned) return;
+    cleaned = true;
+    await deleteSession(token, sessionId);
+  };
 
   if (wantStream) {
     const encoder = new TextEncoder();
+    let hb: ReturnType<typeof keepAlive> | null = null;
     const stream = new ReadableStream({
       async start(controller) {
-        const hb = keepAlive(controller, encoder);
-        const send = (obj: unknown) => { hb.touch(); controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); };
-        send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
+        hb = keepAlive(controller, encoder);
+        const send = (obj: unknown) => { hb!.touch(); controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); };
         try {
-          for await (const { kind, text } of deepseekDeltas(dsRes)) {
-            const delta = kind === "thinking" ? { reasoning_content: text } : { content: text };
-            send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: null }] });
+          send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
+          try {
+            for await (const { kind, text } of deepseekDeltas(dsRes)) {
+              const delta = kind === "thinking" ? { reasoning_content: text } : { content: text };
+              send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: null }] });
+            }
+          } catch (e: any) {
+            send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: `\n[error: ${e.message}]` }, finish_reason: null }] });
           }
-        } catch (e: any) {
-          send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: `\n[error: ${e.message}]` }, finish_reason: null }] });
+          hb.stop();
+          send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          logUsage(recordId, modelId, hadImage, true, 200);
+        } catch {
+          // The consumer went away: enqueue/close throws once the stream is
+          // closed or errored. There is nobody left to tell, so just record it.
+          logUsage(recordId, modelId, hadImage, true, 499);
+        } finally {
+          hb.stop();
+          // Stop pulling from DeepSeek before dropping the session.
+          await dsRes.body?.cancel().catch(() => {});
+          await cleanup();
         }
-        hb.stop();
-        send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-        controller.close();
+      },
+      // Fires when the client disconnects: `start` may still be parked on a
+      // read that never resolves, so clean up from here too (cleanup is idempotent).
+      async cancel() {
+        hb?.stop();
+        await dsRes.body?.cancel().catch(() => {});
         await cleanup();
-        logUsage(recordId, modelId, hadImage, true, 200);
       },
     });
     return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
