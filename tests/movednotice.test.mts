@@ -1,18 +1,11 @@
-// The moved-notice covers the whole page, so a false positive hides the working
-// site. These pin down exactly which hosts are treated as canonical.
+// The retirement check gates the whole deployment: a false positive hides a
+// working site, a false negative leaves a retired one usable. Both matter, so
+// the predicate is pinned here — including the spoofing cases its anchors exist
+// for.
 
-import { readFileSync } from "node:fs";
+import { isAllowedHost, isApiPath, CANONICAL_HOST } from "../lib/canonicalHost";
 
-// The predicate is not exported (it is internal to a client component), so lift
-// it out of the source rather than duplicating it here — a copy would drift.
-const src = readFileSync(new URL("../app/MovedNotice.tsx", import.meta.url), "utf8");
-const CANONICAL_HOST = /export const CANONICAL_HOST = "([^"]+)"/.exec(src)![1];
-const body = /function isAllowedHost\(host: string\): boolean \{([\s\S]*?)\n\}/.exec(src)![1];
-const isAllowedHost = new Function("host", "CANONICAL_HOST", body.replace(/: boolean/g, "")) as (
-  h: string,
-  c: string
-) => boolean;
-const allowed = (h: string) => isAllowedHost(h, CANONICAL_HOST);
+const allowed = (h: string) => isAllowedHost(h);
 
 let pass = 0, fail = 0;
 const check = (host: string, want: boolean, why: string) => {
@@ -28,6 +21,8 @@ check(CANONICAL_HOST, true, "the canonical host itself");
 check("localhost", true, "local dev");
 check("127.0.0.1", true, "local dev by IP");
 check("[::1]", true, "local dev over IPv6");
+check("localhost:3000", true, "host header carries a port");
+check("192.168.0.14:3000", true, "LAN preview with a port");
 check("192.168.0.14", true, "LAN preview, phone testing");
 check("10.0.0.5", true, "LAN preview");
 check("172.16.4.2", true, "LAN preview, lower bound of the private range");
@@ -45,6 +40,14 @@ check("172.15.0.1", false, "just below the private range");
 check("192.168.0.14.evil.com", false, "IP-looking prefix on a public domain");
 check("notlocalhost", false, "substring of localhost");
 check("localhost.evil.com", false, "localhost as a prefix");
+
+// Paths routed to the JSON error rather than the HTML notice.
+for (const [p, want] of [["/v1/chat/completions", true], ["/api/auth/me", true],
+                         ["/", false], ["/chat", false], ["/docs", false]] as [string, boolean][]) {
+  const got = isApiPath(p);
+  if (got === want) pass++;
+  else { fail++; console.error(`\u2717 isApiPath(${p}) -> ${got}, expected ${want}`); }
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

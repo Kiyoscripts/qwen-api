@@ -1312,23 +1312,3 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
   .c-code-lang { padding-right: 0; }
   .c-code-actions { position: static; justify-content: flex-end; padding: 4px 6px; }
 }
-
-/* --- "We have moved" notice (old deployments) ------------------------------- */
-.moved {
-  position: fixed; inset: 0; z-index: 400; display: flex; align-items: center; justify-content: center;
-  padding: 24px; background: radial-gradient(circle at 50% 35%, rgba(12, 14, 24, .92), rgba(5, 6, 12, .97));
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-}
-.moved-card {
-  max-width: 480px; padding: 34px 32px; text-align: center;
-  display: flex; flex-direction: column; align-items: center; gap: 14px;
-}
-.moved-card .lp-logo { width: 40px; height: 40px; }
-.moved-card h1 { margin: 0; font-size: 25px; font-weight: 680; letter-spacing: -.5px; color: var(--text); }
-.moved-card p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.65; }
-.moved-card .g-btn { margin-top: 6px; }
-.moved-fine { font-size: 12.5px !important; color: var(--faint) !important; }
-.moved-fine code {
-  background: rgba(255, 255, 255, .06); border: 1px solid var(--glass-brd);
-  border-radius: 5px; padding: 1px 5px; font-size: 11.5px; color: #cdd2e6; word-break: break-all;
-}
