@@ -271,6 +271,46 @@ show the new URL.
   `--min-instances 1` to remove them entirely; that runs a container full time
   and leaves the free tier.
 
+## Railway (no card, ~30 days)
+
+Railway runs a real container, so there is **no request timeout** — same win as
+Cloud Run. It is a trial rather than a free tier: a one-time $5 credit, expiring
+after 30 days or when the credit runs out, whichever comes first. Services pause
+after that unless you move to Hobby ($5/month minimum).
+
+At ~$0.000463 per GB-minute, a 512MB service left running continuously costs
+about $10/month, so the credit would be gone in under two weeks. **Enable App
+Sleeping** (service → Settings → Serverless) and you only spend while serving
+requests, which with low traffic stretches the credit across the full trial.
+
+1. Sign in at <https://railway.com> with GitHub — no card for the trial.
+2. **New Project → Deploy from GitHub repo →** `UltraFEmotes/qwen3.8-api`.
+   Railway detects the `Dockerfile` and uses it, building on x86_64, so `sharp`
+   gets the right binaries.
+3. **Variables → Raw Editor**, and paste the contents of `.env.local`, then add:
+
+   ```
+   QWEN_SHOW_REASONING=true
+   QWEN_FORGET_MEMORIES=true
+   ```
+
+   `PORT` is injected by Railway; the standalone server already honours it, so
+   do not set it yourself.
+4. **Settings → Networking → Generate Domain** for a `*.up.railway.app` URL.
+5. **Settings → Serverless → enable App Sleeping.**
+6. Replace the cron: Railway can schedule a service, but the simplest path is a
+   free job at <https://cron-job.org> hitting
+   `https://YOUR-APP.up.railway.app/api/cron/cleanup` daily. See step 7 above
+   for closing that endpoint with `CRON_SECRET` first.
+
+Everything in "Known differences from Vercel" below applies here too —
+especially copying `ADMIN_SECRET` across byte-for-byte, or every existing login
+cookie and media URL breaks.
+
+When the trial ends the service pauses rather than deleting anything, so you can
+move to Render (below) without losing state — all persistent data lives in
+Supabase, not on the host.
+
 ## No-card alternatives
 
 Cloud Run needs billing enabled even to sit inside the free tier. If that's a
