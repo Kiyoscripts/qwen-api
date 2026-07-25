@@ -9,17 +9,18 @@ import {
   Check,
   Copy,
   Gear,
-  ImageSquare,
   Key,
   NotePencil,
   Paperclip,
   Sidebar as SidebarIcon,
   Stop,
   Trash,
+  Wrench,
   X,
 } from "@phosphor-icons/react";
 import { Markdown } from "./Markdown";
 import Aurora, { type AuroraState } from "../Aurora";
+import Select from "../Select";
 import { DEMO_TOOLS, DEMO_TOOL_NAMES, runDemoTool } from "@/lib/demoTools";
 
 interface ToolCallView {
@@ -53,13 +54,13 @@ interface ModelOpt {
 
 // Short capability line under each model name, ChatGPT-style.
 function describeModel(m: ModelOpt): string {
-  const bits: string[] = [];
-  if (m.thinking) bits.push("reasoning");
-  if (m.vision) bits.push("vision");
-  if (m.chatTypes.includes("t2i")) bits.push("image");
-  if (m.chatTypes.includes("t2v")) bits.push("video");
-  if (bits.length === 0) return "Text generation";
-  return "Text, " + bits.join(", ");
+  // Image/video models don't answer in text, so don't advertise that they do.
+  if (m.chatTypes.includes("t2v")) return "Video generation";
+  if (m.chatTypes.includes("t2i")) return m.chatTypes.includes("image_edit") ? "Image · Editing" : "Image generation";
+  const bits = ["Text"];
+  if (m.thinking) bits.push("Reasoning");
+  if (m.vision) bits.push("Vision");
+  return bits.join(" · ");
 }
 
 const STORE = "qwen_chat_conversations";
@@ -114,11 +115,17 @@ export default function Chat() {
   const [fast, setFast] = useState(false); // Think (default) vs Fast
   const [aspect, setAspect] = useState("1:1"); // image aspect ratio
   const [toolsOn, setToolsOn] = useState(false); // enable demo tool calling
+  const [atBottom, setAtBottom] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const modelRef = useRef<HTMLDivElement>(null);
+  // Bumped once per streamed token; the backdrop reads it every frame so the
+  // scene reacts to output without re-rendering anything.
+  const pulseRef = useRef(0);
+  // Follow the tail of the reply unless the reader has scrolled away from it.
+  const stickRef = useRef(true);
 
   const active = conversations.find((c) => c.id === activeId);
   const messages = active?.messages ?? [];
@@ -177,9 +184,30 @@ export default function Chat() {
     if (apiKey) loadModels(apiKey);
   }, [apiKey, loadModels]);
 
+  // `messages` gets a new identity on every streamed token, so this keeps the
+  // view pinned to the tail of a reply as it is written — but only while the
+  // reader is already at the bottom.
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages.length, busy]);
+    const el = scrollRef.current;
+    if (!el || !stickRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages, busy]);
+
+  function onThreadScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    stickRef.current = near;
+    setAtBottom(near);
+  }
+
+  function jumpToBottom() {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickRef.current = true;
+    setAtBottom(true);
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }
 
   // If the active model lives under "Other models", open that section so the
   // current selection is visible when the menu opens.
@@ -208,25 +236,45 @@ export default function Chat() {
     setConversations((prev) => prev.map((c) => (c.id === activeId ? fn(c) : c)));
   }
 
+  // Switching threads mid-flight would stream the rest of a reply into a
+  // conversation you are no longer looking at, so cancel first. The per-message
+  // copy flag and the error banner belong to the thread you left, too.
+  function openConversation(id: string) {
+    if (id === activeId) { setSidebarOpen(false); return; }
+    abortRef.current?.abort();
+    setActiveId(id);
+    setSidebarOpen(false);
+    setError(null);
+    setCopiedIdx(null);
+    stickRef.current = true;
+    setAtBottom(true);
+  }
+
   function startNewChat() {
+    abortRef.current?.abort();
     const c = newConversation(active?.model || DEFAULT_MODEL);
     setConversations((prev) => [c, ...prev]);
     setActiveId(c.id);
     setSidebarOpen(false);
     setError(null);
+    setCopiedIdx(null);
   }
 
   function deleteConversation(id: string) {
-    setConversations((prev) => {
-      const next = prev.filter((c) => c.id !== id);
-      if (next.length === 0) {
-        const c = newConversation(DEFAULT_MODEL);
-        setActiveId(c.id);
-        return [c];
-      }
+    if (id === activeId) abortRef.current?.abort();
+    // Done outside the state updater on purpose: the updater must stay pure, or
+    // React's double-invoke in dev fires setActiveId twice.
+    const next = conversations.filter((c) => c.id !== id);
+    if (next.length === 0) {
+      const c = newConversation(DEFAULT_MODEL);
+      setConversations([c]);
+      setActiveId(c.id);
+    } else {
+      setConversations(next);
       if (id === activeId) setActiveId(next[0].id);
-      return next;
-    });
+    }
+    setError(null);
+    setCopiedIdx(null);
   }
 
   function onImage(e: React.ChangeEvent<HTMLInputElement>) {
@@ -336,8 +384,8 @@ export default function Chat() {
         }
         try {
           const d = JSON.parse(data)?.choices?.[0]?.delta;
-          if (d?.reasoning_content) reasoning += d.reasoning_content;
-          if (d?.content) { content += d.content; setAuroraState("responding"); }
+          if (d?.reasoning_content) { reasoning += d.reasoning_content; pulseRef.current++; }
+          if (d?.content) { content += d.content; pulseRef.current++; setAuroraState("responding"); }
           if (Array.isArray(d?.tool_calls)) {
             for (const tc of d.tool_calls) toolCalls.push({ id: tc.id, name: tc.function?.name, arguments: tc.function?.arguments || "{}" });
           }
@@ -372,6 +420,8 @@ export default function Chat() {
     setError(null);
     setBusy(true);
     setAuroraState("thinking");
+    stickRef.current = true;
+    setAtBottom(true);
     requestAnimationFrame(autoGrow);
 
     const ctrl = new AbortController();
@@ -411,6 +461,14 @@ export default function Chat() {
     } catch (e: any) {
       if (e.name === "AbortError") {
         setError(null);
+        // Stopping before a single token arrived leaves an empty bubble behind.
+        // Partial replies are kept — you can type "continue" from them.
+        patchActive((c) => {
+          const msgs = [...c.messages];
+          const last = msgs[msgs.length - 1];
+          if (last?.role === "assistant" && !last.content && !last.reasoning && !last.toolCalls?.length) msgs.pop();
+          return { ...c, messages: msgs };
+        });
       } else {
         setError(e.message);
         patchActive((c) => {
@@ -521,13 +579,19 @@ export default function Chat() {
             </div>
           )}
           {isMediaModel && (
-            <select className="c-aspect" value={aspect} onChange={(e) => setAspect(e.target.value)} title="Aspect ratio" aria-label="Aspect ratio">
-              <option value="1:1">1:1</option>
-              <option value="16:9">16:9</option>
-              <option value="9:16">9:16</option>
-              <option value="4:3">4:3</option>
-              <option value="3:4">3:4</option>
-            </select>
+            <Select
+              compact
+              ariaLabel="Aspect ratio"
+              value={aspect}
+              onChange={setAspect}
+              options={[
+                { value: "1:1", label: "1:1", hint: "Square" },
+                { value: "16:9", label: "16:9", hint: "Landscape" },
+                { value: "9:16", label: "9:16", hint: "Portrait" },
+                { value: "4:3", label: "4:3" },
+                { value: "3:4", label: "3:4" },
+              ]}
+            />
           )}
           {!isMediaModel && (
             <button
@@ -535,8 +599,9 @@ export default function Chat() {
               className={`c-tools-btn ${toolsOn ? "on" : ""}`}
               onClick={() => setToolsOn((v) => !v)}
               title="Enable tool calling — the model can call built-in demo tools (weather, time, calculator)"
+              aria-pressed={toolsOn}
             >
-              🔧 Tools
+              <Wrench size={13} weight="bold" /> Tools
             </button>
           )}
           <div className="c-spacer" />
@@ -557,7 +622,7 @@ export default function Chat() {
 
   return (
     <div className="c-app">
-      <Aurora state={auroraState} />
+      <Aurora state={auroraState} pulseRef={pulseRef} />
       {/* ---------- sidebar ---------- */}
       <aside className={`c-side ${sidebarOpen ? "open" : ""}`}>
         <div className="c-side-top">
@@ -577,13 +642,7 @@ export default function Chat() {
         <nav className="c-convos">
           {conversations.map((c) => (
             <div key={c.id} className={`c-convo ${c.id === activeId ? "active" : ""}`}>
-              <button
-                className="c-convo-btn"
-                onClick={() => {
-                  setActiveId(c.id);
-                  setSidebarOpen(false);
-                }}
-              >
+              <button className="c-convo-btn" onClick={() => openConversation(c.id)}>
                 <ChatCircle size={15} />
                 <span>{c.title}</span>
               </button>
@@ -619,7 +678,9 @@ export default function Chat() {
               aria-haspopup="listbox"
               aria-expanded={modelMenu}
             >
-              {models.find((m) => m.id === active?.model)?.name || active?.model || DEFAULT_MODEL}
+              <span className="c-model-name-cur">
+                {models.find((m) => m.id === active?.model)?.name || active?.model || DEFAULT_MODEL}
+              </span>
               <CaretDown size={14} weight="bold" />
             </button>
 
@@ -672,23 +733,29 @@ export default function Chat() {
           </div>
         ) : (
           <>
-            <div className="c-scroll" ref={scrollRef}>
+            <div className="c-threadwrap">
+            <div className="c-scroll" ref={scrollRef} onScroll={onThreadScroll}>
               <div className="c-thread">
                 {messages.map((m, i) => (
                   <div key={i} className={`c-msg ${m.role}`}>
                     <div className="c-msg-body">
                       {m.image && <img className="c-msg-img" src={m.image} alt="attached" />}
-                      {m.reasoning && (
-                        <details className="c-think">
-                          <summary>Thinking</summary>
-                          <div>{m.reasoning}</div>
-                        </details>
-                      )}
+                      {m.reasoning && (() => {
+                        // Open it live while the model is still reasoning, then let
+                        // it collapse itself once the answer starts arriving.
+                        const active = busy && i === messages.length - 1 && !m.content;
+                        return (
+                          <details className={`c-think ${active ? "live" : ""}`} open={active}>
+                            <summary>{active ? "Thinking…" : "Thought process"}</summary>
+                            <div>{m.reasoning}</div>
+                          </details>
+                        );
+                      })()}
                       {m.toolCalls?.length ? (
                         <div className="c-toolcalls">
                           {m.toolCalls.map((tc) => (
                             <div key={tc.id} className="c-toolcall">
-                              <span className="c-tool-badge">🔧 {tc.name}</span>
+                              <span className="c-tool-badge"><Wrench size={13} weight="bold" /> {tc.name}</span>
                               <code>{tc.arguments}</code>
                             </div>
                           ))}
@@ -697,7 +764,9 @@ export default function Chat() {
                       {m.role === "assistant" ? (
                         m.content ? (
                           <>
-                            <Markdown>{m.content}</Markdown>
+                            <div className={busy && i === messages.length - 1 ? "c-streaming" : undefined}>
+                              <Markdown>{m.content}</Markdown>
+                            </div>
                             {!(busy && i === messages.length - 1) && (
                               <div className="c-actions">
                                 <button
@@ -725,7 +794,7 @@ export default function Chat() {
                         )
                       ) : m.role === "tool" ? (
                         <div className="c-toolresult">
-                          <span className="c-tool-badge">↩ {m.toolName}</span>
+                          <span className="c-tool-badge"><ArrowUp size={13} weight="bold" style={{ transform: "rotate(180deg)" }} /> {m.toolName}</span>
                           <code>{m.content}</code>
                         </div>
                       ) : (
@@ -737,6 +806,12 @@ export default function Chat() {
 
                 {error && <div className="c-error">{error}</div>}
               </div>
+            </div>
+              {!atBottom && (
+                <button className="c-jump" onClick={jumpToBottom} aria-label="Scroll to latest">
+                  <CaretDown size={15} weight="bold" />
+                </button>
+              )}
             </div>
             {composer}
           </>
@@ -765,7 +840,7 @@ export default function Chat() {
             />
             <p className="c-help">
               Stored only in this browser&apos;s local storage. It is never sent anywhere except this API.
-              Need one? <a href="/#get-a-key">Generate a key</a>.
+              Need one? <a href="/keys">Create one in your dashboard</a>.
             </p>
             <div className="c-modal-foot">
               <button className="c-primary" onClick={saveKey}>Save</button>

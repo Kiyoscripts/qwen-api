@@ -77,12 +77,12 @@ export default function KeysDashboard() {
   }
 
   if (loading) {
-    return (<><Aurora state="idle" /><div className="dash"><p className="auth-sub" style={{ padding: 40 }}>Loading…</p></div></>);
+    return (<><Aurora /><div className="dash"><p className="auth-sub" style={{ padding: 40 }}>Loading…</p></div></>);
   }
 
   return (
     <>
-      <Aurora state="idle" />
+      <Aurora />
       <div className="dash">
         <nav className="lp-nav glass">
           <a className="lp-brand" href="/" style={{ textDecoration: "none" }}><span className="lp-logo" /> Qwen3.8&nbsp;API</a>

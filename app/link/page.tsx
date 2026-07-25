@@ -79,7 +79,7 @@ export default function LinkPage() {
   return (
     <div className="lk-root">
       <style>{css}</style>
-      <Aurora state="idle" />
+      <Aurora />
       <div className="lk-col">
         <nav className="lk-nav">
           <a href="/">← Home</a>
@@ -108,7 +108,7 @@ export default function LinkPage() {
         <div className="lk-card">
           <label className="lk-label" htmlFor="lk-key">Your API key</label>
           <input id="lk-key" className="lk-input" type="password" placeholder="qwen_sk_…" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-          <div className="lk-hint">No key yet? <a href="/#get-a-key">Generate one</a> first.</div>
+          <div className="lk-hint">No key yet? <a href="/keys">Create one</a> first.</div>
 
           <label className="lk-label" htmlFor="lk-tok" style={{ marginTop: 20 }}>Your DeepSeek token</label>
           <input id="lk-tok" className="lk-input" type="password" placeholder="paste your chat.deepseek.com token" value={token} onChange={(e) => setToken(e.target.value)} onKeyDown={(e) => e.key === "Enter" && link()} />

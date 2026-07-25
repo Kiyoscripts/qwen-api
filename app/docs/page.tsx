@@ -19,7 +19,7 @@ function Code({ children }: { children: string }) {
 export default function DocsPage() {
   return (
     <>
-      <Aurora state="idle" />
+      <Aurora />
       <div className="lp">
         <nav className="lp-nav glass">
           <a className="lp-brand" href="/" style={{ textDecoration: "none" }}><span className="lp-logo" /> Qwen3.8&nbsp;API</a>
@@ -31,7 +31,7 @@ export default function DocsPage() {
           </div>
           <div className="lp-navcta">
             <a className="ghost" href="/link">Link DeepSeek</a>
-            <a className="g-btn" href="/#get-a-key">Get a key</a>
+            <a className="g-btn" href="/keys">Get a key</a>
           </div>
         </nav>
 

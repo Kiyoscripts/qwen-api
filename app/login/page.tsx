@@ -78,7 +78,7 @@ export default function LoginPage() {
 
   return (
     <>
-      <Aurora state="idle" />
+      <Aurora />
       <div className="auth-wrap">
         <a className="auth-brand" href="/"><span className="lp-logo" /> Qwen3.8&nbsp;API</a>
         <div className="auth-card glass">
