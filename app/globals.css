@@ -1449,3 +1449,12 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
   .themesw-pill, .g-btn, .lp-mcard { transition: none !important; }
   .lp-mcard:hover, .g-btn:hover { transform: none; }
 }
+
+/* Shown when the models page renders without the live pool — a short catalogue
+   is otherwise indistinguishable from a deliberately short one. */
+.models-degraded {
+  margin: 12px 0 0; padding: 11px 14px; max-width: 640px;
+  border-radius: var(--r-md); font-size: 13.5px; line-height: 1.6;
+  color: #ffca8a; background: rgba(255, 176, 60, .08);
+  border: 1px solid rgba(255, 176, 60, .26);
+}
