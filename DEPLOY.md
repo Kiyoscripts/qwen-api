@@ -42,8 +42,18 @@ If that lists an account, link it:
 gcloud billing projects link qwen38-api --billing-account=XXXXXX-XXXXXX-XXXXXX
 ```
 
-If it lists nothing, create one at
-<https://console.cloud.google.com/billing> — this requires a card.
+If it lists nothing, create one — this part cannot be scripted:
+
+1. Open <https://console.cloud.google.com/billing> and choose
+   **Create account** (or **Add billing account**).
+2. Pick your country and accept the terms.
+3. Enter the card. Google runs a small authorization, typically ~$0–1, and
+   refunds it; it is a verification, not a charge.
+4. If it offers the **$300 / 90-day free trial**, take it. While the trial is
+   active you cannot be charged at all, and when it ends Google does *not*
+   silently start billing — the account stays suspended until you manually
+   upgrade it. That is a useful backstop on top of `--max-instances`.
+5. Back in the terminal, `gcloud billing accounts list` should now show it.
 
 Being billable is not the same as being billed. The always-free quota (2M
 requests, 180k vCPU-seconds, 360k GiB-seconds per month) is permanent rather
