@@ -4,6 +4,10 @@ import { withBotId } from "botid/next/config";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Emit .next/standalone: a self-contained server plus only the node_modules it
+  // actually traced. Needed to run in a container (Cloud Run); Vercel ignores it,
+  // so both targets keep working from the same build.
+  output: "standalone",
   // Pin the workspace root to this project (a stray lockfile lives in the parent).
   outputFileTracingRoot: dirname(fileURLToPath(import.meta.url)),
   // The watermark font is read at runtime; force it into each function bundle that
