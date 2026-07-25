@@ -66,6 +66,11 @@ interface Turn {
   thinkMs?: number; // request start -> first visible token
   answerMs?: number; // first visible token -> end of stream
   startedAt?: number; // epoch ms, lets a live turn tick without re-rendering
+  // What actually produced this turn. Read from state at render time, the label
+  // would rewrite itself the moment you switched mode or model — a reply from
+  // qwen3.8 would start claiming it came from whatever is selected now.
+  model?: string;
+  aspect?: string;
   toolCalls?: ToolCallView[]; // assistant requested these
   toolName?: string; // tool-result turn
   toolCallId?: string; // tool-result turn
@@ -307,6 +312,7 @@ export default function Playground() {
           setTurns((prev) => {
             const c = [...prev];
             c[c.length - 1] = {
+              ...c[c.length - 1],
               role: "assistant", content, reasoning, pending: true,
               startedAt,
               thinkMs: firstContentAt === null ? undefined : firstContentAt - startedAt,
@@ -363,7 +369,7 @@ export default function Playground() {
         apiMessages.push({ role: "tool", tool_call_id: tc.id, name: tc.name, content });
       }
       // Add tool-result turns + a fresh assistant placeholder for the next hop.
-      setTurns((prev) => [...prev, ...resultTurns, { role: "assistant", content: "", pending: true, startedAt: Date.now() }]);
+      setTurns((prev) => [...prev, ...resultTurns, { role: "assistant", content: "", pending: true, startedAt: Date.now(), model }]);
     }
   }
 
@@ -385,7 +391,7 @@ export default function Playground() {
   function setResult(mediaUrl: string, kind: "image" | "video") {
     setTurns((prev) => {
       const c = [...prev];
-      c[c.length - 1] = { role: "assistant", content: "", mediaUrl: viaProxy(mediaUrl), mediaType: kind };
+      c[c.length - 1] = { ...c[c.length - 1], role: "assistant", content: "", pending: false, mediaUrl: viaProxy(mediaUrl), mediaType: kind };
       return c;
     });
   }
@@ -442,7 +448,7 @@ export default function Playground() {
       setStatus(pct === null ? "Rendering…" : `Rendering ${pct}%`);
       setTurns((prev) => {
         const c = [...prev];
-        c[c.length - 1] = { role: "assistant", content: "", pending: true, progress: pct };
+        c[c.length - 1] = { ...c[c.length - 1], role: "assistant", content: "", pending: true, progress: pct };
         return c;
       });
     }
@@ -464,7 +470,7 @@ export default function Playground() {
     const url = URL.createObjectURL(blob);
     setTurns((prev) => {
       const c = [...prev];
-      c[c.length - 1] = { role: "assistant", content: "", mediaUrl: url, mediaType: "audio" };
+      c[c.length - 1] = { ...c[c.length - 1], role: "assistant", content: "", pending: false, mediaUrl: url, mediaType: "audio" };
       return c;
     });
   }
@@ -477,7 +483,8 @@ export default function Playground() {
     const label = text || (mode === "image" ? "(edit these images)" : "(image)");
     const userTurn: Turn = { role: "user", content: label, images: refs.length ? refs : undefined };
     const history = [...turns, userTurn];
-    setTurns([...history, { role: "assistant", content: "", pending: true, startedAt: Date.now() }]);
+    const usedModel = mode === "chat" ? model : mode === "image" ? imageModel : mode === "video" ? "qwen-wan" : voice || "default voice";
+    setTurns([...history, { role: "assistant", content: "", pending: true, startedAt: Date.now(), model: usedModel, aspect }]);
     setInput("");
     setAttach([]);
     setBusy(true);
@@ -512,7 +519,7 @@ export default function Playground() {
           if (last?.role === "assistant" && !last.content && !last.mediaUrl) c.pop();
           else if (last) c[c.length - 1] = { ...last, pending: false };
         } else {
-          c[c.length - 1] = { role: "assistant", content: e.message, error: true };
+          c[c.length - 1] = { ...c[c.length - 1], role: "assistant", content: e.message, error: true, pending: false };
         }
         return c;
       });
@@ -541,29 +548,74 @@ export default function Playground() {
 
   // The equivalent HTTP call for whatever is configured right now. This is the
   // point of a playground — you should be able to leave with a working request.
+  /**
+   * The equivalent HTTP call for whatever is configured right now — the point of
+   * a playground being that you can leave with a request that actually runs.
+   *
+   * Two things it has to get right to be runnable rather than merely
+   * illustrative: the body is single-quoted for the shell, so any apostrophe in
+   * the prompt has to be escaped (JSON.stringify escapes double quotes, never
+   * single ones — an unescaped `don't` closes the string and the command fails);
+   * and the JSON is indented to sit under `-d` rather than starting at column 0.
+   */
   function curl(): string {
-    const h = `  -H "Authorization: Bearer $QWEN_API_KEY" \\\n  -H "Content-Type: application/json" \\`;
+    const url = BASE || "https://qwen38-api-production.up.railway.app";
+
+    // POSIX single-quoted strings have no escape character; the only way out is
+    // to close the quote, emit an escaped quote, and reopen: ' -> '\''
+    const shellQuote = (v: string) => `'${v.replace(/'/g, `'\\''`)}'`;
+    // Line up continuation lines under the -d flag.
+    const body = (o: unknown) => shellQuote(JSON.stringify(o, null, 2).split("\n").join("\n     "));
+
+    const lines = (endpoint: string, o: unknown, extra = "") =>
+      [
+        `curl ${url}${endpoint}${extra} \\`,
+        `  -H "Authorization: Bearer $QWEN_API_KEY" \\`,
+        `  -H "Content-Type: application/json" \\`,
+        `  -d ${body(o)}`,
+      ].join("\n");
+
     const prompt = input.trim() || "Hello!";
+
     if (mode === "image") {
-      const body: any = { model: imageModel, prompt, size: aspect };
-      // Reference images turn this into an edit. Elided — they're huge data URLs.
-      if (attach.length) body.image = attach.map(() => "data:image/png;base64,…");
-      return `curl ${BASE}/v1/images/generations \\\n${h}\n  -d '${JSON.stringify(body, null, 2)}'`;
+      const o: any = { model: imageModel, prompt, size: aspect };
+      // Real data URLs run to megabytes, so they are elided — but the key is
+      // shown, because its presence is what turns generation into editing.
+      if (attach.length) o.image = attach.map(() => "data:image/png;base64,...");
+      return lines("/v1/images/generations", o);
     }
+
     if (mode === "video") {
-      const body: any = { model: "qwen-wan", prompt, size: aspect };
-      if (attach.length) body.image = "data:image/png;base64,…";
-      return `curl ${BASE}/v1/videos/generations \\\n${h}\n  -d '${JSON.stringify(body, null, 2)}'`;
+      const o: any = { model: "qwen-wan", prompt, size: aspect };
+      if (attach.length) o.image = "data:image/png;base64,...";
+      return lines("/v1/videos/generations", o);
     }
+
     if (mode === "tts") {
-      const body = { input: prompt, voice: voice || "(default)" };
-      return `curl ${BASE}/v1/audio/speech --output speech.wav \\\n${h}\n  -d '${JSON.stringify(body, null, 2)}'`;
+      return lines("/v1/audio/speech", { input: prompt, voice: voice || undefined }, " --output speech.wav");
     }
-    const body: any = { model, stream: true, messages: [{ role: "user", content: prompt }] };
-    if (canPickThink) body.enable_thinking = !fast;
+
+    const o: any = { model, stream: true, messages: [{ role: "user", content: prompt }] };
+    if (attach.length) {
+      o.messages = [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            ...attach.map(() => ({ type: "image_url", image_url: { url: "data:image/png;base64,..." } })),
+          ],
+        },
+      ];
+    }
+    if (canPickThink) o.enable_thinking = !fast;
+    // The real schemas, not a placeholder: a request that cannot be pasted and
+    // run is not much of an "equivalent request".
     const tools = activeTools();
-    if (tools) { body.tools = "[…tool schemas…]"; body.tool_choice = "auto"; }
-    return `curl ${BASE}/v1/chat/completions \\\n${h}\n  -d '${JSON.stringify(body, null, 2).replace('"[…tool schemas…]"', "[…tool schemas…]")}'`;
+    if (tools) {
+      o.tools = tools;
+      o.tool_choice = "auto";
+    }
+    return lines("/v1/chat/completions", o);
   }
 
   async function copyCurl() {
@@ -856,7 +908,7 @@ export default function Playground() {
             turns.map((t, i) => (
               <div key={i} className={`pgx-turn ${t.role}${t.error ? " err" : ""}`}>
                 <div className="pgx-gutter">
-                  {t.role === "user" ? "You" : t.role === "tool" ? "tool" : mode === "chat" ? model : mode}
+                  {t.role === "user" ? "You" : t.role === "tool" ? "tool" : t.model || mode}
                 </div>
                 <div className="pgx-turnbody">
                   {t.images?.length ? (
@@ -887,7 +939,7 @@ export default function Playground() {
                       {t.mediaType === "video" && <video src={t.mediaUrl} controls />}
                       {t.mediaType === "audio" && <audio src={t.mediaUrl} controls autoPlay />}
                       <div className="pgx-media-foot">
-                        <span>{t.mediaType === "audio" ? voice || "default voice" : `${mode === "video" ? "qwen-wan" : imageModel} · ${aspect}`}</span>
+                        <span>{t.mediaType === "audio" ? t.model || "default voice" : `${t.model || imageModel}${t.aspect ? ` · ${t.aspect}` : ""}`}</span>
                         <a className="pgx-ghost" href={t.mediaUrl} download={mediaFilename(t.mediaType)}>
                           <DownloadSimple size={13} /> Download
                         </a>
