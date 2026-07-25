@@ -94,10 +94,9 @@ and disable the `/v1/videos/*` endpoints. Generation is async (many minutes): th
 POST returns a task id immediately and you poll for the result.
 
 ```bash
-# 1) kick it off (optional: size, image for image-to-video, watermark)
+# 1) kick it off (optional: size, watermark)
 curl .../v1/videos/generations -H "Authorization: Bearer qwen_sk_..." \
   -d '{ "prompt": "someone walking in New York", "size": "16:9" }'
-# image-to-video:  -d '{ "prompt": "make it move", "image": "https://…/photo.jpg" }'
 # -> 202 { "id": "<task>", "chat_id": "<chat>", "status": "processing",
 #          "created": 1737…, "ticket": "<opaque>" }
 
@@ -122,7 +121,7 @@ no progress to report.
 > Video status is polled at `GET /api/v1/tasks/status/{id}` upstream (Qwen moved it
 > from `v2` to `v1`; the old path 404s, which looks like "video never finishes").
 
-**Aspect ratio + reference image.** Pass `size` (`16:9`, `9:16`, `1:1`, `4:3`,
+**Aspect ratio.** Pass `size` (`16:9`, `9:16`, `1:1`, `4:3`,
 `3:4`) for the video's shape, and `image` (a URL or data URL) to seed **image-to-
 video**. Video also works in `/v1/chat/completions` and the `/chat` UI: select
 `qwen-wan`, optionally attach an image, and send a prompt.

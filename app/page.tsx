@@ -8,7 +8,7 @@ const BASE = "https://qwen38-api-production.up.railway.app";
 const MODELS = [
   { name: "Qwen3.8 Max Preview", id: "qwen3.8-max-preview", icon: "/qwen.svg", desc: "Flagship reasoning and vision. Streaming, tool calls, 300s ceiling.", tags: ["reasoning", "vision", "tools"] },
   { name: "Qwen Image 3.0 / 2.0", id: "qwen-image-3.0", icon: "/qwen.svg", desc: "Text-to-image and editing. Any aspect ratio, reference images.", tags: ["image", "edit"] },
-  { name: "Qwen Wan", id: "qwen-wan", icon: "/qwen.svg", desc: "Text- and image-to-video with live progress. Roughly 5s clips.", tags: ["video"] },
+  { name: "Qwen Wan", id: "qwen-wan", icon: "/qwen.svg", desc: "Text-to-video with live progress. Roughly 5s clips.", tags: ["video"] },
   { name: "DeepSeek V4", id: "deepseek-v4-pro", icon: "/deepseek.svg", desc: "DeepSeek chat and reasoning, linkable with your own token.", tags: ["chat", "reasoning"] },
   { name: "Qwen3-Omni", id: "qwen3-omni-flash", icon: "/qwen.svg", desc: "Around 78 voices of natural text-to-speech, returned as WAV.", tags: ["speech"] },
   { name: "Custom slugs", id: "friendly-qwen", icon: null, desc: "Persona models with a system prompt baked in at the gateway.", tags: ["persona"] },

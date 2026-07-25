@@ -103,20 +103,38 @@ export async function generateImage(
   }
 }
 
-// Kick off a video generation. Optionally set an aspect ratio (`size`) and/or
-// attach reference image(s) for image-to-video. Returns the chat id + WanX task id.
+/**
+ * Kick off a video generation. Optionally set an aspect ratio (`size`).
+ * Returns the chat id + WanX task id.
+ *
+ * Reference images are NOT supported, and the reason is upstream rather than
+ * here. Image editing works because Qwen exposes a distinct chat type for it —
+ * an attached image switches t2i to `image_edit`. Video has no counterpart:
+ * querying /api/models, the complete set of chat types advertised across every
+ * model is
+ *
+ *   artifacts, deep_research, image_edit, learn, search, slides,
+ *   t2i, t2t, t2v, travel, web_dev
+ *
+ * There is no i2v / image2video. Files attached to a `t2v` message are accepted
+ * by the request and then ignored by the renderer, which is why uploading an
+ * image appeared to do nothing rather than failing.
+ *
+ * `images` is therefore not uploaded — spending an upload round-trip on files
+ * the renderer discards helps nobody. Callers are told via a warning instead.
+ * If Qwen ships an image-to-video chat type, this becomes a one-line change.
+ */
 export async function startVideo(
   token: string,
   prompt: string,
-  opts: { size?: string; images?: string[] } = {}
+  opts: { size?: string } = {}
 ): Promise<{ chatId: string; taskId: string }> {
   let chatId: string | undefined;
   try {
-    const files = opts.images?.length ? await uploadImages(token, opts.images) : [];
     const size = opts.size ? toRatio(opts.size) : undefined;
     chatId = await createChat(token, MEDIA_BACKEND_MODEL, "t2v");
     const messages = [
-      buildMessage([{ role: "user", content: prompt }], { model: MEDIA_BACKEND_MODEL, chatType: "t2v", thinking: false, files, size }),
+      buildMessage([{ role: "user", content: prompt }], { model: MEDIA_BACKEND_MODEL, chatType: "t2v", thinking: false, files: [], size }),
     ];
     // Video is async: the non-stream request returns a task id.
     const res = await openCompletion(token, chatId, { model: MEDIA_BACKEND_MODEL, messages, stream: false, size });

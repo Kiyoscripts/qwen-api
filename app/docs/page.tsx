@@ -89,7 +89,7 @@ const msg = await client.messages.create({
 
           <div className="docs-sec">
             <h3>Video (Qwen Wan)</h3>
-            <p>Async: <code>POST /v1/videos/generations</code> returns a task + <code>ticket</code>; poll <code>GET /v1/videos/status?ticket=…</code> for progress and the final URL. Supports <code>size</code> and <code>image</code> (image-to-video).</p>
+            <p>Async: <code>POST /v1/videos/generations</code> returns a task + <code>ticket</code>; poll <code>GET /v1/videos/status?ticket=…</code> for progress and the final URL. Supports <code>size</code>. Text-to-video only — the upstream service exposes no image-to-video mode, so reference images are ignored.</p>
           </div>
 
           <div className="docs-sec">
