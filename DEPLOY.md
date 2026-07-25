@@ -7,6 +7,15 @@ request, so the ceiling stops being the binding constraint.
 Vercel still works from the same repo — `output: "standalone"` is ignored there
 — so you can run both until you're happy.
 
+**Where this runs.** On Google's infrastructure, not your machine. `gcloud run
+deploy` uploads the source, Cloud Build builds it on Google's servers, and Cloud
+Run serves it from Google's servers. Your laptop is involved only while that one
+command is in flight; afterwards you can close it and the API keeps answering.
+Step 7 removes even that, deploying straight from a GitHub push.
+
+Not to be confused with `npm run dev`, which serves `localhost:3000` from your
+machine and stops when you close the lid. That is only for development.
+
 ---
 
 ## 1. Install and sign in
@@ -157,7 +166,39 @@ gcloud scheduler jobs update http qwen38-cleanup --location us-central1 \
 The cleanup also runs opportunistically from `/api/stats`, so the schedule is a
 backstop rather than the only path.
 
-## 7. Point the domain
+## 7. Optional: deploy from GitHub instead of your laptop
+
+Nothing after step 4 depends on your machine — the service runs on Google's
+infrastructure and keeps serving with your laptop shut. But the *deploy command*
+still starts locally. Wiring Cloud Build to the repo removes even that, so a
+push to `main` (including an edit made in GitHub's web UI) builds and rolls out
+on its own:
+
+```bash
+gcloud run deploy qwen38-api \
+  --source . \
+  --region us-central1 \
+  --set-build-service-account "projects/$PROJECT/serviceAccounts/${NUM}-compute@developer.gserviceaccount.com"
+
+# then connect the repo (opens a browser once to authorise GitHub):
+gcloud builds triggers create github \
+  --name=qwen38-api-main \
+  --repo-name=qwen3.8-api \
+  --repo-owner=UltraFEmotes \
+  --branch-pattern='^main$' \
+  --build-config=cloudbuild.yaml \
+  --region=us-central1
+```
+
+Or do it in the console, which is less fiddly for the one-time GitHub OAuth
+step: Cloud Run → your service → *Set up continuous deployment*. Point it at
+`UltraFEmotes/qwen3.8-api`, branch `main`, build type Dockerfile.
+
+Either way the flow becomes: push to GitHub → Cloud Build builds on Google's
+servers → Cloud Run rolls out the new revision. No laptop involved, and it
+matches how you already edit files directly on GitHub.
+
+## 8. Point the domain
 
 Cloud Run gives you a `*.run.app` URL immediately. To keep the current
 hostname, map it:
