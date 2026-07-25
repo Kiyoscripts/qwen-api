@@ -35,6 +35,11 @@ const TOOLS = [
 let pass = 0, fail = 0;
 const failures = [];
 
+function check2(name, ok) {
+  if (ok) pass++;
+  else { fail++; failures.push(`\u2717 ${name}`); }
+}
+
 function check(name, raw, expect) {
   // 1) buffered
   const buffered = extractToolCalls(raw, TOOLS);
@@ -162,5 +167,63 @@ check("fenced json envelope",
   { calls: [W({ city: "Rome" })] });
 
 console.log(failures.join("\n\n"));
+
+/* --- tool policy: the guarantees agentic clients (Codex, OpenCode) rely on ---
+   These are contracts, not hints: the client acts on the result without
+   re-checking it, so prompting for them is not enough. */
+{
+  const { applyToolPolicy, buildRegistry } = await import("../lib/tools");
+  const reg = buildRegistry(TOOLS as any);
+  const mk = (name: string, args: any) => ({
+    id: "call_x", type: "function" as const,
+    function: { name, arguments: JSON.stringify(args) },
+  });
+
+  const named = applyToolPolicy(
+    [mk("calculate", { expression: "1+1" }), mk("get_weather", { city: "Paris" })],
+    { tool_choice: { type: "function", function: { name: "get_weather" } }, tools: TOOLS },
+    reg
+  );
+  check2("named tool_choice drops other tools", named.length === 1 && named[0].function.name === "get_weather");
+
+  const serial = applyToolPolicy(
+    [mk("get_weather", { city: "Paris" }), mk("get_weather", { city: "Rome" })],
+    { parallel_tool_calls: false, tools: TOOLS },
+    reg
+  );
+  check2("parallel_tool_calls:false keeps one", serial.length === 1);
+
+  const parallel = applyToolPolicy(
+    [mk("get_weather", { city: "Paris" }), mk("get_weather", { city: "Rome" })],
+    { tools: TOOLS },
+    reg
+  );
+  check2("parallel allowed by default", parallel.length === 2);
+
+  const strictTools = [{
+    type: "function",
+    function: {
+      name: "get_weather", strict: true,
+      parameters: { type: "object", properties: { city: { type: "string" } }, required: ["city"], additionalProperties: false },
+    },
+  }];
+  const pruned = applyToolPolicy(
+    [mk("get_weather", { city: "Paris", bogus: 1, alsoBogus: "x" })],
+    { tools: strictTools }, buildRegistry(strictTools as any)
+  );
+  const prunedArgs = JSON.parse(pruned[0].function.arguments);
+  check2("strict drops undeclared keys", JSON.stringify(prunedArgs) === '{"city":"Paris"}');
+
+  const loose = applyToolPolicy(
+    [mk("get_weather", { city: "Paris", extra: 1 })],
+    { tools: TOOLS }, reg
+  );
+  check2("non-strict keeps extra keys", "extra" in JSON.parse(loose[0].function.arguments));
+
+  // Nothing is ever synthesised — policy can only remove or trim.
+  const none = applyToolPolicy([], { tool_choice: { type: "function", function: { name: "get_weather" } }, tools: TOOLS }, reg);
+  check2("policy never invents a call", none.length === 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed  (each case checked buffered + streamed)`);
 process.exit(fail ? 1 : 0);

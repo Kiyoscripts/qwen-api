@@ -34,7 +34,7 @@ import { randomUUID } from "node:crypto";
 
 export interface OAITool {
   type?: string;
-  function?: { name?: string; description?: string; parameters?: any };
+  function?: { name?: string; description?: string; parameters?: any; strict?: boolean };
 }
 
 export interface OAIToolCall {
@@ -398,6 +398,69 @@ function callsInBlock(body: string, reg: Registry): OAIToolCall[] {
     const c = callFrom(obj, reg);
     if (c) out.push(c);
   }
+  return out;
+}
+
+/* ---------------------------------------------------------------------------
+   Tool policy — the guarantees the request asked for.
+   --------------------------------------------------------------------------- */
+
+/**
+ * Apply the caller's tool options to what the model actually produced.
+ *
+ * Agentic clients (Codex, OpenCode, and anything built on the OpenAI SDK) treat
+ * these as guarantees rather than hints, and act on the result without
+ * re-checking it. Prompting for them is not enough — the prompt is a request,
+ * this is the contract:
+ *
+ *   tool_choice: {function:{name}}   only that tool may come back
+ *   parallel_tool_calls: false       at most one call per turn
+ *   strict / additionalProperties    arguments carry no keys the schema
+ *                                    did not declare
+ *
+ * Nothing is invented here. A call is only ever dropped or trimmed, never
+ * synthesised, so this can make a reply more compliant but never less true.
+ */
+export function applyToolPolicy(
+  calls: OAIToolCall[],
+  body: any,
+  reg: Registry
+): OAIToolCall[] {
+  let out = calls;
+
+  // A named tool_choice means the caller will only accept that tool.
+  const forced = toolChoiceName(body?.tool_choice);
+  if (forced) {
+    const canonical = reg.byNorm.get(normName(forced)) ?? forced;
+    out = out.filter((c) => c.function.name === canonical);
+  }
+
+  // parallel_tool_calls:false — clients that set it often cannot execute a
+  // second call and will error on the whole response.
+  if (body?.parallel_tool_calls === false && out.length > 1) out = out.slice(0, 1);
+
+  // Strict schemas promise no undeclared keys.
+  out = out.map((c) => {
+    const schema = reg.schemas.get(c.function.name);
+    const tool = (body?.tools || []).find((t: OAITool) => t?.function?.name === c.function.name);
+    const strict = tool?.function?.strict === true || schema?.additionalProperties === false;
+    if (!strict || !schema?.properties) return c;
+
+    let args: any;
+    try {
+      args = JSON.parse(c.function.arguments || "{}");
+    } catch {
+      return c;
+    }
+    if (!args || typeof args !== "object" || Array.isArray(args)) return c;
+
+    const allowed = new Set(Object.keys(schema.properties));
+    const pruned: Record<string, any> = {};
+    for (const [k, v] of Object.entries(args)) if (allowed.has(k)) pruned[k] = v;
+    if (Object.keys(pruned).length === Object.keys(args).length) return c;
+    return { ...c, function: { ...c.function, arguments: JSON.stringify(pruned) } };
+  });
+
   return out;
 }
 
