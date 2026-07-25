@@ -1,4 +1,5 @@
 import Aurora from "../Aurora";
+import ThemeSwitcher from "../Theme";
 import AccountNav from "../Account";
 import { CodeTabs, Code } from "./CodeTabs";
 import {
@@ -97,6 +98,7 @@ export default function DocsPage() {
             <a href="/docs">Docs</a>
           </div>
           <div className="lp-navcta">
+            <ThemeSwitcher compact />
             <a className="ghost" href="/link">Link DeepSeek</a>
             <AccountNav />
           </div>

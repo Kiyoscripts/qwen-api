@@ -1,4 +1,5 @@
 import Aurora from "./Aurora";
+import ThemeSwitcher from "./Theme";
 import StatsBar from "./StatsBar";
 import { BaseUrl, CopyButton } from "./Copy";
 import AccountNav from "./Account";
@@ -49,6 +50,7 @@ export default function Home() {
             <a href="/docs">Docs</a>
           </div>
           <div className="lp-navcta">
+            <ThemeSwitcher compact />
             <a className="ghost" href="/link">Link DeepSeek</a>
             <AccountNav />
           </div>

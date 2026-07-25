@@ -1,4 +1,5 @@
 import Aurora from "../Aurora";
+import ThemeSwitcher from "../Theme";
 import AccountNav from "../Account";
 import { getModels } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
@@ -65,6 +66,7 @@ export default async function ModelsPage() {
             <a href="/docs">Docs</a>
           </div>
           <div className="lp-navcta">
+            <ThemeSwitcher compact />
             <a className="ghost" href="/link">Link DeepSeek</a>
             <AccountNav />
           </div>

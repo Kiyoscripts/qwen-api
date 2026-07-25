@@ -84,6 +84,25 @@ export default function Aurora({
 
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+    // The canvas is opaque, so it — not --bg — is what the eye reads as the page
+    // colour. Both must come from the theme or a light theme renders dark text
+    // on a dark field. Read once, then again whenever data-theme changes.
+    let baseFill = "#07080e";
+    let blend: GlobalCompositeOperation = "lighter";
+    const readTheme = () => {
+      const cs = getComputedStyle(document.documentElement);
+      baseFill = cs.getPropertyValue("--amb-base").trim() || "#07080e";
+      const b = cs.getPropertyValue("--amb-blend").trim();
+      blend = (b === "multiply" ? "multiply" : "lighter") as GlobalCompositeOperation;
+    };
+    readTheme();
+    const themeObserver = new MutationObserver(() => {
+      readTheme();
+      // Repaint immediately: under reduced motion nothing else ever would.
+      if (still) draw(performance.now());
+    });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
     let w = 0;
     let h = 0;
     const resize = () => {
@@ -151,9 +170,9 @@ export default function Aurora({
 
       // --- scene ------------------------------------------------------------
       ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = "#07080e";
+      ctx.fillStyle = baseFill;
       ctx.fillRect(0, 0, w, h);
-      ctx.globalCompositeOperation = "lighter";
+      ctx.globalCompositeOperation = blend;
 
       const shiftX = (px - 0.5) * 0.05 * w;
       const shiftY = (py - 0.5) * 0.05 * h;
@@ -227,6 +246,7 @@ export default function Aurora({
 
     return () => {
       cancelAnimationFrame(raf);
+      themeObserver.disconnect();
       window.removeEventListener("resize", onResize);
       window.removeEventListener("pointermove", onMove);
     };
