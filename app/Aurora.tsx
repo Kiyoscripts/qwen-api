@@ -93,7 +93,13 @@ export default function Aurora({
       canvas.height = h;
     };
     resize();
-    window.addEventListener("resize", resize);
+    const onResize = () => {
+      resize();
+      // A resize wipes the canvas; under reduced motion nothing else would
+      // ever repaint it.
+      if (still) draw(performance.now());
+    };
+    window.addEventListener("resize", onResize);
 
     // Pointer parallax: the scene leans a little towards the cursor.
     let mx = 0.5;
@@ -106,22 +112,18 @@ export default function Aurora({
     };
     if (!still) window.addEventListener("pointermove", onMove, { passive: true });
 
-    // Pause entirely when the tab is hidden — no point burning frames.
-    let hidden = document.hidden;
-    const onVis = () => {
-      hidden = document.hidden;
-      if (!hidden && !still) raf = requestAnimationFrame(draw);
-    };
-    document.addEventListener("visibilitychange", onVis);
-
     const drive = new AuroraDrive(state);
     let seenPulse = pulseRef?.current ?? 0;
     let prevT = 0;
     const ripples: Ripple[] = [];
     let raf = 0;
 
+    // No manual visibility gate: browsers already stop firing rAF for a
+    // background tab, so a `document.hidden` guard buys nothing and adds a way
+    // to get stuck — a tab that mounts hidden (or is hidden under reduced
+    // motion, where nothing reschedules) would leave the canvas permanently
+    // blank instead of merely paused.
     const draw = (t: number) => {
-      if (hidden) return; // resumes from visibilitychange
       const S = Math.max(w, h);
 
       // --- drive ------------------------------------------------------------
@@ -217,17 +219,16 @@ export default function Aurora({
       if (!still) raf = requestAnimationFrame(draw);
     };
 
-    if (still) {
-      draw(0); // one frame at rest, then leave it alone
-    } else {
-      raf = requestAnimationFrame(draw);
-    }
+    // Always paint one frame synchronously, so the backdrop is already correct
+    // the moment the tab is shown rather than flashing empty. Resizing clears
+    // the canvas, so that repaints too.
+    draw(performance.now());
+    if (!still) raf = requestAnimationFrame(draw);
 
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
+      window.removeEventListener("resize", onResize);
       window.removeEventListener("pointermove", onMove);
-      document.removeEventListener("visibilitychange", onVis);
     };
     // `state` is read through stateRef; it is only here to seed the first frame.
     // eslint-disable-next-line react-hooks/exhaustive-deps
