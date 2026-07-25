@@ -299,14 +299,15 @@ export interface QwenDelta {
 /**
  * Set by qwenDeltas so the caller can tell a finished reply from a severed one.
  *
- * The generator has two exits: `[DONE]`, meaning the model stopped on its own,
- * and the reader running dry, meaning the upstream stream died mid-sentence —
- * the serverless time limit, a dropped upstream connection, an account hitting
- * its ceiling. They are not the same thing, and reporting both as "stop" told
- * every client that a truncated answer was complete.
+ * Qwen does NOT terminate its SSE with `[DONE]` — verified against the live
+ * endpoint, that sentinel never appears. A finished reply is signalled by
+ * `delta.status === "finished"` on the closing frame; a severed one just stops.
+ * Watching for `[DONE]` therefore marked every single reply as truncated.
  */
 export interface StreamStatus {
   complete: boolean;
+  /** Real token counts, which Qwen reports on the closing frames. */
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
 }
 
 // Async generator over SSE deltas. Yields {phase, text}. Throws on stream errors.
@@ -325,6 +326,8 @@ export async function* qwenDeltas(res: Response, status?: StreamStatus): AsyncGe
       buffer = buffer.slice(idx + 1);
       if (!line.startsWith("data:")) continue;
       const data = line.slice(5).trim();
+      // Kept as a fallback in case the upstream ever adds it, but Qwen does not
+      // send this; `delta.status === "finished"` below is the real terminator.
       if (data === "[DONE]") {
         if (status) status.complete = true;
         return;
@@ -336,8 +339,19 @@ export async function* qwenDeltas(res: Response, status?: StreamStatus): AsyncGe
         continue;
       }
       if (evt?.error) throw new QwenError(`Qwen stream error: ${evt.error.details || evt.error.code || "unknown"}`);
+      if (status && evt?.usage) {
+        const u = evt.usage;
+        status.usage = {
+          prompt_tokens: Number(u.input_tokens) || 0,
+          completion_tokens: Number(u.output_tokens) || 0,
+          total_tokens: Number(u.total_tokens) || 0,
+        };
+      }
       const delta = evt?.choices?.[0]?.delta;
       if (!delta) continue;
+      // The completion signal. Checked before the empty-content skip below,
+      // because the closing frame carries status but no text.
+      if (delta.status === "finished" && status) status.complete = true;
       const piece: unknown = delta.content;
       if (typeof piece !== "string" || piece.length === 0) continue;
       yield { phase: typeof delta.phase === "string" ? delta.phase : "answer", text: piece };

@@ -281,7 +281,7 @@ export async function POST(req: NextRequest) {
       created,
       model: modelId,
       choices: [{ index: 0, message, finish_reason: toolCalls.length ? "tool_calls" : finishFor(st, created, modelId) }],
-      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      usage: st.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     });
   }
 
@@ -345,7 +345,7 @@ export async function POST(req: NextRequest) {
     created,
     model: modelId,
     choices: [{ index: 0, message, finish_reason: finishFor(st, created, modelId) }],
-    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    usage: st.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
 }
 
