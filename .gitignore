@@ -20,3 +20,6 @@ tsconfig.tsbuildinfo
 
 # brainstorm mockups
 .superpowers/
+
+# Generated: real secret values for pasting into a host dashboard.
+railway.env.json

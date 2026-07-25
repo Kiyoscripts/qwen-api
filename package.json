@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "test:tools": "tsx tests/tools.test.mts && tsx tests/tools.stream.test.mts",
-    "test": "tsx tests/tools.test.mts && tsx tests/tools.stream.test.mts && tsx tests/aurora.flash.test.mts && tsx tests/truncation.test.mts"
+    "test": "tsx tests/tools.test.mts && tsx tests/tools.stream.test.mts && tsx tests/aurora.flash.test.mts && tsx tests/truncation.test.mts",
+    "env:railway": "node scripts/env-railway.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

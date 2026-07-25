@@ -60,6 +60,38 @@ function finishFor(st: StreamStatus, createdSec: number, modelId: string): "stop
   return "length";
 }
 
+/**
+ * SSE keepalive.
+ *
+ * Proxies hang up on a connection that goes quiet — Railway closes after five
+ * minutes with no data, and CDNs are often stricter. A reply can legitimately
+ * produce nothing for a long stretch: a reasoning phase while
+ * QWEN_SHOW_REASONING is off forwards no tokens at all, and a <tool_call> block
+ * is deliberately withheld from the text stream while it accumulates. Both look
+ * identical to an idle socket from outside.
+ *
+ * A comment line is the SSE no-op — every client ignores lines starting with
+ * ":" — so it keeps the connection alive without appearing in the response.
+ */
+function keepAlive(controller: ReadableStreamDefaultController, encoder: TextEncoder) {
+  let last = Date.now();
+  let stopped = false;
+  const id = setInterval(() => {
+    if (stopped || Date.now() - last < 15_000) return;
+    try {
+      controller.enqueue(encoder.encode(": keepalive\n\n"));
+      last = Date.now();
+    } catch {
+      stopped = true;
+      clearInterval(id);
+    }
+  }, 5_000);
+  return {
+    touch() { last = Date.now(); },
+    stop() { stopped = true; clearInterval(id); },
+  };
+}
+
 function err(message: string, status: number, type = "invalid_request_error") {
   return NextResponse.json({ error: { message, type } }, { status });
 }
@@ -180,8 +212,11 @@ export async function POST(req: NextRequest) {
 
     const stream = new ReadableStream({
       async start(controller) {
-        const send = (delta: any, finish: string | null = null) =>
+        const hb = keepAlive(controller, encoder);
+        const send = (delta: any, finish: string | null = null) => {
+          hb.touch();
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`));
+        };
         send({ role: "assistant" });
 
         const parser = new ToolStream(registry);
@@ -204,6 +239,7 @@ export async function POST(req: NextRequest) {
         }
         await cleanup();
         logUsage(record.id, modelId, hadImage, true, 200);
+        hb.stop();
         if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
         // "length" is how OpenAI reports a reply that ran out of room, so every
         // client already knows to treat it as resumable rather than finished.
@@ -253,7 +289,8 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        const hb = keepAlive(controller, encoder);
+        const send = (obj: unknown) => { hb.touch(); controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); };
         send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
         const st: StreamStatus = { complete: false };
         try {
@@ -271,6 +308,7 @@ export async function POST(req: NextRequest) {
         }
         // "length" is OpenAI's signal for a reply that ran out of room, so clients
         // already treat it as resumable rather than finished.
+        hb.stop();
         send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: finishFor(st, created, modelId) }] });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
@@ -371,7 +409,8 @@ async function handleDeepSeek(args: {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        const hb = keepAlive(controller, encoder);
+        const send = (obj: unknown) => { hb.touch(); controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); };
         send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
         try {
           for await (const { kind, text } of deepseekDeltas(dsRes)) {
@@ -381,6 +420,7 @@ async function handleDeepSeek(args: {
         } catch (e: any) {
           send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: `\n[error: ${e.message}]` }, finish_reason: null }] });
         }
+        hb.stop();
         send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
@@ -475,6 +515,8 @@ async function handleMedia(args: {
         const send = (o: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(o)}\n\n`));
         send({ id, object: "chat.completion.chunk", created, model: vm.id, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
         send({ id, object: "chat.completion.chunk", created, model: vm.id, choices: [{ index: 0, delta: { content: markdown }, finish_reason: null }] });
+        // No keepalive here: this branch has the whole reply already and closes
+        // in the same tick, so the connection is never idle.
         send({ id, object: "chat.completion.chunk", created, model: vm.id, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
