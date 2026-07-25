@@ -11,7 +11,7 @@ Vercel still works from the same repo — `output: "standalone"` is ignored ther
 deploy` uploads the source, Cloud Build builds it on Google's servers, and Cloud
 Run serves it from Google's servers. Your laptop is involved only while that one
 command is in flight; afterwards you can close it and the API keeps answering.
-Step 7 removes even that, deploying straight from a GitHub push.
+Step 8 removes even that, deploying straight from a GitHub push.
 
 Not to be confused with `npm run dev`, which serves `localhost:3000` from your
 machine and stops when you close the lid. That is only for development.
@@ -27,7 +27,34 @@ gcloud init                              # sign in, pick/create a project
 
 Note the project id it prints; everything below uses it.
 
-## 2. Enable the services
+## 2. Link a billing account — do this first
+
+Google will not let you enable *any* API on a project without one, so skipping
+this makes every later step fail with a confusing error somewhere else.
+
+```bash
+gcloud billing accounts list
+```
+
+If that lists an account, link it:
+
+```bash
+gcloud billing projects link qwen38-api --billing-account=XXXXXX-XXXXXX-XXXXXX
+```
+
+If it lists nothing, create one at
+<https://console.cloud.google.com/billing> — this requires a card.
+
+Being billable is not the same as being billed. The always-free quota (2M
+requests, 180k vCPU-seconds, 360k GiB-seconds per month) is permanent rather
+than a trial, `--max-instances 2` in step 5 bounds how much can ever run, and
+step 6 adds an alert. New accounts also get a $300 credit that would absorb any
+mistake long before real money moved.
+
+If you would rather not attach a card at all, stop here — see
+"No-card alternatives" at the end.
+
+## 3. Enable the services
 
 ```bash
 gcloud services enable run.googleapis.com \
@@ -36,24 +63,32 @@ gcloud services enable run.googleapis.com \
                        secretmanager.googleapis.com
 ```
 
-Billing must be enabled on the project. The always-free quota (2M requests,
-180k vCPU-seconds, 360k GiB-seconds per month) is permanent, not a trial, and
-step 5 caps spend so an unexpected spike can't run up a bill.
+Wait for this to return before continuing; enabling propagates for a minute or
+two, and the secret commands below fail until it has.
 
-## 3. Put the secrets in Secret Manager
+## 4. Put the secrets in Secret Manager
 
 Do **not** pass these with `--set-env-vars`: that stores them in plain text on
 the service, visible to anyone with console read access.
 
 ```bash
+set -e
+gcloud secrets list >/dev/null   # fails fast if step 3 hasn't taken effect yet
+
 for k in QWEN_TOKEN SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_ANON_KEY \
          SUPABASE_PUBLISHABLE_KEY ADMIN_SECRET MEDIA_SECRET LINK_BOT_SECRET; do
   v=$(grep "^$k=" .env.local | cut -d= -f2- | sed 's/^"//; s/"$//')
   [ -n "$v" ] || { echo "skip $k (not set locally)"; continue; }
-  printf '%s' "$v" | gcloud secrets create "$k" --data-file=- 2>/dev/null \
-    || printf '%s' "$v" | gcloud secrets versions add "$k" --data-file=-
+  if gcloud secrets describe "$k" >/dev/null 2>&1; then
+    printf '%s' "$v" | gcloud secrets versions add "$k" --data-file=-
+  else
+    printf '%s' "$v" | gcloud secrets create "$k" --data-file=-
+  fi
 done
 ```
+
+`set -e` and the probe stop the loop on the first real failure rather than
+repeating the same error once per secret.
 
 Grant the runtime service account read access:
 
@@ -72,7 +107,7 @@ Two of these are not in `.env.local` and must come from the Vercel dashboard
 (Settings → Environment Variables), or the corresponding feature breaks:
 
 - `LINK_BOT_SECRET` — the shared secret the Discord bot uses for `/api/discord/code`.
-- `CRON_SECRET` — optional; see step 6.
+- `CRON_SECRET` — optional; see step 7.
 
 **`ADMIN_SECRET` must be copied across byte-for-byte.** `lib/secureToken.ts`
 derives its key from `MEDIA_SECRET || ADMIN_SECRET || <dev default>`, and you
@@ -85,7 +120,7 @@ Keep it identical and the migration is invisible to users. (Setting an explicit
 `MEDIA_SECRET` equal to today's `ADMIN_SECRET` is tidier long-term, but do that
 as a separate change, not during the move.)
 
-## 4. Deploy
+## 5. Deploy
 
 Building from source uses Cloud Build, which builds on x86_64. That matters:
 `sharp` ships architecture-specific binaries, so an image built locally on an
@@ -123,7 +158,7 @@ LINK_BOT_SECRET=LINK_BOT_SECRET:latest \
 
 Add `QWEN_CLIENT_VERSION` to `--set-env-vars` if you pin it locally.
 
-## 5. Cap the spend
+## 6. Cap the spend
 
 ```bash
 gcloud billing budgets create \
@@ -137,7 +172,7 @@ gcloud billing budgets create \
 A budget alerts, it does not stop traffic — `--max-instances` is what actually
 bounds the cost.
 
-## 6. Replace the cron
+## 7. Replace the cron
 
 `vercel.json` runs `/api/cron/cleanup` daily at 03:00. Cloud Scheduler's free
 tier covers three jobs:
@@ -166,9 +201,9 @@ gcloud scheduler jobs update http qwen38-cleanup --location us-central1 \
 The cleanup also runs opportunistically from `/api/stats`, so the schedule is a
 backstop rather than the only path.
 
-## 7. Optional: deploy from GitHub instead of your laptop
+## 8. Optional: deploy from GitHub instead of your laptop
 
-Nothing after step 4 depends on your machine — the service runs on Google's
+Nothing after step 5 depends on your machine — the service runs on Google's
 infrastructure and keeps serving with your laptop shut. But the *deploy command*
 still starts locally. Wiring Cloud Build to the repo removes even that, so a
 push to `main` (including an edit made in GitHub's web UI) builds and rolls out
@@ -198,7 +233,7 @@ Either way the flow becomes: push to GitHub → Cloud Build builds on Google's
 servers → Cloud Run rolls out the new revision. No laptop involved, and it
 matches how you already edit files directly on GitHub.
 
-## 8. Point the domain
+## 9. Point the domain
 
 Cloud Run gives you a `*.run.app` URL immediately. To keep the current
 hostname, map it:
@@ -225,6 +260,24 @@ show the new URL.
   the rest is pulling the image. Far below Render's 30–60s, but not zero. Set
   `--min-instances 1` to remove them entirely; that runs a container full time
   and leaves the free tier.
+
+## No-card alternatives
+
+Cloud Run needs billing enabled even to sit inside the free tier. If that's a
+blocker, in order of fit:
+
+1. **Stay on Vercel.** Free, already working, and the only thing wrong is the
+   300s ceiling — which may not even be what's cutting you off. Check first
+   (below). If Qwen is dropping the connection at 90s, no move helps.
+2. **Cloudflare Workers** — no card, and *no request duration limit on any
+   plan*. The catch is 10ms of CPU per request on the free plan, and this proxy
+   parses an SSE frame per token. A long reply lands around 12ms, so it may
+   die on exactly the replies you're trying to save. Testable in an afternoon,
+   not a safe default.
+3. **Render** — no card. Real server, no request cap, but free instances sleep
+   after 15 minutes and cold-start in 30–60s. Fine for a personal API, poor for
+   a public site and for Claude Code, which calls `count_tokens` before every
+   message.
 
 ## Verifying the fix
 
