@@ -35,7 +35,10 @@ export class QwenError extends Error {
 
 // --- types -----------------------------------------------------------------
 
-export type ChatType = "t2t" | "t2i" | "t2v" | "image_edit";
+// "i2v" is image-to-video. It is NOT listed in any model's advertised
+// `chat_type` array from /api/models — the web client sends it regardless, the
+// same way "image_edit" is the image-to-image counterpart of "t2i".
+export type ChatType = "t2t" | "t2i" | "t2v" | "i2v" | "image_edit";
 export interface OpenAIContentPart {
   type: string;
   text?: string;

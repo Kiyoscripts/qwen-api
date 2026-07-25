@@ -31,7 +31,7 @@ const BASE = typeof window !== "undefined" ? window.location.origin : "";
 const MODES: { id: Mode; name: string; desc: string; icon: React.ReactNode }[] = [
   { id: "chat", name: "Chat", desc: "Streaming text, vision, tools", icon: <ChatCircle size={17} /> },
   { id: "image", name: "Image", desc: "Generate, or edit with references", icon: <ImageSquare size={17} /> },
-  { id: "video", name: "Video", desc: "Text to video, ~5s clips", icon: <VideoCamera size={17} /> },
+  { id: "video", name: "Video", desc: "Text or image to video", icon: <VideoCamera size={17} /> },
   { id: "tts", name: "Speech", desc: "Text to speech, ~78 voices", icon: <SpeakerHigh size={17} /> },
 ];
 
@@ -76,10 +76,8 @@ const ASPECTS_IMAGE = ["1:1", "16:9", "9:16", "4:3", "3:4"];
 const ASPECTS_VIDEO = ["16:9", "9:16", "1:1", "4:3", "3:4"];
 
 // How many images each mode accepts. Image editing takes a set of references;
-// Chat vision takes one, image editing takes a set. Video takes none: the
-// upstream service has no image-to-video mode, so an attachment there would be
-// uploaded and then silently discarded.
-const MAX_ATTACH: Record<Mode, number> = { chat: 1, image: 4, video: 0, tts: 0 };
+// Chat vision and image-to-video take exactly one; image editing takes a set.
+const MAX_ATTACH: Record<Mode, number> = { chat: 1, image: 4, video: 1, tts: 0 };
 
 export default function Playground() {
   const me = useMe();
@@ -706,7 +704,7 @@ export default function Playground() {
                     ))}
                   </div>
                 </div>
-                <p className="pgx-note">Text to video only — the upstream service has no image-to-video mode. Renders have no time limit.</p>
+                <p className="pgx-note">Attach an image to animate it instead of generating from text. Renders have no time limit.</p>
               </>
             )}
 
@@ -964,7 +962,7 @@ export default function Playground() {
                   className={`pgx-attach ${attach.length >= maxAttach ? "full" : ""}`}
                   title={
                     mode === "video"
-                      ? ""
+                      ? "Optional reference image (image-to-video)"
                       : mode === "image"
                       ? `Reference images to edit (up to ${maxAttach})`
                       : "Attach an image"

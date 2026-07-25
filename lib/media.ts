@@ -16,6 +16,7 @@ import {
   qwenDeltas,
   uploadImages,
   QwenError,
+  type ChatType,
 } from "./qwen";
 
 // A chat model that drives the t2i / image_edit / t2v backends.
@@ -104,37 +105,33 @@ export async function generateImage(
 }
 
 /**
- * Kick off a video generation. Optionally set an aspect ratio (`size`).
- * Returns the chat id + WanX task id.
+ * Kick off a video generation. With reference image(s) this is image-to-video.
  *
- * Reference images are NOT supported, and the reason is upstream rather than
- * here. Image editing works because Qwen exposes a distinct chat type for it —
- * an attached image switches t2i to `image_edit`. Video has no counterpart:
- * querying /api/models, the complete set of chat types advertised across every
- * model is
+ * The chat type switches t2v -> i2v when files are attached, exactly mirroring
+ * how image editing switches t2i -> image_edit.
  *
- *   artifacts, deep_research, image_edit, learn, search, slides,
- *   t2i, t2t, t2v, travel, web_dev
- *
- * There is no i2v / image2video. Files attached to a `t2v` message are accepted
- * by the request and then ignored by the renderer, which is why uploading an
- * image appeared to do nothing rather than failing.
- *
- * `images` is therefore not uploaded — spending an upload round-trip on files
- * the renderer discards helps nobody. Callers are told via a warning instead.
- * If Qwen ships an image-to-video chat type, this becomes a one-line change.
+ * `i2v` does not appear in any model's advertised `chat_type` from /api/models
+ * — that list stops at t2v — so the capability cannot be discovered that way.
+ * It is real: the web client bundle defines `Image2Video = "i2v"` with
+ * `subtypes:["i2v"]`, and its chat-type mapper is the identity function, so
+ * what the browser puts on the wire is literally chat_type "i2v". Attaching a
+ * file to a `t2v` message instead gets it silently dropped, which is why
+ * uploading an image used to appear to work and change nothing.
  */
 export async function startVideo(
   token: string,
   prompt: string,
-  opts: { size?: string } = {}
+  opts: { size?: string; images?: string[] } = {}
 ): Promise<{ chatId: string; taskId: string }> {
   let chatId: string | undefined;
   try {
+    const i2v = Boolean(opts.images?.length);
+    const chatType: ChatType = i2v ? "i2v" : "t2v";
+    const files = i2v ? await uploadImages(token, opts.images!) : [];
     const size = opts.size ? toRatio(opts.size) : undefined;
-    chatId = await createChat(token, MEDIA_BACKEND_MODEL, "t2v");
+    chatId = await createChat(token, MEDIA_BACKEND_MODEL, chatType);
     const messages = [
-      buildMessage([{ role: "user", content: prompt }], { model: MEDIA_BACKEND_MODEL, chatType: "t2v", thinking: false, files: [], size }),
+      buildMessage([{ role: "user", content: prompt }], { model: MEDIA_BACKEND_MODEL, chatType, thinking: false, files, size }),
     ];
     // Video is async: the non-stream request returns a task id.
     const res = await openCompletion(token, chatId, { model: MEDIA_BACKEND_MODEL, messages, stream: false, size });

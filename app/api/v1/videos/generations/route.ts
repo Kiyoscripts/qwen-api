@@ -13,8 +13,7 @@ function err(message: string, status: number, type = "invalid_request_error") {
   return NextResponse.json({ error: { message, type } }, { status });
 }
 
-// Reference image(s), from any of the common shapes. Accepted for compatibility
-// but not usable — see the warning below and the note on startVideo().
+// Reference image(s) for image-to-video, from any of the common shapes.
 function collectImages(body: any): string[] {
   const out: string[] = [];
   const push = (v: unknown) => {
@@ -51,13 +50,7 @@ export async function POST(req: NextRequest) {
   }
   const prompt = typeof body.prompt === "string" ? body.prompt : "";
   const images = collectImages(body);
-  // Reference images cannot work here: Qwen exposes no image-to-video chat type,
-  // so a t2v render ignores any attached file. Say so rather than silently
-  // producing a text-only video and leaving the caller to wonder.
-  const warning = images.length
-    ? "Reference images are ignored: the upstream service has no image-to-video mode, only text-to-video. The clip was generated from the prompt alone."
-    : undefined;
-  if (!prompt) return err("'prompt' is required. Reference images alone cannot generate a video.", 400);
+  if (!prompt && images.length === 0) return err("'prompt' is required.", 400);
   const modelId = typeof body.model === "string" && body.model ? body.model : "qwen-wan";
   const size = typeof body.size === "string" ? body.size : undefined;
   const wait = body.wait === true;
@@ -68,7 +61,7 @@ export async function POST(req: NextRequest) {
   let chatId: string;
   let taskId: string;
   try {
-    const { token: usedToken, entryId: usedId, result } = await withTokenFailover((t) => startVideo(t, prompt, { size }));
+    const { token: usedToken, entryId: usedId, result } = await withTokenFailover((t) => startVideo(t, prompt, { size, images }));
     token = usedToken;
     entryId = usedId;
     chatId = result.chatId;
@@ -85,14 +78,14 @@ export async function POST(req: NextRequest) {
     // The task lives on ONE pooled account; the ticket pins polling to it (a random
     // account would get "not found" forever). It also carries `created` for progress.
     const ticket = seal({ id: entryId, task: taskId, chat: chatId, created });
-    return NextResponse.json({ id: taskId, chat_id: chatId, status: "processing", created, ticket, ...(warning ? { warning } : {}) }, { status: 202 });
+    return NextResponse.json({ id: taskId, chat_id: chatId, status: "processing", created, ticket }, { status: 202 });
   }
 
   try {
     const url = await pollTask(token, taskId, 280_000);
     void Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);
     logUsage(record.id, modelId, false, false, 200);
-    return NextResponse.json({ created: Math.floor(Date.now() / 1000), data: [{ url }], ...(warning ? { warning } : {}) });
+    return NextResponse.json({ created: Math.floor(Date.now() / 1000), data: [{ url }] });
   } catch (e: any) {
     const status = e instanceof QwenError ? e.status : 502;
     logUsage(record.id, modelId, false, false, status);

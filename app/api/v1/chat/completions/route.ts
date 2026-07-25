@@ -490,10 +490,9 @@ async function handleMedia(args: {
       const shown = watermark ? buildMediaUrl(origin, url, watermark) : url;
       markdown = `![${(prompt || "edited image").slice(0, 80)}](${shown})`;
     } else {
-      // Video: start the task and poll (bounded by this function's duration).
-      // Reference images are deliberately not forwarded — Qwen has no
-      // image-to-video chat type, so a t2v render discards them.
-      const { token, result } = await withTokenFailover((t) => startVideo(t, prompt, { size }));
+      // Video: start the task (with optional aspect ratio + reference images,
+      // which switch it to image-to-video), then poll.
+      const { token, result } = await withTokenFailover((t) => startVideo(t, prompt, { size, images }));
       const url = await pollTask(token, result.taskId, 280_000);
       void Promise.all([deleteChat(token, result.chatId), forgetAllMemories(token)]);
       // Video is returned unwatermarked; Markdown.tsx proxies the raw CDN URL.
