@@ -3,7 +3,7 @@ import { checkTask, deleteChat, forgetAllMemories, type TaskState } from "@/lib/
 import { tokenById, poolTokens } from "@/lib/tokens";
 import { VIDEO_ENABLED, estimateVideoProgress } from "@/lib/media";
 import { unseal } from "@/lib/secureToken";
-import { extractApiKey, validateApiKey } from "@/lib/supabase";
+import { authenticate } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -24,8 +24,7 @@ export async function GET(req: NextRequest) {
   if (!VIDEO_ENABLED) {
     return NextResponse.json({ error: { message: "Video generation is disabled.", type: "not_supported" } }, { status: 404 });
   }
-  const key = extractApiKey(req.headers);
-  if (!key || !(await validateApiKey(key))) {
+  if (!(await authenticate(req))) {
     return NextResponse.json({ error: { message: "Invalid or missing API key.", type: "invalid_request_error" } }, { status: 401 });
   }
 

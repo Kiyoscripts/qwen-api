@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { extractApiKey, validateApiKey } from "@/lib/supabase";
+import { authenticate } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -7,8 +7,7 @@ export const runtime = "nodejs";
 // call this before sending a message to size the context. Qwen gives us no real
 // token count, so we return a ~chars/4 estimate — enough for context management.
 export async function POST(req: NextRequest) {
-  const key = extractApiKey(req.headers);
-  if (!key || !(await validateApiKey(key))) {
+  if (!(await authenticate(req))) {
     return NextResponse.json({ type: "error", error: { type: "authentication_error", message: "Invalid API key." } }, { status: 401 });
   }
 

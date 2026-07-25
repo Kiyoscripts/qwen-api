@@ -26,8 +26,11 @@ export async function POST(req: NextRequest) {
   const headers = new Headers({ "content-type": "application/json" });
   const xkey = req.headers.get("x-api-key");
   const authz = req.headers.get("authorization");
+  const cookie = req.headers.get("cookie");
   if (authz) headers.set("authorization", authz);
   if (xkey) headers.set("x-api-key", xkey);
+  // Carry the session through too, so a keyless call from our own UI still auths.
+  if (cookie) headers.set("cookie", cookie);
 
   const internal = new NextRequest(new URL("/api/v1/chat/completions", req.nextUrl.origin), {
     method: "POST",

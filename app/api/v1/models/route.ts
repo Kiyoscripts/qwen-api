@@ -4,7 +4,7 @@ import { DEEPSEEK_MODELS } from "@/lib/deepseek";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 import { withTokenFailover } from "@/lib/tokens";
-import { extractApiKey, validateApiKey } from "@/lib/supabase";
+import { authenticate } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -43,8 +43,7 @@ const deepseekEntries = DEEPSEEK_MODELS.map((m) => ({
 }));
 
 export async function GET(req: NextRequest) {
-  const key = extractApiKey(req.headers);
-  if (!key || !(await validateApiKey(key))) {
+  if (!(await authenticate(req))) {
     return NextResponse.json({ error: { message: "Invalid or missing API key.", type: "invalid_request_error" } }, { status: 401 });
   }
   try {

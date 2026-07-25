@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getVoices } from "@/lib/tts";
 import { withTokenFailover } from "@/lib/tokens";
-import { extractApiKey, validateApiKey } from "@/lib/supabase";
+import { authenticate } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 
 // Lists the available TTS voices (non-OpenAI-standard, but handy).
 export async function GET(req: NextRequest) {
-  const key = extractApiKey(req.headers);
-  if (!key || !(await validateApiKey(key))) {
+  if (!(await authenticate(req))) {
     return NextResponse.json({ error: { message: "Invalid or missing API key.", type: "invalid_request_error" } }, { status: 401 });
   }
   try {

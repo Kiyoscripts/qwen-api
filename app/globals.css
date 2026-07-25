@@ -1218,3 +1218,34 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 /* dashboard account chip */
 .dash-me { display: flex; align-items: center; gap: 8px; }
 .dash-me-name { font-size: 13.5px; color: var(--text); font-weight: 600; }
+
+/* --- Signed-in account, shown wherever the session applies ------------------ */
+.nav-acct {
+  display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 6px; border-radius: 999px;
+  background: var(--glass); border: 1px solid var(--glass-brd); color: var(--text);
+}
+.nav-acct:hover { background: var(--glass-strong); text-decoration: none; }
+.nav-acct img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+.nav-acct .auth-avatar-fallback { width: 24px; height: 24px; }
+.nav-acct .dash-me-name { font-size: 13px; }
+/* Holds the nav's width steady while the session check is in flight, so the bar
+   doesn't flash a "Log in" button and then jump. */
+.nav-acct-ph { display: inline-block; width: 96px; height: 34px; }
+
+.c-foot-acct img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; }
+.c-foot-acct .auth-avatar-fallback { width: 22px; height: 22px; }
+.c-foot-acct .dash-me-name { font-size: 14px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.c-signin { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.c-signin .c-primary:hover { text-decoration: none; }
+.c-signin .c-example { display: inline-flex; align-items: center; gap: 7px; }
+
+.pgx-acct {
+  display: flex; align-items: center; gap: 9px; padding: 8px 10px; margin-bottom: 8px;
+  border-radius: 10px; color: var(--text); background: rgba(255, 255, 255, .035);
+  border: 1px solid var(--glass-brd);
+}
+.pgx-acct:hover { background: rgba(255, 255, 255, .07); text-decoration: none; }
+.pgx-acct img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+.pgx-acct .auth-avatar-fallback { width: 24px; height: 24px; }
+.pgx-acct .dash-me-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

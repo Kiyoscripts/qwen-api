@@ -9,7 +9,8 @@ import {
 } from "@/lib/qwen";
 import { getVoices, setVoice, synthesize, pcmToWav } from "@/lib/tts";
 import { withTokenFailover } from "@/lib/tokens";
-import { extractApiKey, validateApiKey, logUsage } from "@/lib/supabase";
+import { logUsage } from "@/lib/supabase";
+import { authenticate } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -26,10 +27,8 @@ function err(message: string, status: number, type = "invalid_request_error") {
 // Qwen can only read aloud a message that exists in a chat, so we have the model
 // emit the text verbatim first, then run its "read aloud" on that message.
 export async function POST(req: NextRequest) {
-  const key = extractApiKey(req.headers);
-  if (!key) return err("Missing API key.", 401);
-  const record = await validateApiKey(key);
-  if (!record) return err("Invalid or revoked API key.", 401);
+  const record = await authenticate(req);
+  if (!record) return err("Missing or invalid API key.", 401);
 
   let body: any;
   try {

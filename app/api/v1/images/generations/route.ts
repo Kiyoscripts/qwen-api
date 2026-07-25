@@ -3,7 +3,8 @@ import { generateImage, virtualModel, VIRTUAL_MODELS } from "@/lib/media";
 import { resolveWatermark, buildMediaUrl, applyWatermark } from "@/lib/watermark";
 import { QwenError } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
-import { extractApiKey, validateApiKey, logUsage } from "@/lib/supabase";
+import { logUsage } from "@/lib/supabase";
+import { authenticate } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -45,10 +46,8 @@ function collectImages(body: any): string[] {
 //     "image"?: <ref image(s) for editing>, "response_format"?: "url"|"b64_json",
 //     "watermark"?: false | "My Brand" }  // default "Qwen3.8 API"; false removes it
 export async function POST(req: NextRequest) {
-  const key = extractApiKey(req.headers);
-  if (!key) return err("Missing API key.", 401);
-  const record = await validateApiKey(key);
-  if (!record) return err("Invalid or revoked API key.", 401);
+  const record = await authenticate(req);
+  if (!record) return err("Missing or invalid API key.", 401);
 
   let body: any;
   try {
@@ -102,8 +101,7 @@ export async function POST(req: NextRequest) {
 
 // GET /v1/images/generations -> lists the available image models (handy).
 export async function GET(req: NextRequest) {
-  const key = extractApiKey(req.headers);
-  if (!key || !(await validateApiKey(key))) {
+  if (!(await authenticate(req))) {
     return NextResponse.json({ error: { message: "Invalid or missing API key." } }, { status: 401 });
   }
   return NextResponse.json({

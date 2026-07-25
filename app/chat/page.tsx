@@ -21,6 +21,7 @@ import {
 import { Markdown } from "./Markdown";
 import Aurora, { type AuroraState } from "../Aurora";
 import Select from "../Select";
+import { useMe, AccountChip } from "../Account";
 import { DEMO_TOOLS, DEMO_TOOL_NAMES, runDemoTool } from "@/lib/demoTools";
 
 interface ToolCallView {
@@ -97,6 +98,7 @@ function newConversation(model: string): Conversation {
 }
 
 export default function Chat() {
+  const me = useMe();
   const [apiKey, setApiKey] = useState("");
   const [keyDraft, setKeyDraft] = useState("");
   const [models, setModels] = useState<ModelOpt[]>([]);
@@ -126,6 +128,11 @@ export default function Chat() {
   const pulseRef = useRef(0);
   // Follow the tail of the reply unless the reader has scrolled away from it.
   const stickRef = useRef(true);
+
+  // A pasted key wins; otherwise the session cookie authenticates us, so being
+  // signed in is enough to use the chat.
+  const authed = Boolean(apiKey) || Boolean(me);
+  const authHeaders = (): Record<string, string> => (apiKey ? { Authorization: `Bearer ${apiKey}` } : {});
 
   const active = conversations.find((c) => c.id === activeId);
   const messages = active?.messages ?? [];
@@ -162,9 +169,8 @@ export default function Chat() {
   }, [conversations]);
 
   const loadModels = useCallback(async (key: string) => {
-    if (!key) return;
     try {
-      const r = await fetch("/v1/models", { headers: { Authorization: `Bearer ${key}` } });
+      const r = await fetch("/v1/models", { headers: key ? { Authorization: `Bearer ${key}` } : {} });
       if (!r.ok) return;
       const j = await r.json();
       setModels(
@@ -181,8 +187,8 @@ export default function Chat() {
     }
   }, []);
   useEffect(() => {
-    if (apiKey) loadModels(apiKey);
-  }, [apiKey, loadModels]);
+    if (authed) loadModels(apiKey);
+  }, [authed, apiKey, loadModels]);
 
   // `messages` gets a new identity on every streamed token, so this keeps the
   // view pinned to the tail of a reply as it is written — but only while the
@@ -351,7 +357,7 @@ export default function Chat() {
     const res = await fetch("/v1/chat/completions", {
       method: "POST",
       signal,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({
         model: active!.model,
         stream: true,
@@ -404,7 +410,7 @@ export default function Chat() {
 
   async function send(text?: string) {
     const body = (text ?? input).trim();
-    if ((!body && !image) || busy || !apiKey || !active) return;
+    if ((!body && !image) || busy || !authed || !active) return;
 
     const userMsg: Msg = { role: "user", content: body || "(image)", image: image || undefined };
     const history = [...messages, userMsg];
@@ -514,7 +520,7 @@ export default function Chat() {
     setSettingsOpen(false);
   }
 
-  const canSend = Boolean(apiKey) && (input.trim() || image) && !busy;
+  const canSend = authed && Boolean(input.trim() || image) && !busy;
   const isEmpty = messages.length === 0;
 
   // Featured models first (in PRIMARY_IDS order), the rest behind "Other models".
@@ -558,9 +564,9 @@ export default function Chat() {
           ref={taRef}
           className="c-input"
           rows={1}
-          placeholder={apiKey ? "Ask anything" : "Add your API key in Settings first"}
+          placeholder={authed ? "Ask anything" : "Sign in, or add an API key in Settings"}
           value={input}
-          disabled={!apiKey}
+          disabled={!authed}
           onChange={(e) => {
             setInput(e.target.value);
             autoGrow();
@@ -570,7 +576,7 @@ export default function Chat() {
         <div className="c-composer-row">
           <label className="c-icon-btn" aria-label="Attach image">
             <Paperclip size={19} />
-            <input type="file" accept="image/*" hidden onChange={onImage} disabled={!apiKey} />
+            <input type="file" accept="image/*" hidden onChange={onImage} disabled={!authed} />
           </label>
           {canPickThink && (
             <div className="c-seg" role="group" aria-label="Reasoning">
@@ -660,6 +666,15 @@ export default function Chat() {
           <a className="c-foot-link" href="/playground">
             <SidebarIcon size={16} /> Playground
           </a>
+          {me ? (
+            <a className="c-foot-link c-foot-acct" href="/keys" title="Open your dashboard">
+              <AccountChip me={me} />
+            </a>
+          ) : me === null ? (
+            <a className="c-foot-link" href="/login">
+              <Key size={16} /> Log in
+            </a>
+          ) : null}
         </div>
       </aside>
 
@@ -715,9 +730,9 @@ export default function Chat() {
         {isEmpty ? (
           /* Empty chat: greeting with the composer centred, ChatGPT-style. */
           <div className="c-center">
-            <h1>{apiKey ? "What can I help with?" : "Add your API key to start"}</h1>
+            <h1>{authed ? "What can I help with?" : "Sign in to start"}</h1>
             {composer}
-            {apiKey ? (
+            {authed ? (
               <div className="c-examples">
                 {EXAMPLES.map((ex) => (
                   <button key={ex} className="c-example" onClick={() => send(ex)}>
@@ -726,9 +741,12 @@ export default function Chat() {
                 ))}
               </div>
             ) : (
-              <button className="c-primary" onClick={() => setSettingsOpen(true)}>
-                <Key size={16} /> Add API key
-              </button>
+              <div className="c-signin">
+                <a className="c-primary" href="/login">Log in with Discord</a>
+                <button className="c-example" onClick={() => setSettingsOpen(true)}>
+                  <Key size={14} /> or use an API key
+                </button>
+              </div>
             )}
           </div>
         ) : (
@@ -839,8 +857,10 @@ export default function Chat() {
               onKeyDown={(e) => e.key === "Enter" && saveKey()}
             />
             <p className="c-help">
-              Stored only in this browser&apos;s local storage. It is never sent anywhere except this API.
-              Need one? <a href="/keys">Create one in your dashboard</a>.
+              {me
+                ? "Optional — you're signed in, so requests already go through your account. Add a key here only to bill a specific one."
+                : "Stored only in this browser's local storage. It is never sent anywhere except this API."}{" "}
+              <a href="/keys">Manage your keys</a>.
             </p>
             <div className="c-modal-foot">
               <button className="c-primary" onClick={saveKey}>Save</button>

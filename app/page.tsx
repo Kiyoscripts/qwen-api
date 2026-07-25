@@ -1,6 +1,7 @@
 import Aurora from "./Aurora";
 import StatsBar from "./StatsBar";
 import { BaseUrl, CopyButton } from "./Copy";
+import AccountNav from "./Account";
 
 const BASE = "https://qwen3-8-api.vercel.app";
 
@@ -50,7 +51,7 @@ export default function Home() {
           </div>
           <div className="lp-navcta">
             <a className="ghost" href="/link">Link DeepSeek</a>
-            <a className="g-btn" href="/login">Log in</a>
+            <AccountNav />
           </div>
         </nav>
 

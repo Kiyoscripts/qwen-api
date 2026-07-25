@@ -20,6 +20,7 @@ import {
 } from "@phosphor-icons/react";
 import Aurora, { type AuroraState } from "../Aurora";
 import Select from "../Select";
+import { useMe, AccountChip } from "../Account";
 import { DEMO_TOOLS, DEMO_TOOL_NAMES, runDemoTool } from "@/lib/demoTools";
 
 type Mode = "chat" | "image" | "video" | "tts";
@@ -75,6 +76,7 @@ const ASPECTS_VIDEO = ["16:9", "9:16", "1:1", "4:3", "3:4"];
 const MAX_ATTACH: Record<Mode, number> = { chat: 1, image: 4, video: 1, tts: 0 };
 
 export default function Playground() {
+  const me = useMe();
   const [apiKey, setApiKey] = useState("");
   const [keyDraft, setKeyDraft] = useState("");
   const [editingKey, setEditingKey] = useState(false);
@@ -98,6 +100,11 @@ export default function Playground() {
   const [reqCopied, setReqCopied] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
+  // A pasted key wins; otherwise the session cookie authenticates the request,
+  // so being signed in is enough to use the playground.
+  const authed = Boolean(apiKey) || Boolean(me);
+  const authHeaders = (): Record<string, string> => (apiKey ? { Authorization: `Bearer ${apiKey}` } : {});
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -117,9 +124,9 @@ export default function Playground() {
   const canPickThink = (chatModels.find((m) => m.id === model)?.thinking ?? false) && !thinkForced;
 
   const loadModels = useCallback(async (key: string) => {
-    if (!key) return;
+    const auth: Record<string, string> = key ? { Authorization: `Bearer ${key}` } : {};
     try {
-      const r = await fetch("/v1/models", { headers: { Authorization: `Bearer ${key}` } });
+      const r = await fetch("/v1/models", { headers: auth });
       if (!r.ok) return;
       const j = await r.json();
       const opts: ModelOpt[] = (j.data || []).map((m: any) => ({
@@ -138,7 +145,7 @@ export default function Playground() {
     }
     // voices for TTS
     try {
-      const r = await fetch("/v1/audio/voices", { headers: { Authorization: `Bearer ${key}` } });
+      const r = await fetch("/v1/audio/voices", { headers: auth });
       if (r.ok) {
         const v: VoiceOpt[] = (await r.json()).data || [];
         setVoices(v);
@@ -154,12 +161,15 @@ export default function Playground() {
     if (k) {
       setApiKey(k);
       setKeyDraft(k);
-      loadModels(k);
-    } else {
-      setEditingKey(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Load the catalogue once we know how we're authenticating — a pasted key, or
+  // the session. Signed-in users never see the key prompt.
+  useEffect(() => {
+    if (authed) loadModels(apiKey);
+    else if (me === null && !apiKey) setEditingKey(true);
+  }, [authed, apiKey, me, loadModels]);
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [turns]);
@@ -245,7 +255,7 @@ export default function Playground() {
     const res = await fetch("/v1/chat/completions", {
       method: "POST",
       signal,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({
         model,
         stream: true,
@@ -355,7 +365,7 @@ export default function Playground() {
     const res = await fetch("/v1/images/generations", {
       method: "POST",
       signal,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ model: imageModel, prompt, size: aspect, ...(refs.length ? { image: refs } : {}) }),
     });
     const j = await res.json().catch(() => ({}));
@@ -371,7 +381,7 @@ export default function Playground() {
     const res = await fetch("/v1/videos/generations", {
       method: "POST",
       signal,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ model: "qwen-wan", prompt, size: aspect, ...(ref ? { image: ref } : {}) }),
     });
     const j = await res.json().catch(() => ({}));
@@ -391,7 +401,7 @@ export default function Playground() {
         ticket
           ? `/v1/videos/status?ticket=${encodeURIComponent(ticket)}`
           : `/v1/videos/status?task_id=${encodeURIComponent(taskId)}`,
-        { headers: { Authorization: `Bearer ${apiKey}` }, signal }
+        { headers: authHeaders(), signal }
       );
       const sj = await s.json().catch(() => ({}));
       if (sj?.status === "completed" && sj?.data?.[0]?.url) return setResult(sj.data[0].url, "video");
@@ -411,7 +421,7 @@ export default function Playground() {
     const res = await fetch("/v1/audio/speech", {
       method: "POST",
       signal,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ input: text, voice }),
     });
     if (!res.ok) {
@@ -430,7 +440,7 @@ export default function Playground() {
   async function send() {
     const text = input.trim();
     const refs = attach.slice(0, MAX_ATTACH[mode]);
-    if ((!text && refs.length === 0) || busy || !apiKey) return;
+    if ((!text && refs.length === 0) || busy || !authed) return;
 
     const label = text || (mode === "image" ? "(edit these images)" : "(image)");
     const userTurn: Turn = { role: "user", content: label, images: refs.length ? refs : undefined };
@@ -537,8 +547,8 @@ export default function Playground() {
   const auroraState: AuroraState = busy ? (mode === "chat" ? "responding" : "thinking") : "ambient";
   const modeMeta = MODES.find((m) => m.id === mode)!;
   const maxAttach = MAX_ATTACH[mode];
-  const canSend = Boolean(apiKey) && !busy && Boolean(input.trim() || (maxAttach > 0 && attach.length));
-  const placeholder = !apiKey
+  const canSend = authed && !busy && Boolean(input.trim() || (maxAttach > 0 && attach.length));
+  const placeholder = !authed
     ? "Add your API key to start"
     : mode === "image"
     ? attach.length
@@ -737,14 +747,32 @@ export default function Playground() {
               </div>
             </>
           ) : (
-            <button className="pgx-conn" onClick={() => setEditingKey(true)}>
-              <span className={`pgx-dot ${apiKey ? "ok" : ""}`} />
-              <span className="pgx-conn-txt">
-                <b>{apiKey ? "Connected" : "No key"}</b>
-                <em>{apiKey ? `${models.length} models · ${apiKey.slice(0, 11)}…` : "Click to add a key"}</em>
-              </span>
-              <Key size={15} />
-            </button>
+            <>
+              {me && (
+                <a className="pgx-acct" href="/keys" title="Open your dashboard">
+                  <AccountChip me={me} />
+                </a>
+              )}
+              <button className="pgx-conn" onClick={() => setEditingKey(true)}>
+                <span className={`pgx-dot ${authed ? "ok" : ""}`} />
+                <span className="pgx-conn-txt">
+                  <b>{apiKey ? "Connected" : me ? "Using your account" : "Not connected"}</b>
+                  <em>
+                    {apiKey
+                      ? `${models.length} models · ${apiKey.slice(0, 11)}…`
+                      : me
+                      ? `${models.length} models · click to use a key instead`
+                      : "Log in, or click to add a key"}
+                  </em>
+                </span>
+                <Key size={15} />
+              </button>
+              {!me && me !== undefined && !apiKey && (
+                <a className="g-btn" href="/login" style={{ width: "100%", justifyContent: "center", marginTop: 10 }}>
+                  Log in with Discord
+                </a>
+              )}
+            </>
           )}
         </div>
       </aside>
@@ -881,7 +909,7 @@ export default function Playground() {
               placeholder={placeholder}
               value={input}
               rows={1}
-              disabled={!apiKey}
+              disabled={!authed}
               onChange={(e) => { setInput(e.target.value); autoGrow(); }}
               onKeyDown={onKeyDown}
             />
@@ -904,7 +932,7 @@ export default function Playground() {
                     multiple={maxAttach > 1}
                     hidden
                     onChange={onImage}
-                    disabled={!apiKey || attach.length >= maxAttach}
+                    disabled={!authed || attach.length >= maxAttach}
                   />
                 </label>
               )}

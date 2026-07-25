@@ -3,7 +3,8 @@ import { deleteChat, forgetAllMemories, pollTask, QwenError } from "@/lib/qwen";
 import { startVideo, VIDEO_ENABLED } from "@/lib/media";
 import { withTokenFailover } from "@/lib/tokens";
 import { seal } from "@/lib/secureToken";
-import { extractApiKey, validateApiKey, logUsage } from "@/lib/supabase";
+import { logUsage } from "@/lib/supabase";
+import { authenticate } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -38,10 +39,8 @@ function collectImages(body: any): string[] {
 //     wait:true -> { data: [{ url }] } (bounded by maxDuration; falls back to 202)
 export async function POST(req: NextRequest) {
   if (!VIDEO_ENABLED) return err("Video generation is disabled.", 404, "not_supported");
-  const key = extractApiKey(req.headers);
-  if (!key) return err("Missing API key.", 401);
-  const record = await validateApiKey(key);
-  if (!record) return err("Invalid or revoked API key.", 401);
+  const record = await authenticate(req);
+  if (!record) return err("Missing or invalid API key.", 401);
 
   let body: any;
   try {

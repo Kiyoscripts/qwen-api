@@ -1,4 +1,5 @@
 import Aurora from "../Aurora";
+import AccountNav from "../Account";
 
 export const metadata = { title: "Docs · Qwen3.8 API" };
 const BASE = "https://qwen3-8-api.vercel.app";
@@ -31,7 +32,7 @@ export default function DocsPage() {
           </div>
           <div className="lp-navcta">
             <a className="ghost" href="/link">Link DeepSeek</a>
-            <a className="g-btn" href="/keys">Get a key</a>
+            <AccountNav />
           </div>
         </nav>
 

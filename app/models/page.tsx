@@ -1,4 +1,5 @@
 import Aurora from "../Aurora";
+import AccountNav from "../Account";
 import { getModels } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
 import { VIRTUAL_MODELS } from "@/lib/media";
@@ -65,7 +66,7 @@ export default async function ModelsPage() {
           </div>
           <div className="lp-navcta">
             <a className="ghost" href="/link">Link DeepSeek</a>
-            <a className="g-btn" href="/keys">Get a key</a>
+            <AccountNav />
           </div>
         </nav>
 
