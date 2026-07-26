@@ -14,6 +14,7 @@
 
 import { randomUUID } from "node:crypto";
 import { uploadImage, fetchImageBytes, type QwenFileEntry } from "./upload";
+import { collapseConversation, type CollapseTurn } from "./conversation";
 
 export const QWEN_BASE = "https://chat.qwen.ai";
 
@@ -151,26 +152,16 @@ export function buildMessage(
   }
 ) {
   const now = Math.floor(Date.now() / 1000);
-  const systemParts: string[] = [];
-  const turns: { role: string; text: string }[] = [];
+  // Upstream takes exactly one message — it answers "Invalid input too many
+  // messages" to a role array — so the conversation is flattened into it.
+  const turns: CollapseTurn[] = [];
   for (const m of messages) {
     const text = messageText(m);
     if (!text) continue;
     const role = normalizeRole(m.role);
-    if (role === "system") systemParts.push(text);
-    else turns.push({ role, text });
+    turns.push({ role: role === "system" ? "system" : role === "assistant" ? "assistant" : "user", text });
   }
-
-  let content: string;
-  if (systemParts.length === 0 && turns.length <= 1) {
-    content = turns[0]?.text ?? "";
-  } else {
-    const lines: string[] = [];
-    if (systemParts.length) lines.push(systemParts.join("\n\n"), "");
-    for (const t of turns) lines.push(`${t.role === "assistant" ? "Assistant" : "User"}: ${t.text}`);
-    if (opts.chatType === "t2t") lines.push("Assistant:");
-    content = lines.join("\n");
-  }
+  const content = collapseConversation(turns);
 
   return {
     id: null,

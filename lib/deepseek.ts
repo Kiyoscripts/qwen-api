@@ -18,6 +18,7 @@
 // or RESPONSE (answer).
 
 import { solvePowHeader, type PowChallenge } from "./deepseek-pow";
+import { collapseConversation, type CollapseTurn } from "./conversation";
 import { fetchImageBytes } from "./upload";
 import type { OpenAIMessage } from "./qwen";
 
@@ -300,21 +301,16 @@ function messageText(m: OpenAIMessage): string {
 }
 
 export function collapseMessages(messages: OpenAIMessage[]): string {
-  const systemParts: string[] = [];
-  const turns: { role: string; text: string }[] = [];
+  const turns: CollapseTurn[] = [];
   for (const m of messages) {
     const text = messageText(m);
     if (!text) continue;
-    const role = m.role === "assistant" ? "assistant" : m.role === "system" ? "system" : "user";
-    if (role === "system") systemParts.push(text);
-    else turns.push({ role, text });
+    turns.push({
+      role: m.role === "assistant" ? "assistant" : m.role === "system" ? "system" : "user",
+      text,
+    });
   }
-  if (systemParts.length === 0 && turns.length <= 1) return turns[0]?.text ?? "";
-  const lines: string[] = [];
-  if (systemParts.length) lines.push(systemParts.join("\n\n"), "");
-  for (const t of turns) lines.push(`${t.role === "assistant" ? "Assistant" : "User"}: ${t.text}`);
-  lines.push("Assistant:");
-  return lines.join("\n");
+  return collapseConversation(turns);
 }
 
 // --- completion -------------------------------------------------------------
