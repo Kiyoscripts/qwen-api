@@ -122,6 +122,10 @@ async function challengeFor(answer: number, difficulty: number): Promise<PowChal
 // 6. The point of the exercise: at a realistic difficulty the WASM must do the
 //    work. A worst-case nonce is the honest measurement — the search is linear,
 //    so a nonce near the top costs the full sweep.
+//
+//    Only the WASM side runs by default. Racing it against the TypeScript search
+//    pegs a core for several seconds, which is a rude thing for a test suite to
+//    do on every run; POW_BENCH=1 opts into the comparison.
 {
   const difficulty = 144_000;
   const c = await challengeFor(143_500, difficulty);
@@ -130,15 +134,18 @@ async function challengeFor(answer: number, difficulty: number): Promise<PowChal
   const wasmAnswer = await wasmSolvePow(c.challenge, c.salt, c.expire_at, difficulty);
   const wasmMs = performance.now() - wasmStart;
 
-  const tsStart = performance.now();
-  const tsAnswer = solvePowAnswer(c);
-  const tsMs = performance.now() - tsStart;
+  check("WASM solves a worst-case challenge", wasmAnswer === 143_500, String(wasmAnswer));
+  // Generous bound: this is here to catch the WASM silently not being used and
+  // the slow fallback running instead, not to police milliseconds on a busy machine.
+  check(`WASM is fast at full difficulty (${wasmMs.toFixed(0)}ms)`, wasmMs < 1500, `${wasmMs.toFixed(0)}ms`);
 
-  check("both solvers agree at full difficulty", wasmAnswer === tsAnswer && wasmAnswer === 143_500);
-  // Generous bound: this is here to catch the WASM silently not being used,
-  // not to police a few milliseconds on a busy machine.
-  check(`WASM solves a worst-case challenge quickly (${wasmMs.toFixed(0)}ms)`, wasmMs < 1500, `${wasmMs.toFixed(0)}ms`);
-  console.log(`  timing: wasm ${wasmMs.toFixed(0)}ms vs typescript ${tsMs.toFixed(0)}ms (${(tsMs / Math.max(wasmMs, 0.001)).toFixed(0)}x)`);
+  if (process.env.POW_BENCH === "1") {
+    const tsStart = performance.now();
+    const tsAnswer = solvePowAnswer(c);
+    const tsMs = performance.now() - tsStart;
+    check("both solvers agree at full difficulty", tsAnswer === wasmAnswer);
+    console.log(`  timing: wasm ${wasmMs.toFixed(0)}ms vs typescript ${tsMs.toFixed(0)}ms (${(tsMs / Math.max(wasmMs, 0.001)).toFixed(0)}x)`);
+  }
 }
 
 console.log(`${passed} passed, ${failed} failed`);
