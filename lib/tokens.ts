@@ -114,8 +114,19 @@ export async function withTokenFailover<T>(
       // `retryable` covers account failures whose wording isn't quota-shaped —
       // e.g. an account that streams a completion but generates no text.
       if (!e?.retryable && !isTokenFailure(e?.message || "")) throw e; // a real error, not a bad account
+      // Without this the pool rotates in silence, so a day where every account
+      // starts failing looks identical in the logs to a day where none do.
+      console.warn(`[pool] account ${entry.id ?? "env"} failed over: ${e?.message || e}`);
       noteFailure(entry);
     }
   }
+  // Every candidate refused. That is the state worth shouting about: it means
+  // the pool is exhausted, blocked, or upstream is down for everyone — not one
+  // unlucky account.
+  console.error(
+    `[pool] all ${shuffled.length} attempted accounts failed (pool size ${pool.length}). Last: ${
+      (lastError as any)?.message || lastError
+    }`
+  );
   throw lastError;
 }

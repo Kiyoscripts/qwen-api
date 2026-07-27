@@ -197,9 +197,41 @@ export function buildMessage(
 
 // --- API calls (all take a token) ------------------------------------------
 
-function looksLikeChallenge(status: number, body: string): boolean {
-  if (status === 401 || status === 403) return true;
-  return /access verification|verify that you are|captcha|please complete the operation|punish|rgv587/i.test(body);
+// Markers Qwen's anti-bot layer puts in a body when it actually challenges.
+const CHALLENGE_MARKERS = /access verification|verify that you are|captcha|please complete the operation|punish|rgv587|baxia/i;
+
+/**
+ * Say what upstream actually refused, rather than lumping every rejection
+ * together.
+ *
+ * This used to report ANY 401 or 403 as "anti-bot challenge / rate limit",
+ * which is three different faults wearing one label: an expired token, a
+ * revoked account and a genuine bot challenge each need a different response,
+ * and the operator could not tell which was happening. All of them still roll
+ * the request onto another account — `isTokenFailure` matches every message
+ * produced here — but now the logs name the cause.
+ *
+ * Returns null when the response is not a refusal we recognise.
+ */
+export function classifyRefusal(status: number, body: string, headers?: Headers): QwenError | null {
+  if (CHALLENGE_MARKERS.test(body)) {
+    return new QwenError("Qwen served an anti-bot challenge to this account.", 503, true);
+  }
+  if (status === 401) {
+    return new QwenError("Qwen token is expired or no longer valid on this account.", 401, true);
+  }
+  if (status === 403) {
+    return new QwenError("Qwen refused this account (forbidden — banned or restricted).", 403, true);
+  }
+  if (status === 429) {
+    const retryAfter = headers?.get("retry-after");
+    return new QwenError(
+      `Qwen rate limited this account (429${retryAfter ? `, retry-after ${retryAfter}s` : ""}).`,
+      429,
+      true
+    );
+  }
+  return null;
 }
 
 export async function createChat(token: string, model: string, chatType: ChatType): Promise<string> {
@@ -209,7 +241,10 @@ export async function createChat(token: string, model: string, chatType: ChatTyp
     body: JSON.stringify({ title: "New Chat", models: [model], chat_mode: "normal", chat_type: chatType, timestamp: Date.now() }),
   });
   const text = await res.text();
-  if (looksLikeChallenge(res.status, text)) throw new QwenError("Qwen anti-bot challenge / rate limit on this account.", 503);
+  {
+    const refusal = classifyRefusal(res.status, text, res.headers);
+    if (refusal) throw refusal;
+  }
   let json: any;
   try {
     json = JSON.parse(text);
@@ -277,7 +312,8 @@ export async function openCompletion(
     const ct = res.headers.get("content-type") || "";
     if (!res.ok || !res.body || !ct.includes("event-stream")) {
       const text = await res.text().catch(() => "");
-      if (looksLikeChallenge(res.status, text)) throw new QwenError("Qwen anti-bot challenge / rate limit on this account.", 503);
+      const refusal = classifyRefusal(res.status, text, res.headers);
+      if (refusal) throw refusal;
       let detail = text.slice(0, 200);
       try {
         const j = JSON.parse(text);
@@ -418,7 +454,10 @@ export async function pollTask(token: string, taskId: string, timeoutMs = 240_00
     } catch {
       continue;
     }
-    if (looksLikeChallenge(200, JSON.stringify(json))) throw new QwenError("Qwen anti-bot challenge while polling video task.", 503);
+    {
+      const refusal = classifyRefusal(200, JSON.stringify(json));
+      if (refusal) throw refusal;
+    }
     const url = taskMediaUrl(json);
     if (url) return url;
     if (taskStatus(json) === "failed" || taskStatus(json) === "failure") throw new QwenError("Video generation failed upstream.");
