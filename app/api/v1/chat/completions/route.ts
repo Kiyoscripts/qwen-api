@@ -39,6 +39,16 @@ export const maxDuration = 300;
 
 const DEFAULT_MODEL = "qwen3.8-max-preview";
 
+/**
+ * Prompt ceiling, in characters of assembled message text.
+ *
+ * ~100k characters is where measured behaviour stops being "slow" and starts
+ * being "fails unpredictably": 80k took 82s and succeeded, 200k either burned
+ * the full 300s or returned a bare 502. Set below that so the refusal is
+ * deterministic rather than a coin flip.
+ */
+const PROMPT_CHAR_LIMIT = 110_000;
+
 // These models require feature_config.thinking_enabled = true — they can't run in
 // "Fast" (non-thinking) mode, so `enable_thinking: false` is ignored for them.
 const REQUIRE_THINKING = new Set(["qwen3.8-max-preview"]);
@@ -157,6 +167,22 @@ export async function POST(req: NextRequest) {
   if (cm) {
     const persona = systemPromptFor(cm);
     if (persona) effMessages = [{ role: "system", content: persona }, ...effMessages];
+  }
+
+  // Upstream latency scales with prompt size — measured at roughly a second per
+  // 1k characters against a 300s ceiling — and past ~100k characters the request
+  // does not fail cleanly: it either burns the full 300s or comes back as an
+  // opaque 502. Neither tells the caller anything, and an agent mid-loop just
+  // sees its turn die. Refuse early with a status that names the problem.
+  const promptChars = effMessages.reduce((n: number, m: any) => n + messageText(m).length, 0);
+  if (promptChars > PROMPT_CHAR_LIMIT) {
+    logUsage(record.id, modelId, hadImage, wantStream, 413);
+    return err(
+      `Request too large: ~${Math.round(promptChars / 1000)}k characters of prompt, limit is ~${Math.round(PROMPT_CHAR_LIMIT / 1000)}k. ` +
+        `Tool results dominate long agent sessions — start a new session, or have the client send fewer/smaller tool outputs.`,
+      413,
+      "context_length_exceeded"
+    );
   }
 
   // Run the whole setup under token failover: if an account is out of quota,

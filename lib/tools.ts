@@ -169,25 +169,89 @@ function renderCall(tc: any): string {
   return `<tool_call>\n{"name": ${JSON.stringify(name)}, "arguments": ${args}}\n</tool_call>`;
 }
 
+/* ---------------------------------------------------------------------------
+   Tool-history budget
+
+   The proxy is stateless: every turn re-sends the whole transcript. For a chat
+   that is fine, but an agent's transcript is mostly TOOL RESULTS, and in a
+   coding agent those results are file contents. Twelve reads of a 4KB file
+   already assembles a ~13.5k-token prompt, and upstream latency scales with
+   prompt size — measured at roughly a second per 1k characters, against a 300s
+   ceiling. So an agent on a real project stops working part-way through, and
+   fails inconsistently (timeout, 502, or upstream overload) depending on how
+   big the files it read happened to be.
+
+   The model does not need file #1 in full on turn twelve. Old results are
+   therefore replaced with a stub that keeps the shape of the exchange — the
+   call happened, it returned this much — while dropping the bytes. Recent
+   results stay verbatim, because those are what the model is actually
+   reasoning about.
+
+   Nothing is trimmed while the transcript is small, so ordinary conversations
+   are byte-for-byte unchanged.
+   --------------------------------------------------------------------------- */
+
+/** Largest single tool result kept verbatim. One huge read cannot dominate. */
+const MAX_ONE_TOOL_RESULT = 8_000;
+/** Total tool-result budget across the transcript before elision starts. */
+const TOOL_HISTORY_BUDGET = 24_000;
+/** Most recent results always kept in full (subject to the per-result clamp). */
+const KEEP_RECENT_RESULTS = 3;
+
+function clampOne(body: string): string {
+  if (body.length <= MAX_ONE_TOOL_RESULT) return body;
+  const dropped = body.length - MAX_ONE_TOOL_RESULT;
+  // Keep the head: file contents and command output are front-loaded, and the
+  // marker tells the model the rest exists rather than letting it assume the
+  // file simply ends there.
+  return body.slice(0, MAX_ONE_TOOL_RESULT) + `\n… [${dropped} more bytes truncated]`;
+}
+
 // Convert an OpenAI message list (which may contain assistant tool_calls and
 // role:"tool" results) into plain role+text messages the prompt builder handles,
 // then append the tool-protocol system section. The caller's own system prompt is
 // preserved — the tool section is added, never substituted.
 export function preprocessToolMessages(messages: any[], tools: OAITool[], toolChoice: any): any[] {
+  // Which entries are tool results, oldest first — needed to decide what to
+  // elide before any of it is rendered.
+  const toolIdx: number[] = [];
+  messages.forEach((m, i) => { if (m?.role === "tool") toolIdx.push(i); });
+
+  const bodyAt = new Map<number, string>();
+  for (const i of toolIdx) {
+    const m = messages[i];
+    bodyAt.set(i, clampOne(typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "")));
+  }
+
+  // Elide oldest-first until the total fits, never touching the newest few.
+  const elide = new Set<number>();
+  let total = [...bodyAt.values()].reduce((n, b) => n + b.length, 0);
+  const elidable = toolIdx.slice(0, Math.max(0, toolIdx.length - KEEP_RECENT_RESULTS));
+  for (const i of elidable) {
+    if (total <= TOOL_HISTORY_BUDGET) break;
+    total -= bodyAt.get(i)!.length;
+    elide.add(i);
+  }
+
   const out: any[] = [];
-  for (const m of messages) {
+  messages.forEach((m, i) => {
     if (m?.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length) {
       const calls = m.tool_calls.map(renderCall).join("\n");
       const text = typeof m.content === "string" ? m.content : "";
       out.push({ role: "assistant", content: (text ? text + "\n" : "") + calls });
     } else if (m?.role === "tool") {
-      const body = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
       const nameHint = m.name ? ` name="${m.name}"` : "";
-      out.push({ role: "user", content: `<tool_response${nameHint}>\n${body}\n</tool_response>` });
+      if (elide.has(i)) {
+        const bytes = bodyAt.get(i)!.length;
+        // Self-closing: there is no body, and the model should not wait for one.
+        out.push({ role: "user", content: `<tool_response${nameHint} elided="${bytes} bytes" />` });
+      } else {
+        out.push({ role: "user", content: `<tool_response${nameHint}>\n${bodyAt.get(i)}\n</tool_response>` });
+      }
     } else {
       out.push(m);
     }
-  }
+  });
   // Tool protocol goes last in the system group (after any user system prompt).
   out.push({ role: "system", content: toolSystemPrompt(tools, toolChoice) });
   return out;

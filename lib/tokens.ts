@@ -68,7 +68,7 @@ export async function pickToken(): Promise<PoolEntry> {
 // Errors that mean "this account is no good right now" — try a different one.
 // (daily quota, rate limiting, expired/invalid token, anti-bot challenge)
 export function isTokenFailure(message: string): boolean {
-  return /upper limit|upper limit for today|today's usage|usage limit|out of (?:quota|credits)|quota|limit reached|rate ?limit|too many requests|429|unauthorized|session has expired|no longer valid|challenge|Internal error/i.test(
+  return /upper limit|upper limit for today|today's usage|usage limit|out of (?:quota|credits)|quota|limit reached|rate ?limit|too many requests|429|unauthorized|session has expired|no longer valid|challenge|Internal error|high demand|overloaded|temporarily unavailable|service unavailable/i.test(
     message || ""
   );
 }
