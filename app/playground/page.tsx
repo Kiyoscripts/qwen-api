@@ -19,6 +19,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import Aurora, { type AuroraState } from "../Aurora";
+import { useT } from "../I18n";
 import Select from "../Select";
 import { useMe, AccountChip } from "../Account";
 import { PhaseTimer } from "../PhaseTimer";
@@ -85,6 +86,7 @@ const ASPECTS_VIDEO = ["16:9", "9:16", "1:1", "4:3", "3:4"];
 const MAX_ATTACH: Record<Mode, number> = { chat: 1, image: 4, video: 1, tts: 0 };
 
 export default function Playground() {
+  const t = useT();
   const me = useMe();
   const [apiKey, setApiKey] = useState("");
   const [keyDraft, setKeyDraft] = useState("");
@@ -415,7 +417,7 @@ export default function Playground() {
 
   // Video has NO timeout: we kick off the task and poll until it's done.
   async function sendVideo(prompt: string, ref: string | undefined, signal: AbortSignal) {
-    setStatus("Starting render…");
+    setStatus(t("pg_starting_render"));
     const res = await fetch("/v1/videos/generations", {
       method: "POST",
       signal,
@@ -455,7 +457,7 @@ export default function Playground() {
   }
 
   async function sendSpeech(text: string, signal: AbortSignal) {
-    setStatus("Synthesising…");
+    setStatus(t("pg_synthesising"));
     const res = await fetch("/v1/audio/speech", {
       method: "POST",
       signal,
@@ -656,7 +658,7 @@ export default function Playground() {
 
         <div className="pgx-side-scroll">
           <section className="pgx-sec">
-            <h3 className="pgx-lbl">Mode</h3>
+            <h3 className="pgx-lbl">{t("pg_mode")}</h3>
             <div className="pgx-modes">
               {MODES.filter((m) => m.id !== "video" || videoAvailable || !models.length).map((m) => (
                 <button key={m.id} className={`pgx-mode ${mode === m.id ? "on" : ""}`} onClick={() => setMode(m.id)}>
@@ -671,12 +673,12 @@ export default function Playground() {
           </section>
 
           <section className="pgx-sec">
-            <h3 className="pgx-lbl">Parameters</h3>
+            <h3 className="pgx-lbl">{t("pg_parameters")}</h3>
 
             {mode === "chat" && (
               <>
                 <div className="pgx-field">
-                  <span>Model</span>
+                  <span>{t("pg_model")}</span>
                   <Select
                     ariaLabel="Chat model"
                     value={model}
@@ -690,10 +692,10 @@ export default function Playground() {
                 </div>
                 {canPickThink ? (
                   <div className="pgx-field">
-                    <span>Reasoning</span>
+                    <span>{t("chat_reasoning")}</span>
                     <div className="pgx-seg">
-                      <button className={!fast ? "on" : ""} onClick={() => setFast(false)}>Think</button>
-                      <button className={fast ? "on" : ""} onClick={() => setFast(true)}>Fast</button>
+                      <button className={!fast ? "on" : ""} onClick={() => setFast(false)}>{t("chat_think")}</button>
+                      <button className={fast ? "on" : ""} onClick={() => setFast(true)}>{t("chat_fast")}</button>
                     </div>
                   </div>
                 ) : thinkForced ? (
@@ -701,7 +703,7 @@ export default function Playground() {
                 ) : null}
                 <label className="pgx-check">
                   <input type="checkbox" checked={showThinking} onChange={(e) => setShowThinking(e.target.checked)} />
-                  <span>Show reasoning in the log</span>
+                  <span>{t("pg_show_reasoning")}</span>
                 </label>
               </>
             )}
@@ -709,7 +711,7 @@ export default function Playground() {
             {mode === "image" && (
               <>
                 <div className="pgx-field">
-                  <span>Model</span>
+                  <span>{t("pg_model")}</span>
                   <Select
                     ariaLabel="Image model"
                     value={imageModel}
@@ -722,7 +724,7 @@ export default function Playground() {
                   />
                 </div>
                 <div className="pgx-field">
-                  <span>Aspect ratio</span>
+                  <span>{t("pg_aspect_ratio")}</span>
                   <div className="pgx-ratios">
                     {ASPECTS_IMAGE.map((a) => (
                       <button key={a} className={aspect === a ? "on" : ""} onClick={() => setAspect(a)}>{a}</button>
@@ -739,7 +741,7 @@ export default function Playground() {
             {mode === "video" && (
               <>
                 <div className="pgx-field">
-                  <span>Model</span>
+                  <span>{t("pg_model")}</span>
                   <Select
                     ariaLabel="Video model"
                     value="qwen-wan"
@@ -749,7 +751,7 @@ export default function Playground() {
                   />
                 </div>
                 <div className="pgx-field">
-                  <span>Aspect ratio</span>
+                  <span>{t("pg_aspect_ratio")}</span>
                   <div className="pgx-ratios">
                     {ASPECTS_VIDEO.map((a) => (
                       <button key={a} className={aspect === a ? "on" : ""} onClick={() => setAspect(a)}>{a}</button>
@@ -762,7 +764,7 @@ export default function Playground() {
 
             {mode === "tts" && (
               <div className="pgx-field">
-                <span>Voice</span>
+                <span>{t("pg_voice")}</span>
                 <Select
                   ariaLabel="Voice"
                   value={voice}
@@ -783,10 +785,10 @@ export default function Playground() {
 
           {mode === "chat" && (
             <section className="pgx-sec">
-              <h3 className="pgx-lbl">Tools</h3>
+              <h3 className="pgx-lbl">{t("chat_tools")}</h3>
               <label className="pgx-check">
                 <input type="checkbox" checked={toolsOn} onChange={(e) => setToolsOn(e.target.checked)} />
-                <span>Send tool schemas</span>
+                <span>{t("pg_send_tool_schemas")}</span>
               </label>
               {toolsOn && (
                 <>
@@ -816,7 +818,7 @@ export default function Playground() {
         <div className="pgx-key">
           {editingKey ? (
             <>
-              <h3 className="pgx-lbl">API key</h3>
+              <h3 className="pgx-lbl">{t("chat_api_key")}</h3>
               <input
                 className="pgx-input"
                 type="password"
@@ -826,14 +828,14 @@ export default function Playground() {
                 onKeyDown={(e) => e.key === "Enter" && saveKey()}
               />
               <div className="pgx-key-row">
-                <button className="g-btn" onClick={saveKey} style={{ flex: 1, justifyContent: "center" }}>Connect</button>
-                <a className="pgx-link" href="/keys">Get a key</a>
+                <button className="g-btn" onClick={saveKey} style={{ flex: 1, justifyContent: "center" }}>{t("pg_connect")}</button>
+                <a className="pgx-link" href="/keys">{t("pg_get_key")}</a>
               </div>
             </>
           ) : (
             <>
               {me && (
-                <a className="pgx-acct" href="/keys" title="Open your dashboard">
+                <a className="pgx-acct" href="/keys" title={t("chat_open_dashboard")}>
                   <AccountChip me={me} />
                 </a>
               )}
@@ -853,7 +855,7 @@ export default function Playground() {
               </button>
               {!me && me !== undefined && !apiKey && (
                 <a className="g-btn" href="/login" style={{ width: "100%", justifyContent: "center", marginTop: 10 }}>
-                  Log in with Discord
+                  {t("login_with_discord")}
                 </a>
               )}
             </>
@@ -865,7 +867,7 @@ export default function Playground() {
       <main className="pgx-main">
         <header className="pgx-top">
           <div className="pgx-crumb">
-            <span>Playground</span>
+            <span>{t("pg_title")}</span>
             <i>/</i>
             <b>{modeMeta.name}</b>
           </div>
@@ -879,7 +881,7 @@ export default function Playground() {
             <button className={`pgx-ghost ${showReq ? "on" : ""}`} onClick={() => setShowReq((v) => !v)}>
               {showReq ? "Hide request" : "Show request"}
             </button>
-            <button className="pgx-ghost" onClick={clearRun} disabled={turns.length === 0} title="Clear the log">
+            <button className="pgx-ghost" onClick={clearRun} disabled={turns.length === 0} title={t("pg_clear_log")}>
               <Trash size={14} />
             </button>
           </div>
@@ -888,7 +890,7 @@ export default function Playground() {
         {showReq && (
           <div className="pgx-req">
             <div className="pgx-req-head">
-              <span>Equivalent request</span>
+              <span>{t("pg_equivalent_request")}</span>
               <button className="pgx-ghost" onClick={copyCurl}>
                 {reqCopied ? <Check size={13} /> : <Copy size={13} />} {reqCopied ? "Copied" : "Copy"}
               </button>
@@ -905,75 +907,75 @@ export default function Playground() {
               <p>{modeMeta.desc}. Set your parameters on the left, then send a prompt below.</p>
             </div>
           ) : (
-            turns.map((t, i) => (
-              <div key={i} className={`pgx-turn ${t.role}${t.error ? " err" : ""}`}>
+            turns.map((turn, i) => (
+              <div key={i} className={`pgx-turn ${turn.role}${turn.error ? " err" : ""}`}>
                 <div className="pgx-gutter">
-                  {t.role === "user" ? "You" : t.role === "tool" ? "tool" : t.model || mode}
+                  {turn.role === "user" ? "You" : turn.role === "tool" ? "tool" : turn.model || mode}
                 </div>
                 <div className="pgx-turnbody">
-                  {t.images?.length ? (
+                  {turn.images?.length ? (
                     <div className="pgx-attached">
-                      {t.images.map((src, n) => <img key={n} src={src} alt={`attachment ${n + 1}`} />)}
+                      {turn.images.map((src, n) => <img key={n} src={src} alt={`attachment ${n + 1}`} />)}
                     </div>
                   ) : null}
 
-                  {t.role === "assistant" && (
+                  {turn.role === "assistant" && (
                     <PhaseTimer
-                      live={Boolean(t.pending) && i === turns.length - 1 && busy}
-                      startedAt={t.startedAt}
-                      thinkMs={t.thinkMs}
-                      answerMs={t.answerMs}
-                      writing={Boolean(t.content)}
+                      live={Boolean(turn.pending) && i === turns.length - 1 && busy}
+                      startedAt={turn.startedAt}
+                      thinkMs={turn.thinkMs}
+                      answerMs={turn.answerMs}
+                      writing={Boolean(turn.content)}
                     />
                   )}
-                  {t.role === "assistant" && showThinking && t.reasoning ? (
-                    <details className="pgx-think" open={Boolean(t.pending) && !t.content}>
-                      <summary>{t.pending && !t.content ? "Thinking…" : "Thought process"}</summary>
-                      <div>{t.reasoning}</div>
+                  {turn.role === "assistant" && showThinking && turn.reasoning ? (
+                    <details className="pgx-think" open={Boolean(turn.pending) && !turn.content}>
+                      <summary>{turn.pending && !turn.content ? "Thinking…" : "Thought process"}</summary>
+                      <div>{turn.reasoning}</div>
                     </details>
                   ) : null}
 
-                  {t.mediaUrl && (
+                  {turn.mediaUrl && (
                     <div className="pgx-media">
-                      {t.mediaType === "image" && <img src={t.mediaUrl} alt="generated" />}
-                      {t.mediaType === "video" && <video src={t.mediaUrl} controls />}
-                      {t.mediaType === "audio" && <audio src={t.mediaUrl} controls autoPlay />}
+                      {turn.mediaType === "image" && <img src={turn.mediaUrl} alt="generated" />}
+                      {turn.mediaType === "video" && <video src={turn.mediaUrl} controls />}
+                      {turn.mediaType === "audio" && <audio src={turn.mediaUrl} controls autoPlay />}
                       <div className="pgx-media-foot">
-                        <span>{t.mediaType === "audio" ? t.model || "default voice" : `${t.model || imageModel}${t.aspect ? ` · ${t.aspect}` : ""}`}</span>
-                        <a className="pgx-ghost" href={t.mediaUrl} download={mediaFilename(t.mediaType)}>
-                          <DownloadSimple size={13} /> Download
+                        <span>{turn.mediaType === "audio" ? turn.model || "default voice" : `${turn.model || imageModel}${turn.aspect ? ` · ${turn.aspect}` : ""}`}</span>
+                        <a className="pgx-ghost" href={turn.mediaUrl} download={mediaFilename(turn.mediaType)}>
+                          <DownloadSimple size={13} /> {t("pg_download")}
                         </a>
                       </div>
                     </div>
                   )}
 
-                  {t.content && t.role !== "tool" && <div className="pgx-text">{t.content}</div>}
+                  {turn.content && turn.role !== "tool" && <div className="pgx-text">{turn.content}</div>}
 
-                  {t.toolCalls?.map((tc) => (
+                  {turn.toolCalls?.map((tc) => (
                     <div key={tc.id} className="pgx-tool call">
                       <span className="pgx-tool-badge"><Wrench size={12} weight="bold" /> {tc.name}</span>
                       <code>{tc.arguments}</code>
                     </div>
                   ))}
 
-                  {t.role === "tool" && (
+                  {turn.role === "tool" && (
                     <div className="pgx-tool result">
-                      <span className="pgx-tool-badge">↩ {t.toolName}</span>
-                      <code>{t.content}</code>
+                      <span className="pgx-tool-badge">↩ {turn.toolName}</span>
+                      <code>{turn.content}</code>
                     </div>
                   )}
 
-                  {t.pending && typeof t.progress === "number" ? (
+                  {turn.pending && typeof turn.progress === "number" ? (
                     <div className="pgx-progress">
-                      <div className="pgx-progress-bar"><span style={{ width: `${t.progress}%` }} /></div>
-                      <span className="pgx-progress-pct">{t.progress}%</span>
+                      <div className="pgx-progress-bar"><span style={{ width: `${turn.progress}%` }} /></div>
+                      <span className="pgx-progress-pct">{turn.progress}%</span>
                     </div>
-                  ) : t.pending && !t.content && !t.reasoning ? (
+                  ) : turn.pending && !turn.content && !turn.reasoning ? (
                     <div className="pgx-dots"><i /><i /><i /></div>
                   ) : null}
 
-                  {t.ms != null && !t.error && t.thinkMs == null && (
-                    <div className="pgx-ms">{(t.ms / 1000).toFixed(2)}s</div>
+                  {turn.ms != null && !turn.error && turn.thinkMs == null && (
+                    <div className="pgx-ms">{(turn.ms / 1000).toFixed(2)}s</div>
                   )}
                 </div>
               </div>
@@ -1042,9 +1044,9 @@ export default function Playground() {
               </span>
               <div style={{ flex: 1 }} />
               {busy ? (
-                <button className="pgx-send stop" onClick={stop} aria-label="Stop"><Stop size={14} weight="fill" /></button>
+                <button className="pgx-send stop" onClick={stop} aria-label={t("pg_stop")}><Stop size={14} weight="fill" /></button>
               ) : (
-                <button className="pgx-send" onClick={send} disabled={!canSend} aria-label="Send"><ArrowUp size={17} weight="bold" /></button>
+                <button className="pgx-send" onClick={send} disabled={!canSend} aria-label={t("pg_send")}><ArrowUp size={17} weight="bold" /></button>
               )}
             </div>
           </div>

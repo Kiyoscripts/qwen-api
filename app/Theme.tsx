@@ -2,13 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { Circle, Drop, Sun } from "@phosphor-icons/react";
+import { useT } from "./I18n";
+import type { Dict } from "@/lib/i18n";
 
 export type ThemeName = "midnight" | "daylight" | "contrast";
 
-const THEMES: { id: ThemeName; label: string; hint: string; icon: React.ReactNode }[] = [
-  { id: "midnight", label: "Midnight", hint: "Dark liquid glass", icon: <Drop size={15} weight="fill" /> },
-  { id: "daylight", label: "Daylight", hint: "Light liquid glass", icon: <Sun size={15} weight="fill" /> },
-  { id: "contrast", label: "Contrast", hint: "High contrast, no blur", icon: <Circle size={15} weight="fill" /> },
+// label/hint are translation KEYS, resolved at render — typing them as keyof
+// Dict makes a stale key a compile error rather than a silent English string.
+const THEMES: { id: ThemeName; label: keyof Dict; hint: keyof Dict; icon: React.ReactNode }[] = [
+  { id: "midnight", label: "theme_midnight", hint: "theme_midnight_hint", icon: <Drop size={15} weight="fill" /> },
+  { id: "daylight", label: "theme_daylight", hint: "theme_daylight_hint", icon: <Sun size={15} weight="fill" /> },
+  { id: "contrast", label: "theme_contrast", hint: "theme_contrast_hint", icon: <Circle size={15} weight="fill" /> },
 ];
 
 const STORE = "qwen_theme";
@@ -24,6 +28,7 @@ function apply(t: ThemeName) {
 }
 
 export default function ThemeSwitcher({ compact }: { compact?: boolean }) {
+  const t = useT();
   // `null` until mounted: the server has no idea which theme is stored, and
   // rendering a guess would flash the wrong pill and mismatch on hydration.
   const [theme, setTheme] = useState<ThemeName | null>(null);
@@ -39,23 +44,23 @@ export default function ThemeSwitcher({ compact }: { compact?: boolean }) {
   }
 
   return (
-    <div className={`themesw ${compact ? "compact" : ""}`} role="radiogroup" aria-label="Colour theme">
-      {THEMES.map((t) => {
-        const on = theme === t.id;
+    <div className={`themesw ${compact ? "compact" : ""}`} role="radiogroup" aria-label={t("nav_theme")}>
+      {THEMES.map((th) => {
+        const on = theme === th.id;
         return (
           <button
-            key={t.id}
+            key={th.id}
             role="radio"
             aria-checked={on}
-            aria-label={`${t.label} — ${t.hint}`}
-            title={`${t.label} · ${t.hint}`}
+            aria-label={`${t(th.label)} — ${t(th.hint)}`}
+            title={`${t(th.label)} · ${t(th.hint)}`}
             className={`themesw-opt ${on ? "on" : ""}`}
-            onClick={() => pick(t.id)}
+            onClick={() => pick(th.id)}
           >
             {/* The moving pill is a sibling that translates, so switching never
                 animates layout — only transform and opacity. */}
-            <span className="themesw-ic">{t.icon}</span>
-            {!compact && <span className="themesw-label">{t.label}</span>}
+            <span className="themesw-ic">{th.icon}</span>
+            {!compact && <span className="themesw-label">{t(th.label)}</span>}
           </button>
         );
       })}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useT } from "./I18n";
 
 interface Usage {
   window: number;
@@ -12,6 +13,7 @@ interface Usage {
 }
 
 export default function UsageCharts() {
+  const t = useT();
   const [u, setU] = useState<Usage | null>(null);
 
   useEffect(() => {
@@ -26,22 +28,22 @@ export default function UsageCharts() {
   return (
     <div className="usage">
       <div className="usage-tiles">
-        <Tile value={u.total.toLocaleString()} label={`Requests · ${u.window}d`} />
-        <Tile value={`${successRate}%`} label="Success rate" />
-        <Tile value={String(u.byModel.length)} label="Models used" />
-        <Tile value={String(u.perKey.length)} label="Keys with traffic" />
+        <Tile value={u.total.toLocaleString()} label={t("usage_requests_30d")} />
+        <Tile value={`${successRate}%`} label={t("usage_success_rate")} />
+        <Tile value={String(u.byModel.length)} label={t("usage_models_used")} />
+        <Tile value={String(u.perKey.length)} label={t("usage_keys_traffic")} />
       </div>
 
       <div className="usage-grid">
         <div className="usage-card glass">
-          <div className="usage-card-head">Requests over time <span>last {u.window} days</span></div>
+          <div className="usage-card-head">{t("usage_requests_over_time")} <span>{t("usage_last_30_days")}</span></div>
           <AreaChart series={u.series} />
         </div>
 
         <div className="usage-card glass">
-          <div className="usage-card-head">By model</div>
+          <div className="usage-card-head">{t("usage_by_model")}</div>
           {u.byModel.length === 0 ? (
-            <p className="usage-empty">No requests yet.</p>
+            <p className="usage-empty">{t("usage_no_requests")}</p>
           ) : (
             <div className="usage-bars">
               {u.byModel.slice(0, 8).map((m) => (

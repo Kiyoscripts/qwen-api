@@ -696,7 +696,7 @@ export default function Chat() {
         {image && (
           <div className="c-attach">
             <img src={image} alt="to send" />
-            <button onClick={() => setImage(null)} aria-label="Remove image"><X size={12} weight="bold" /></button>
+            <button onClick={() => setImage(null)} aria-label={t("chat_remove_image")}><X size={12} weight="bold" /></button>
           </div>
         )}
         <textarea
@@ -724,8 +724,8 @@ export default function Chat() {
           </label>
           {canPickThink && (
             <div className="c-seg" role="group" aria-label="Reasoning">
-              <button type="button" className={!fast ? "on" : ""} onClick={() => setFast(false)} title="Reason step by step (slower, better)">{t("chat_think")}</button>
-              <button type="button" className={fast ? "on" : ""} onClick={() => setFast(true)} title="Skip reasoning (faster)">{t("chat_fast")}</button>
+              <button type="button" className={!fast ? "on" : ""} onClick={() => setFast(false)} title={t("chat_reason_hint")}>{t("chat_think")}</button>
+              <button type="button" className={fast ? "on" : ""} onClick={() => setFast(true)} title={t("chat_fast_hint")}>{t("chat_fast")}</button>
             </div>
           )}
           {isMediaModel && (
@@ -756,17 +756,17 @@ export default function Chat() {
           )}
           <div className="c-spacer" />
           {busy ? (
-            <button className="c-send stop" onClick={stop} aria-label="Stop generating">
+            <button className="c-send stop" onClick={stop} aria-label={t("chat_stop_generating")}>
               <Stop size={15} weight="fill" />
             </button>
           ) : (
-            <button className="c-send" onClick={() => send()} disabled={!canSend} aria-label="Send message">
+            <button className="c-send" onClick={() => send()} disabled={!canSend} aria-label={t("chat_send_message")}>
               <ArrowUp size={18} weight="bold" />
             </button>
           )}
         </div>
       </div>
-      {!isEmpty && <p className="c-disclaimer">Qwen can make mistakes. Check important info.</p>}
+      {!isEmpty && <p className="c-disclaimer">{t("chat_disclaimer")}</p>}
     </div>
   );
 
@@ -780,7 +780,7 @@ export default function Chat() {
             <img src="/qwen.svg" alt="" width={22} height={22} />
             Qwen3.8
           </a>
-          <button className="c-icon-btn c-side-close" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
+          <button className="c-icon-btn c-side-close" onClick={() => setSidebarOpen(false)} aria-label={t("chat_close_menu")}>
             <X size={18} />
           </button>
         </div>
@@ -811,7 +811,7 @@ export default function Chat() {
             <SidebarIcon size={16} /> Playground
           </a>
           {me ? (
-            <a className="c-foot-link c-foot-acct" href="/keys" title="Open your dashboard">
+            <a className="c-foot-link c-foot-acct" href="/keys" title={t("chat_open_dashboard")}>
               <AccountChip me={me} />
             </a>
           ) : me === null ? (
@@ -827,7 +827,7 @@ export default function Chat() {
       {/* ---------- main ---------- */}
       <main className="c-main">
         <header className="c-top">
-          <button className="c-icon-btn c-menu" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
+          <button className="c-icon-btn c-menu" onClick={() => setSidebarOpen(true)} aria-label={t("chat_open_menu")}>
             <SidebarIcon size={18} />
           </button>
           <div className="c-model-wrap" ref={modelRef}>
@@ -845,7 +845,7 @@ export default function Chat() {
 
             {modelMenu && (
               <div className="c-model-menu" role="listbox">
-                {models.length === 0 && <div className="c-model-empty">Add an API key to load models</div>}
+                {models.length === 0 && <div className="c-model-empty">{t("chat_add_key_to_load")}</div>}
 
                 {primaryModels.map(renderModelItem)}
 
@@ -858,7 +858,7 @@ export default function Chat() {
                       aria-expanded={showOthers}
                     >
                       <span className="c-model-text">
-                        <span className="c-model-name">Other models</span>
+                        <span className="c-model-name">{t("chat_other_models")}</span>
                         <span className="c-model-desc">{otherModels.length} more</span>
                       </span>
                       {showOthers ? <CaretDown size={15} /> : <CaretRight size={15} />}
@@ -945,7 +945,7 @@ export default function Chat() {
                                   className="c-action"
                                   onClick={() => copyMessage(m.content, i)}
                                   aria-label="Copy response"
-                                  title="Copy response"
+                                  title={t("chat_copy_response")}
                                 >
                                   {copiedIdx === i ? <Check size={15} /> : <Copy size={15} />}
                                 </button>
@@ -1004,7 +1004,7 @@ export default function Chat() {
               </div>
             </div>
               {!atBottom && (
-                <button className="c-jump" onClick={jumpToBottom} aria-label="Scroll to latest">
+                <button className="c-jump" onClick={jumpToBottom} aria-label={t("chat_scroll_latest")}>
                   <CaretDown size={15} weight="bold" />
                 </button>
               )}
@@ -1019,12 +1019,12 @@ export default function Chat() {
         <div className="c-modal-scrim" onClick={() => setSettingsOpen(false)}>
           <div className="c-modal" onClick={(e) => e.stopPropagation()}>
             <div className="c-modal-head">
-              <h2>Settings</h2>
-              <button className="c-icon-btn" onClick={() => setSettingsOpen(false)} aria-label="Close settings">
+              <h2>{t("chat_settings")}</h2>
+              <button className="c-icon-btn" onClick={() => setSettingsOpen(false)} aria-label={t("chat_close_settings")}>
                 <X size={18} />
               </button>
             </div>
-            <label className="c-label" htmlFor="apikey">API key</label>
+            <label className="c-label" htmlFor="apikey">{t("chat_api_key")}</label>
             <input
               id="apikey"
               className="c-field"
@@ -1038,10 +1038,10 @@ export default function Chat() {
               {me
                 ? "Optional — you're signed in, so requests already go through your account. Add a key here only to bill a specific one."
                 : "Stored only in this browser's local storage. It is never sent anywhere except this API."}{" "}
-              <a href="/keys">Manage your keys</a>.
+              <a href="/keys">{t("chat_manage_keys")}</a>.
             </p>
             <div className="c-modal-foot">
-              <button className="c-primary" onClick={saveKey}>Save</button>
+              <button className="c-primary" onClick={saveKey}>{t("save")}</button>
             </div>
           </div>
         </div>

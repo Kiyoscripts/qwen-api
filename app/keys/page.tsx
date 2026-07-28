@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Aurora from "../Aurora";
 import UsageCharts from "../UsageCharts";
+import { useT } from "../I18n";
 
 interface Key {
   id: string;
@@ -24,6 +25,7 @@ interface Me {
 }
 
 export default function KeysDashboard() {
+  const t = useT();
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [keys, setKeys] = useState<Key[]>([]);
@@ -77,7 +79,7 @@ export default function KeysDashboard() {
   }
 
   if (loading) {
-    return (<><Aurora /><div className="dash"><p className="auth-sub" style={{ padding: 40 }}>Loading…</p></div></>);
+    return (<><Aurora /><div className="dash"><p className="auth-sub" style={{ padding: 40 }}>{t("loading")}</p></div></>);
   }
 
   return (
@@ -96,23 +98,23 @@ export default function KeysDashboard() {
                 {me.role && me.role !== "member" && <span className={`role-tag ${me.role}`}>{me.role}</span>}
               </div>
             )}
-            <button className="g-btn outline" onClick={logout}>Sign out</button>
+            <button className="g-btn outline" onClick={logout}>{t("keys_sign_out")}</button>
           </div>
         </nav>
 
         <div className="dash-body">
-          <h1 className="lp-h2" style={{ textAlign: "left" }}>Usage</h1>
-          <p className="auth-sub">Requests across all your keys, over the last 30 days.</p>
+          <h1 className="lp-h2" style={{ textAlign: "left" }}>{t("keys_usage")}</h1>
+          <p className="auth-sub">{t("keys_usage_sub")}</p>
           <UsageCharts />
 
-          <h2 className="lp-h2" style={{ textAlign: "left", fontSize: 24, marginTop: 44 }}>API keys</h2>
-          <p className="auth-sub">Create and manage your API keys here.</p>
+          <h2 className="lp-h2" style={{ textAlign: "left", fontSize: 24, marginTop: 44 }}>{t("keys_title")}</h2>
+          <p className="auth-sub">{t("keys_page_sub")}</p>
 
           {fresh && (
             <div className="dash-fresh glass">
               <div className="kg-key" style={{ background: "transparent", border: "none", padding: 0 }}>
                 <code>{fresh.key}</code>
-                <button className="kg-copy" onClick={() => navigator.clipboard?.writeText(fresh.key)}>Copy</button>
+                <button className="kg-copy" onClick={() => navigator.clipboard?.writeText(fresh.key)}>{t("keys_copy")}</button>
               </div>
               <p className="kg-count">Copy now — visible for {fresh.left}s, then hidden forever (we only store a hash).</p>
             </div>
@@ -120,17 +122,17 @@ export default function KeysDashboard() {
 
           <div className="dash-actions">
             <div className="dash-act glass">
-              <label className="auth-label">Create a new key</label>
+              <label className="auth-label">{t("keys_create_new")}</label>
               <div className="kg-row">
-                <input className="kg-input" placeholder="Label (optional)" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
-                <button className="g-btn" onClick={createKey}>Create</button>
+                <input className="kg-input" placeholder={t("keys_label_optional")} value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
+                <button className="g-btn" onClick={createKey}>{t("keys_create_btn")}</button>
               </div>
             </div>
           </div>
           {msg && <p className="auth-sub" style={{ color: "var(--accent-2)" }}>{msg}</p>}
 
           <div className="dash-list glass">
-            {keys.length === 0 && <p className="auth-sub" style={{ padding: 18, margin: 0 }}>No keys yet. Create one above.</p>}
+            {keys.length === 0 && <p className="auth-sub" style={{ padding: 18, margin: 0 }}>{t("keys_none_create")}</p>}
             {keys.map((k) => (
               <div key={k.id} className={`dash-row ${k.revoked ? "revoked" : ""}`}>
                 <div className="dash-row-main">
@@ -138,10 +140,10 @@ export default function KeysDashboard() {
                   <code className="dash-row-prefix">{k.key_prefix}</code>
                 </div>
                 <div className="dash-row-meta">
-                  <span>{k.request_count.toLocaleString()} req</span>
-                  <span>{k.last_used_at ? `used ${new Date(k.last_used_at).toLocaleDateString()}` : "never used"}</span>
+                  <span>{k.request_count.toLocaleString()} {t("usage_req_short")}</span>
+                  <span>{k.last_used_at ? t("usage_used_on", { date: new Date(k.last_used_at).toLocaleDateString() }) : t("usage_never_used")}</span>
                 </div>
-                {!k.revoked && <button className="dash-revoke" onClick={() => revoke(k.id)}>Revoke</button>}
+                {!k.revoked && <button className="dash-revoke" onClick={() => revoke(k.id)}>{t("keys_revoke")}</button>}
               </div>
             ))}
           </div>

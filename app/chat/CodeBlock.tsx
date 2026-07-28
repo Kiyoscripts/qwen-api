@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowsOut, Check, Copy, DownloadSimple, X } from "@phosphor-icons/react";
+import { useT } from "../I18n";
 
 /** language tag -> file extension for the download button. */
 const EXT: Record<string, string> = {
@@ -33,6 +34,7 @@ function looksLikeHtml(code: string): boolean {
  * DOM of the page that opened it.
  */
 function Preview({ code, onClose }: { code: string; onClose: () => void }) {
+  const t = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
@@ -48,19 +50,20 @@ function Preview({ code, onClose }: { code: string; onClose: () => void }) {
     <div className="cb-preview-scrim" onClick={onClose}>
       <div className="cb-preview" onClick={(e) => e.stopPropagation()}>
         <header>
-          <span>Preview</span>
+          <span>{t("cb_preview")}</span>
           <span className="cb-preview-note">sandboxed · no access to your session</span>
-          <button className="c-icon-btn" onClick={onClose} aria-label="Close preview">
+          <button className="c-icon-btn" onClick={onClose} aria-label={t("cb_close_preview")}>
             <X size={17} />
           </button>
         </header>
-        <iframe title="Code preview" sandbox="allow-scripts allow-modals allow-forms" srcDoc={code} />
+        <iframe title={t("cb_code_preview")} sandbox="allow-scripts allow-modals allow-forms" srcDoc={code} />
       </div>
     </div>
   );
 }
 
 export function CodeBlock({ children, className }: { children: React.ReactNode; className?: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const ref = useRef<HTMLElement>(null);
@@ -99,14 +102,14 @@ export function CodeBlock({ children, className }: { children: React.ReactNode; 
       {lang && <span className="c-code-lang">{lang}</span>}
       <div className="c-code-actions">
         {canPreview && (
-          <button className="c-code-btn" onClick={() => setPreviewing(true)} title="Render this in a sandboxed frame">
+          <button className="c-code-btn" onClick={() => setPreviewing(true)} title={t("cb_render_sandboxed")}>
             <ArrowsOut size={13} /> Preview
           </button>
         )}
-        <button className="c-code-btn" onClick={download} title="Download as a file">
-          <DownloadSimple size={13} /> Download
+        <button className="c-code-btn" onClick={download} title={t("cb_download_file")}>
+          <DownloadSimple size={13} /> {t("cb_download")}
         </button>
-        <button className="c-code-btn" onClick={copy} title="Copy to clipboard">
+        <button className="c-code-btn" onClick={copy} title={t("cb_copy")}>
           {copied ? <Check size={13} weight="bold" /> : <Copy size={13} />} {copied ? "Copied" : "Copy"}
         </button>
       </div>

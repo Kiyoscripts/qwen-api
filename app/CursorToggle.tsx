@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Cursor as CursorIcon } from "@phosphor-icons/react";
+import { useT } from "./I18n";
 
 export const CURSOR_STORE = "qwen_cursor";
 
@@ -30,6 +31,7 @@ function apply(on: boolean) {
 }
 
 export default function CursorToggle({ compact }: { compact?: boolean }) {
+  const t = useT();
   // `null` until mounted, matching ThemeSwitcher: the server cannot know the
   // stored value, and guessing would mismatch on hydration.
   const [on, setOn] = useState<boolean | null>(null);
@@ -50,13 +52,13 @@ export default function CursorToggle({ compact }: { compact?: boolean }) {
       type="button"
       role="switch"
       aria-checked={active}
-      aria-label="Custom cursor"
+      aria-label={t("nav_cursor")}
       title={active ? "Custom cursor on — click to use the system cursor" : "Custom cursor off — click to turn it on"}
       className={`curtog ${active ? "on" : ""} ${compact ? "compact" : ""}`}
       onClick={toggle}
     >
       <CursorIcon size={15} weight={active ? "fill" : "regular"} />
-      {!compact && <span>Cursor</span>}
+      {!compact && <span>{t("cursor_short")}</span>}
     </button>
   );
 }

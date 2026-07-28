@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Aurora from "../Aurora";
+import { useT } from "../I18n";
 
 const INVITE = "https://discord.gg/Wcw95ZR8KU";
 
 export default function LoginPage() {
+  const t = useT();
   const [tab, setTab] = useState<"login" | "link">("login");
 
   // login
@@ -83,34 +85,34 @@ export default function LoginPage() {
         <a className="auth-brand" href="/"><span className="lp-logo" /> Qwen3.8&nbsp;API</a>
         <div className="auth-card glass">
           <div className="auth-tabs">
-            <button className={tab === "login" ? "on" : ""} onClick={() => setTab("login")}>Log in</button>
-            <button className={tab === "link" ? "on" : ""} onClick={() => setTab("link")}>Link Discord</button>
+            <button className={tab === "login" ? "on" : ""} onClick={() => setTab("login")}>{t("login_title")}</button>
+            <button className={tab === "link" ? "on" : ""} onClick={() => setTab("link")}>{t("login_link_discord")}</button>
           </div>
 
           {tab === "login" ? (
             <form onSubmit={login}>
-              <h1>Log in</h1>
-              <p className="auth-sub">Enter the login key we DM'd you on Discord.</p>
-              <label className="auth-label">Login key</label>
+              <h1>{t("login_title")}</h1>
+              <p className="auth-sub">{t("login_enter_dm_key")}</p>
+              <label className="auth-label">{t("login_key_label")}</label>
               <input className="kg-input" type="password" placeholder="qkey_…" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" required />
               {loginErr && <p className="kg-err" style={{ marginTop: 12 }}>{loginErr}</p>}
               <button className="g-btn lg" type="submit" disabled={loggingIn} style={{ width: "100%", justifyContent: "center", marginTop: 18 }}>
                 {loggingIn ? "…" : "Log in"}
               </button>
-              <p className="auth-alt">No account yet? <a onClick={() => setTab("link")} style={{ cursor: "pointer" }}>Link your Discord</a></p>
+              <p className="auth-alt">{t("login_no_account")} <a onClick={() => setTab("link")} style={{ cursor: "pointer" }}>{t("login_link_your_discord")}</a></p>
             </form>
           ) : (
             <div>
-              <h1>Link your Discord</h1>
+              <h1>{t("login_link_your_discord")}</h1>
               {!linked ? (
                 <>
                   <ol className="auth-steps">
-                    <li>Join the <a href={INVITE} target="_blank" rel="noreferrer">Discord server</a>.</li>
-                    <li>Run <code>/link</code> in the link channel — the bot DMs/replies with a code.</li>
-                    <li>Enter that code below.</li>
+                    <li>{t("login_join_the")} <a href={INVITE} target="_blank" rel="noreferrer">{t("login_discord_server")}</a>.</li>
+                    <li>{t("login_run")} <code>/link</code> in the link channel — the bot DMs/replies with a code.</li>
+                    <li>{t("login_enter_code_below")}</li>
                   </ol>
                   <form onSubmit={verify}>
-                    <label className="auth-label">Your /link code</label>
+                    <label className="auth-label">{t("login_your_link_code")}</label>
                     <input className="kg-input" placeholder="QW-XXXXXX" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} autoComplete="off" required />
                     {linkErr && <p className="kg-err" style={{ marginTop: 12 }}>{linkErr}</p>}
                     <button className="g-btn lg" type="submit" disabled={linking} style={{ width: "100%", justifyContent: "center", marginTop: 18 }}>
@@ -124,7 +126,7 @@ export default function LoginPage() {
                     {avatarUrl ? <img src={avatarUrl} alt="" /> : <span className="auth-avatar-fallback" />}
                     <div>
                       <div className="auth-profile-name">{linked.username} {linked.role !== "member" && <span className={`role-tag ${linked.role}`}>{linked.role}</span>}</div>
-                      <div className="auth-sub" style={{ margin: 0 }}>Linked ✓</div>
+                      <div className="auth-sub" style={{ margin: 0 }}>{t("login_linked")}</div>
                     </div>
                   </div>
                   {dmStatus === "sent" ? (
@@ -135,8 +137,8 @@ export default function LoginPage() {
                     <p className="auth-ok">⏳ Sending your login key to your Discord DMs… (this needs the bot online — give it a few seconds.)</p>
                   )}
                   <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-                    <button className="g-btn outline" onClick={reDm}>Re-DM my key</button>
-                    <button className="g-btn" onClick={() => setTab("login")}>I have my key → Log in</button>
+                    <button className="g-btn outline" onClick={reDm}>{t("login_redm")}</button>
+                    <button className="g-btn" onClick={() => setTab("login")}>{t("login_have_key")}</button>
                   </div>
                 </div>
               )}

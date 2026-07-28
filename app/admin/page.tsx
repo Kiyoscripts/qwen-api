@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useT } from "../I18n";
+import type { Dict } from "@/lib/i18n";
 
 interface TokenRow {
   id: string;
@@ -31,7 +33,7 @@ interface Me {
 // endpoint: a token filed into the wrong pool can only ever fail upstream.
 interface PoolSpec {
   key: "qwen" | "onecompiler";
-  title: string;
+  title: keyof Dict;
   endpoint: string;
   blurb: string;
   placeholder: string;
@@ -41,7 +43,7 @@ interface PoolSpec {
 const POOLS: PoolSpec[] = [
   {
     key: "qwen",
-    title: "Qwen account pool",
+    title: "admin_qwen_pool",
     endpoint: "/api/admin/tokens",
     blurb: "Rotated per request so no single account gets rate-limited or flagged.",
     placeholder: "Paste a single Qwen account token…",
@@ -49,7 +51,7 @@ const POOLS: PoolSpec[] = [
   },
   {
     key: "onecompiler",
-    title: "OneCompiler account pool",
+    title: "admin_oc_pool",
     endpoint: "/api/admin/onecompiler-tokens",
     blurb:
       "Each Free account has a hard daily cap, so the pool rotates away from spent accounts until they reset. Paste the bearer token (a leading “Bearer ” is stripped for you).",
@@ -59,6 +61,7 @@ const POOLS: PoolSpec[] = [
 ];
 
 export default function Admin() {
+  const t = useT();
   const [me, setMe] = useState<Me | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "unauthenticated" | "forbidden">("loading");
   const [error, setError] = useState<string | null>(null);
@@ -199,7 +202,7 @@ export default function Admin() {
   if (state === "loading") {
     return (
       <div className="wrap" style={{ maxWidth: 420 }}>
-        <p className="muted">Checking your access…</p>
+        <p className="muted">{t("admin_checking")}</p>
       </div>
     );
   }
@@ -209,9 +212,9 @@ export default function Admin() {
   if (state === "unauthenticated") {
     return (
       <div className="wrap" style={{ maxWidth: 460 }}>
-        <h1 style={{ fontSize: 28 }}>Admin</h1>
-        <p className="lead" style={{ fontSize: 15 }}>You need to be signed in to manage the pools.</p>
-        <a className="btn" href="/login">Log in with Discord</a>
+        <h1 style={{ fontSize: 28 }}>{t("admin_title")}</h1>
+        <p className="lead" style={{ fontSize: 15 }}>{t("admin_need_signin")}</p>
+        <a className="btn" href="/login">{t("login_with_discord")}</a>
       </div>
     );
   }
@@ -220,12 +223,12 @@ export default function Admin() {
     const who = me?.username || "your account";
     return (
       <div className="wrap" style={{ maxWidth: 460 }}>
-        <h1 style={{ fontSize: 28 }}>Admin</h1>
+        <h1 style={{ fontSize: 28 }}>{t("admin_title")}</h1>
         <p className="lead" style={{ fontSize: 15 }}>
-          Signed in as {who}, but this area is limited to owner and admin accounts.
+          {t("admin_signed_in_as")} {who}, but {t("admin_need_role")}
           {me?.role ? ` Your role is “${me.role}”.` : ""}
         </p>
-        <a className="btn" href="/keys">Back to your dashboard</a>
+        <a className="btn" href="/keys">{t("admin_back_dashboard")}</a>
       </div>
     );
   }
@@ -234,10 +237,10 @@ export default function Admin() {
 
   return (
     <div className="wrap" style={{ maxWidth: 900 }}>
-      <h1 style={{ fontSize: 28, marginBottom: 4 }}>Admin</h1>
+      <h1 style={{ fontSize: 28, marginBottom: 4 }}>{t("admin_title")}</h1>
       <p className="lead" style={{ fontSize: 14 }}>
-        Signed in as {who}
-        {me?.role ? ` · ${me.role}` : ""} — account pools, issued API keys and bans.
+        {t("admin_signed_in_as")} {who}
+        {me?.role ? ` · ${me.role}` : ""} — {t("admin_subtitle")}
       </p>
       {error && <p className="err">{error}</p>}
 
@@ -247,7 +250,7 @@ export default function Admin() {
         return (
           <section key={pool.key} style={{ marginTop: 28 }}>
             <h2 style={{ marginBottom: 2 }}>
-              {pool.title} ({rows.filter((t) => t.active).length} active / {rows.length})
+              {t(pool.title)} ({rows.filter((t) => t.active).length} active / {rows.length})
             </h2>
             <p className="muted" style={{ fontSize: 13, marginTop: 0, marginBottom: 10 }}>{pool.blurb}</p>
 
@@ -266,45 +269,41 @@ export default function Admin() {
                   value={single[pool.key] || ""}
                   onChange={(e) => setSingle((s) => ({ ...s, [pool.key]: e.target.value }))}
                 />
-                <button className="btn" onClick={() => addToken(pool)} disabled={busy || !(single[pool.key] || "").trim()}>
-                  Add
-                </button>
+                <button className="btn" onClick={() => addToken(pool)} disabled={busy || !(single[pool.key] || "").trim()}>{t("admin_add")}</button>
               </div>
               <textarea
                 className="input"
                 style={{ width: "100%", minHeight: 90, fontFamily: "ui-monospace, monospace", fontSize: 12 }}
-                placeholder="…or bulk add: paste many tokens, one per line"
+                placeholder={t("admin_bulk_placeholder")}
                 value={bulkText}
                 onChange={(e) => setBulk((s) => ({ ...s, [pool.key]: e.target.value }))}
               />
               <div className="row" style={{ marginTop: 8, justifyContent: "flex-end" }}>
                 <span className="muted" style={{ alignSelf: "center", fontSize: 12 }}>
-                  {bulkText.trim() ? `${bulkText.split(/\r?\n/).filter((l) => l.trim()).length} token(s)` : ""}
+                  {bulkText.trim() ? `${bulkText.split(/\r?\n/).filter((l) => l.trim()).length} t("admin_tokens_count")}` : ""}
                 </span>
-                <button className="btn" onClick={() => addBulk(pool)} disabled={busy || !bulkText.trim()}>
-                  Add all
-                </button>
+                <button className="btn" onClick={() => addBulk(pool)} disabled={busy || !bulkText.trim()}>{t("admin_add_all")}</button>
               </div>
             </div>
 
             <table className="tbl">
               <thead>
-                <tr><th>Label</th><th>Token</th><th>Active</th><th>Last used</th><th>Errors</th><th></th></tr>
+                <tr><th>{t("admin_label")}</th><th>{t("admin_token")}</th><th>{t("admin_active")}</th><th>{t("admin_last_used")}</th><th>{t("admin_errors")}</th><th></th></tr>
               </thead>
               <tbody>
                 {rows.length === 0 && <tr><td colSpan={6} className="muted">{pool.emptyNote}</td></tr>}
-                {rows.map((t) => (
-                  <tr key={t.id}>
-                    <td>{t.label || <span className="muted">—</span>}</td>
-                    <td><code>{t.masked}</code></td>
+                {rows.map((th) => (
+                  <tr key={th.id}>
+                    <td>{th.label || <span className="muted">—</span>}</td>
+                    <td><code>{th.masked}</code></td>
                     <td>
-                      <button className={`pill ${t.active ? "on" : "off"}`} onClick={() => toggle(pool, t.id, !t.active)}>
-                        {t.active ? "active" : "disabled"}
+                      <button className={`pill ${th.active ? "on" : "off"}`} onClick={() => toggle(pool, th.id, !th.active)}>
+                        {th.active ? t("keys_active") : t("admin_disabled")}
                       </button>
                     </td>
-                    <td className="muted">{t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "—"}</td>
-                    <td className="muted">{t.error_count}</td>
-                    <td><button className="pill del" onClick={() => remove(pool, t.id)}>delete</button></td>
+                    <td className="muted">{th.last_used_at ? new Date(th.last_used_at).toLocaleString() : "—"}</td>
+                    <td className="muted">{th.error_count}</td>
+                    <td><button className="pill del" onClick={() => remove(pool, th.id)}>{t("admin_delete")}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -314,15 +313,15 @@ export default function Admin() {
       })}
 
       <div className="pg-controls" style={{ marginTop: 32, marginBottom: 4, justifyContent: "space-between" }}>
-        <h2 style={{ margin: 0 }}>API keys ({keys.length})</h2>
+        <h2 style={{ margin: 0 }}>{t("admin_api_keys")} ({keys.length})</h2>
         <div className="pg-modes">
-          <button className="pill del" onClick={purgeSpam} disabled={busy}>Delete spam (batch-…)</button>
-          <button className="pill del" onClick={revokeAll} disabled={busy}>Revoke ALL</button>
+          <button className="pill del" onClick={purgeSpam} disabled={busy}>{t("admin_delete_spam")}</button>
+          <button className="pill del" onClick={revokeAll} disabled={busy}>{t("admin_revoke_all")}</button>
         </div>
       </div>
       <table className="tbl">
         <thead>
-          <tr><th>Name</th><th>Prefix</th><th>Requests</th><th>Last used</th><th>Status</th><th></th></tr>
+          <tr><th>{t("admin_name")}</th><th>{t("admin_prefix")}</th><th>{t("admin_requests")}</th><th>{t("admin_last_used")}</th><th>{t("admin_status")}</th><th></th></tr>
         </thead>
         <tbody>
           {keys.map((k) => (
@@ -332,26 +331,26 @@ export default function Admin() {
               <td>{k.request_count}</td>
               <td className="muted">{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "—"}</td>
               <td>{k.revoked ? <span className="pill off">revoked</span> : <span className="pill on">active</span>}</td>
-              <td><button className="pill del" onClick={() => removeKey(k.id)}>delete</button></td>
+              <td><button className="pill del" onClick={() => removeKey(k.id)}>{t("admin_delete")}</button></td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <h2>Blacklisted IPs ({blacklist.length})</h2>
+      <h2>{t("admin_blacklisted")} ({blacklist.length})</h2>
       <table className="tbl">
         <thead>
-          <tr><th>IP</th><th>Reason</th><th>Keys deleted</th><th>When</th><th></th></tr>
+          <tr><th>IP</th><th>{t("admin_reason")}</th><th>{t("admin_keys_deleted")}</th><th>{t("admin_when")}</th><th></th></tr>
         </thead>
         <tbody>
-          {blacklist.length === 0 && <tr><td colSpan={5} className="muted">None. IPs that mass-create keys are auto-banned here.</td></tr>}
+          {blacklist.length === 0 && <tr><td colSpan={5} className="muted">{t("admin_none_banned")}</td></tr>}
           {blacklist.map((b) => (
             <tr key={b.ip}>
               <td><code>{b.ip}</code></td>
               <td className="muted">{b.reason || "—"}</td>
               <td className="muted">{b.keys_deleted}</td>
               <td className="muted">{new Date(b.created_at).toLocaleString()}</td>
-              <td><button className="pill" onClick={() => unban(b.ip)}>unban</button></td>
+              <td><button className="pill" onClick={() => unban(b.ip)}>{t("admin_unban")}</button></td>
             </tr>
           ))}
         </tbody>

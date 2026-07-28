@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useT } from "./I18n";
 
 export interface Me {
   id: string;
@@ -56,11 +57,12 @@ export function AccountChip({ me }: { me: Me }) {
  * its own width while checking so the nav doesn't jump.
  */
 export default function AccountNav() {
+  const t = useT();
   const me = useMe();
   if (me === undefined) return <span className="nav-acct-ph" aria-hidden="true" />;
-  if (!me) return <a className="g-btn" href="/login">Log in</a>;
+  if (!me) return <a className="g-btn" href="/login">{t("nav_login")}</a>;
   return (
-    <a className="nav-acct" href="/keys" title="Open your dashboard">
+    <a className="nav-acct" href="/keys" title={t("chat_open_dashboard")}>
       <AccountChip me={me} />
     </a>
   );

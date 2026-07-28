@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CaretDown, Check } from "@phosphor-icons/react";
+import { useT } from "./I18n";
 
 export interface SelectOption {
   value: string;
@@ -41,6 +42,7 @@ export default function Select({
   ariaLabel?: string;
   placeholder?: string;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [pos, setPos] = useState<React.CSSProperties>({});
@@ -156,7 +158,7 @@ export default function Select({
       {open &&
         createPortal(
           <div ref={menuRef} className="ui-sel-menu" role="listbox" style={pos} onKeyDown={onKeyDown} tabIndex={-1}>
-            {options.length === 0 && <div className="ui-sel-empty">Nothing to choose from</div>}
+            {options.length === 0 && <div className="ui-sel-empty">{t("select_empty")}</div>}
             {options.map((o, i) => (
               <button
                 key={o.value}
