@@ -8,7 +8,7 @@ import { getModels } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { ONECOMPILER_MODELS, oneCompilerIcon } from "@/lib/onecompiler";
-import { G4F_MODELS, g4fIcon } from "@/lib/g4f";
+import { CRAX_MODELS, craxIcon } from "@/lib/crax";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 
 export const runtime = "nodejs";
@@ -32,7 +32,7 @@ interface Row {
   owner: string;
   icon: string;
   tags: string[];
-  /** Show the provenance warning on this card. See models_g4f_warning. */
+  /** Show the provenance warning on this card. See models_proxy_warning. */
   unverified?: boolean;
 }
 
@@ -72,15 +72,15 @@ async function loadModels(): Promise<Catalogue> {
       icon: oneCompilerIcon(m.id) ?? "⌘",
       tags: tagsFor(["t2t"], false, false),
     });
-  // g4f.dev — text-only, and flagged: these are third-party endpoints of unknown
-  // provenance, so a model's id is a claim about what answers, not a guarantee.
-  for (const m of G4F_MODELS)
+  // crax-gpt aggregator — text-only, and flagged: advertised names on a
+  // third-party relay whose behaviour does not match the models it claims.
+  for (const m of CRAX_MODELS)
     rows.push({
       id: m.id,
       name: m.name,
-      owner: "g4f",
-      icon: g4fIcon(m.upstream),
-      tags: tagsFor(["t2t"], true, false),
+      owner: "crax",
+      icon: craxIcon(m.id),
+      tags: tagsFor(["t2t"], false, false),
       unverified: true,
     });
   // Live Qwen models
@@ -138,7 +138,7 @@ export default async function ModelsPage() {
                 </div>
                 <div className="md"><code>{m.id}</code></div>
                 <div className="lp-tags">{m.tags.map((t) => <span key={t} className="lp-tag">{t}</span>)}</div>
-                {m.unverified && <p className="model-warning">{t("models_g4f_warning")}</p>}
+                {m.unverified && <p className="model-warning">{t("models_proxy_warning")}</p>}
               </div>
             ))}
           </div>

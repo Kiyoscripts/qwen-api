@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getModels } from "@/lib/qwen";
 import { ONECOMPILER_MODELS } from "@/lib/onecompiler";
-import { G4F_MODELS } from "@/lib/g4f";
+import { CRAX_MODELS } from "@/lib/crax";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 import { withTokenFailover } from "@/lib/tokens";
@@ -45,24 +45,23 @@ const oneCompilerEntries = ONECOMPILER_MODELS.map((m) => ({
   capabilities: { vision: false, thinking: false, chat_types: ["t2t"] },
 }));
 
-// g4f.dev models, served anonymously over g4f.space. Only routes verified
-// answering are in the registry, so everything listed here is callable.
+// crax-gpt.vercel.app models.
 //
 // The warning rides on every entry rather than living only on the /models page:
-// most callers read this endpoint and never see the site, and an id like
-// `gpt-oss:120b` is a claim by an unaccountable third party about what answers —
-// not something we can verify.
-const G4F_WARNING =
+// most callers read this endpoint and never see the site. These are advertised
+// names on a third-party aggregator, and measured behaviour does not match the
+// models they claim to be — see lib/crax.ts.
+const CRAX_WARNING =
   "WARNING: This is proxied off some unknown site, models MAY be fake, not recommended for day-to-day use.";
 
-const g4fEntries = G4F_MODELS.map((m) => ({
+const craxEntries = CRAX_MODELS.map((m) => ({
   id: m.id,
   object: "model" as const,
   created: 0,
-  owned_by: "g4f",
+  owned_by: "crax",
   display_name: m.name,
-  description: G4F_WARNING,
-  capabilities: { vision: false, thinking: true, chat_types: ["t2t"] },
+  description: CRAX_WARNING,
+  capabilities: { vision: false, thinking: false, chat_types: ["t2t"] },
 }));
 
 export async function GET(req: NextRequest) {
@@ -86,7 +85,7 @@ export async function GET(req: NextRequest) {
     } catch {
       /* Qwen pool unavailable -> still return the static entries */
     }
-    return NextResponse.json({ object: "list", data: [...customEntries, ...mediaEntries, ...oneCompilerEntries, ...g4fEntries, ...qwenEntries] });
+    return NextResponse.json({ object: "list", data: [...customEntries, ...mediaEntries, ...oneCompilerEntries, ...craxEntries, ...qwenEntries] });
   } catch (e: any) {
     return NextResponse.json({ error: { message: e.message, type: "upstream_error" } }, { status: 503 });
   }

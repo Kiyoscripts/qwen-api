@@ -48,7 +48,7 @@ export const tr: Partial<Dict> = {
     "Tüm modeller aynı OpenAI uyumlu uç noktadan kullanılabilir. İsteğinizde model id değerini gönderin.",
   models_degraded:
     "Hesap havuzuna şu anda ulaşılamıyor, bu yüzden Qwen sohbet modelleri listede görünmüyor. API'nin kendisi etkilenmedi — birazdan tekrar deneyin.",
-  models_g4f_warning:
+  models_proxy_warning:
     "UYARI: Bu, bilinmeyen bir site üzerinden yönlendiriliyor, modeller SAHTE olabilir, günlük kullanım için önerilmez.",
   tag_reasoning: "akıl yürütme",
   tag_vision: "görü",

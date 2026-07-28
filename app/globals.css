@@ -1469,9 +1469,10 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
   border: 1px solid rgba(255, 176, 60, .26);
 }
 
-/* Provenance warning on a model card (g4f.dev routes). Same amber language as
-   .models-degraded — both say "this list is not entirely trustworthy" — but
-   sized down to sit inside a card rather than above the grid. */
+/* Provenance warning on a model card (third-party proxied routes). Same amber
+   language as .models-degraded — both say "this list is not entirely
+   trustworthy" — but sized down to sit inside a card rather than above the
+   grid. */
 .model-warning {
   margin: 10px 0 0; padding: 8px 10px;
   border-radius: var(--r-sm, 8px); font-size: 11.5px; line-height: 1.5;

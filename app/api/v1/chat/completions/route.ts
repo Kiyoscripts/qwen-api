@@ -30,13 +30,11 @@ import {
 } from "@/lib/onecompiler";
 import { withOneCompilerFailover } from "@/lib/onecompilerTokens";
 import {
-  isG4FModel,
-  resolveG4FModel,
-  openCompletion as openG4FCompletion,
-  g4fDeltas,
-  quotaFrom,
-  G4FError,
-} from "@/lib/g4f";
+  isCraxModel,
+  openCompletion as openCraxCompletion,
+  craxDeltas,
+  CraxError,
+} from "@/lib/crax";
 import { logUsage } from "@/lib/supabase";
 import { authenticate } from "@/lib/apiAuth";
 import { publicOrigin } from "@/lib/canonicalHost";
@@ -147,10 +145,10 @@ export async function POST(req: NextRequest) {
     return handleOneCompiler({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
   }
 
-  // g4f.dev models. Same rule as above: an exact registry match, so anything
+  // crax-gpt aggregator. Same rule as above: an exact registry match, so anything
   // unknown carries on to the Qwen path.
-  if (isG4FModel(modelId)) {
-    return handleG4F({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
+  if (isCraxModel(modelId)) {
+    return handleCrax({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
   }
 
   // Image / video generation models: generate a result and return it as markdown
@@ -547,14 +545,13 @@ async function handleOneCompiler(args: {
   });
 }
 
-// --- g4f.dev ----------------------------------------------------------------
-// The thinnest path of the three. The upstream already returns OpenAI SSE with a
-// separate reasoning channel, so there is no session, no history flattening and
-// no bespoke framing — deltas are forwarded almost as they arrive.
-//
-// Reasoning is gated on the same QWEN_SHOW_REASONING switch the Qwen path uses:
-// one knob for the whole proxy, rather than a second one meaning the same thing.
-async function handleG4F(args: {
+// --- crax-gpt ---------------------------------------------------------------
+// An OpenAI-compatible aggregator, so this is close to a passthrough. The one
+// thing it does differently from every other provider here: it streams whether or
+// not streaming was asked for, and holds the socket open past `data: [DONE]`.
+// Both are handled inside craxDeltas() — the buffered branch below just
+// reassembles the same stream.
+async function handleCrax(args: {
   messages: OpenAIMessage[];
   modelId: string;
   wantStream: boolean;
@@ -564,43 +561,25 @@ async function handleG4F(args: {
 }) {
   const { messages, modelId, wantStream, hadImage, recordId, body } = args;
 
-  const model = resolveG4FModel(modelId);
-  if (!model) {
-    logUsage(recordId, modelId, hadImage, wantStream, 404);
-    return err(`Model '${modelId}' is not available.`, 404, "model_not_found");
-  }
-
-  // Text-only upstream: there is no attachment field to carry an image, so refuse
-  // rather than silently dropping it from the turn.
+  // Text-only upstream: no attachment field, so refuse rather than silently
+  // dropping the image from the turn.
   if (hadImage) {
     logUsage(recordId, modelId, hadImage, wantStream, 400);
     return err(`Model '${modelId}' does not accept image input.`, 400);
   }
 
-  // Tool calling reuses the same prompt-injection machinery as the other two
-  // providers — it is prompt plus parser, nothing provider-specific — so all
-  // three agree on what counts as a call.
   const toolsOn = hasTools(body);
   const effMessages: OpenAIMessage[] = toolsOn
     ? (preprocessToolMessages(messages, body.tools, body.tool_choice) as OpenAIMessage[])
     : messages;
 
-  let gRes: Response;
+  let cRes: Response;
   try {
-    gRes = await openG4FCompletion({ model: modelId, messages: effMessages, stream: true });
+    cRes = await openCraxCompletion({ model: modelId, messages: effMessages });
   } catch (e: any) {
-    const status = e instanceof G4FError ? e.status : 502;
+    const status = e instanceof CraxError ? e.status : 502;
     logUsage(recordId, modelId, hadImage, wantStream, status);
     return err(e.message || "Upstream error", status, "upstream_error");
-  }
-
-  // Remaining quota is per-IP and shared by every caller on this deploy, so it is
-  // worth seeing in the logs before a 429 makes it obvious.
-  const quota = quotaFrom(gRes);
-  if (quota.remainingRequests !== null && quota.remainingRequests < 25) {
-    console.warn(
-      `[g4f] ${quota.provider || model.route}: ${quota.remainingRequests} requests / ${quota.remainingTokens ?? "?"} tokens left`
-    );
   }
 
   const id = "chatcmpl-" + randomUUID();
@@ -629,9 +608,7 @@ async function handleG4F(args: {
           let toolCalls: OAIToolCall[] = [];
 
           try {
-            for await (const { kind, text } of g4fDeltas(gRes)) {
-              // Reasoning never goes through the tool parser: a <tool_call> block
-              // only counts as a call when the model emits it as its answer.
+            for await (const { kind, text } of craxDeltas(cRes)) {
               if (kind === "reasoning") {
                 if (withReasoning && text) send({ reasoning_content: text });
                 continue;
@@ -665,12 +642,12 @@ async function handleG4F(args: {
           logUsage(recordId, modelId, hadImage, true, 499);
         } finally {
           hb.stop();
-          await gRes.body?.cancel().catch(() => {});
+          await cRes.body?.cancel().catch(() => {});
         }
       },
       async cancel() {
         hb?.stop();
-        await gRes.body?.cancel().catch(() => {});
+        await cRes.body?.cancel().catch(() => {});
       },
     });
     return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
@@ -679,12 +656,12 @@ async function handleG4F(args: {
   let content = "";
   let reasoning = "";
   try {
-    for await (const { kind, text } of g4fDeltas(gRes)) {
+    for await (const { kind, text } of craxDeltas(cRes)) {
       if (kind === "reasoning") reasoning += text;
       else content += text;
     }
   } catch (e: any) {
-    const status = e instanceof G4FError ? e.status : 502;
+    const status = e instanceof CraxError ? e.status : 502;
     logUsage(recordId, modelId, hadImage, false, status);
     return err(e.message, status, "upstream_error");
   }
