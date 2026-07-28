@@ -119,9 +119,9 @@ const BY_ID = new Map(G4F_MODELS.map((m) => [m.id, m]));
  * claim of provenance on cards that are already flagged as unverified.
  *
  * Only prefixes we are confident about are mapped. Anything else gets the neutral
- * chip rather than a plausible-looking wrong badge, which is the failure mode
- * worth avoiding: there is no asset for GLM, MiniMax, Nemotron or Mistral, and
- * borrowing a neighbour's mark would misattribute the model.
+ * chip rather than a plausible-looking wrong badge — borrowing a neighbour's mark
+ * would misattribute the model, which is the failure mode worth avoiding on cards
+ * that already warn the model may not be what it says.
  */
 export function g4fIcon(upstream: string): string {
   const id = upstream.toLowerCase();
@@ -132,6 +132,12 @@ export function g4fIcon(upstream: string): string {
   // Gemini and Gemma are both Google; the Gemini mark is the recognisable one,
   // matching the reasoning already baked into MAKER_ICONS.
   if (id.startsWith("gemini") || id.startsWith("gemma")) return "/gemini.svg";
+  // GLM is Z.ai (formerly Zhipu) — the current mark, not the retired one.
+  if (id.startsWith("glm")) return "/zai.svg";
+  // Nemotron is NVIDIA's model family; the corporate mark is what identifies it.
+  if (id.startsWith("nemotron")) return "/nvidia.svg";
+  if (id.startsWith("minimax")) return "/minimax.svg";
+  if (id.startsWith("mistral")) return "/mistral.svg";
   return "";
 }
 

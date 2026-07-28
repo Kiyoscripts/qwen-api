@@ -20,11 +20,13 @@ import {
   isG4FModel,
   resolveG4FModel,
   openCompletion,
+  g4fIcon,
   resetCooldowns,
   G4FError,
   G4F_MODELS,
   quotaFrom,
 } from "../lib/g4f.ts";
+import { existsSync } from "node:fs";
 
 let passed = 0;
 let failed = 0;
@@ -189,6 +191,35 @@ console.log("g4f stream + registry");
     G4F_MODELS.every((m) => !(m.alternates || []).includes(m.id))
   );
   check("registry covers both routes", new Set(G4F_MODELS.map((m) => m.route)).size === 2);
+}
+
+// Icons: a path that does not resolve renders as a broken image, which looks
+// worse than the neutral chip it was meant to improve on. "" is a valid answer
+// (the page falls back to a chip); a path that is not on disk never is.
+{
+  const missing = G4F_MODELS.map((m) => g4fIcon(m.upstream))
+    .filter((icon) => icon && !existsSync(`public${icon}`));
+  check("every mapped icon exists in public/", missing.length === 0, missing.join(", "));
+
+  // The mark must not contradict the model's actual maker.
+  const cases: Array<[string, string]> = [
+    ["glm-5.2", "/zai.svg"],
+    ["nemotron-3-ultra", "/nvidia.svg"],
+    ["minimax-m3", "/minimax.svg"],
+    ["mistral-large-3:675b", "/mistral.svg"],
+    ["gpt-oss:120b", "/openai.svg"],
+    ["deepseek-v4-pro", "/deepseek.svg"],
+  ];
+  for (const [upstream, expected] of cases) {
+    check(`${upstream} -> ${expected}`, g4fIcon(upstream) === expected, g4fIcon(upstream));
+  }
+
+  // Regression: routing through modelIcon() badged every bare id with Qwen's
+  // mark, asserting a provenance we cannot stand behind.
+  const wrongQwen = G4F_MODELS.filter(
+    (m) => g4fIcon(m.upstream) === "/qwen.svg" && !m.upstream.toLowerCase().startsWith("qwen")
+  );
+  check("no non-Qwen model wears the Qwen mark", wrongQwen.length === 0, wrongQwen.map((m) => m.id).join(", "));
 }
 
 // --- 4. failover on rate limit ----------------------------------------------
