@@ -26,6 +26,7 @@ import { PhaseTimer } from "../PhaseTimer";
 import { useReadAloud, ReadAloudButton } from "./ReadAloud";
 import { DEMO_TOOLS, DEMO_TOOL_NAMES, runDemoTool } from "@/lib/demoTools";
 import { modelIcon } from "@/lib/modelIcons";
+import { useT } from "../I18n";
 
 interface ToolCallView {
   id: string;
@@ -109,6 +110,7 @@ function newConversation(model: string): Conversation {
 }
 
 export default function Chat() {
+  const t = useT();
   const me = useMe();
   const [apiKey, setApiKey] = useState("");
   const [keyDraft, setKeyDraft] = useState("");
@@ -701,7 +703,7 @@ export default function Chat() {
           ref={taRef}
           className="c-input"
           rows={1}
-          placeholder={authed ? "Ask anything" : "Sign in, or add an API key in Settings"}
+          placeholder={authed ? t("chat_placeholder") : "Sign in, or add an API key in Settings"}
           value={input}
           disabled={!authed}
           onChange={(e) => {
@@ -713,8 +715,8 @@ export default function Chat() {
         <div className="c-composer-row">
           <label
             className={`c-icon-btn${canAttach ? "" : " disabled"}`}
-            aria-label={canAttach ? "Attach image" : `${activeModel?.name || "This model"} is text-only`}
-            title={canAttach ? "Attach image" : `${activeModel?.name || "This model"} cannot read images`}
+            aria-label={canAttach ? t("chat_attach") : t("chat_attach_unsupported", { model: activeModel?.name || "This model" })}
+            title={canAttach ? t("chat_attach") : t("chat_attach_unsupported", { model: activeModel?.name || "This model" })}
             aria-disabled={!canAttach}
           >
             <Paperclip size={19} />
@@ -722,8 +724,8 @@ export default function Chat() {
           </label>
           {canPickThink && (
             <div className="c-seg" role="group" aria-label="Reasoning">
-              <button type="button" className={!fast ? "on" : ""} onClick={() => setFast(false)} title="Reason step by step (slower, better)">Think</button>
-              <button type="button" className={fast ? "on" : ""} onClick={() => setFast(true)} title="Skip reasoning (faster)">Fast</button>
+              <button type="button" className={!fast ? "on" : ""} onClick={() => setFast(false)} title="Reason step by step (slower, better)">{t("chat_think")}</button>
+              <button type="button" className={fast ? "on" : ""} onClick={() => setFast(true)} title="Skip reasoning (faster)">{t("chat_fast")}</button>
             </div>
           )}
           {isMediaModel && (
@@ -784,7 +786,7 @@ export default function Chat() {
         </div>
 
         <button className="c-newchat" onClick={startNewChat}>
-          <NotePencil size={17} /> New chat
+          <NotePencil size={17} /> {t("chat_new")}
         </button>
 
         <nav className="c-convos">

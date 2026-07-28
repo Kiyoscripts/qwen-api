@@ -1,6 +1,9 @@
 import Aurora from "../Aurora";
 import ThemeSwitcher from "../Theme";
 import AccountNav from "../Account";
+import CursorToggle from "../CursorToggle";
+import LanguageSelector from "../LanguageSelector";
+import { getT } from "@/lib/i18nServer";
 import { getModels } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
 import { VIRTUAL_MODELS } from "@/lib/media";
@@ -82,6 +85,7 @@ async function loadModels(): Promise<Catalogue> {
 
 export default async function ModelsPage() {
   const { rows: models, degraded } = await loadModels();
+  const t = await getT();
   return (
     <>
       <Aurora />
@@ -89,29 +93,26 @@ export default async function ModelsPage() {
         <nav className="lp-nav glass">
           <a className="lp-brand" href="/" style={{ textDecoration: "none" }}><span className="lp-logo" /> Qwen3.8&nbsp;API</a>
           <div className="lp-links">
-            <a href="/models">Models</a>
-            <a href="/playground">Playground</a>
-            <a href="/chat">Chat</a>
-            <a href="/docs">Docs</a>
+            <a href="/models">{t("nav_models")}</a>
+            <a href="/playground">{t("nav_playground")}</a>
+            <a href="/chat">{t("nav_chat")}</a>
+            <a href="/docs">{t("nav_docs")}</a>
           </div>
           <div className="lp-navcta">
             <ThemeSwitcher compact />
+            <CursorToggle compact />
+            <LanguageSelector compact />
             <AccountNav />
           </div>
         </nav>
 
         <div className="pg-shell">
-          <div className="lp-eyebrow">Models</div>
-          <h1 className="lp-h2">{models.length} models, one key</h1>
+          <div className="lp-eyebrow">{t("models_eyebrow")}</div>
+          <h1 className="lp-h2">{t("models_title", { count: models.length })}</h1>
           {degraded && (
-            <p className="models-degraded">
-              The account pool is unreachable right now, so the live Qwen chat models are missing
-              from this list. They are unaffected on the API itself — try again shortly.
-            </p>
+            <p className="models-degraded">{t("models_degraded")}</p>
           )}
-          <p className="lp-sub" style={{ margin: "10px 0 22px", maxWidth: 640 }}>
-            Every model is available through the same OpenAI-compatible endpoint. Pass the model <code>id</code> in your request.
-          </p>
+          <p className="lp-sub" style={{ margin: "10px 0 22px", maxWidth: 640 }}>{t("models_sub")}</p>
           <div className="lp-models">
             {models.map((m) => (
               <div key={m.id} className="lp-mcard glass">

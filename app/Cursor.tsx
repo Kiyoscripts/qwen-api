@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Custom cursor: a ring that trails the pointer with a dot riding exactly on it.
@@ -36,8 +36,20 @@ const TRAIL_TAU = 0.045;
 export default function Cursor() {
   const ringRef = useRef<HTMLDivElement>(null);
   const dotRef = useRef<HTMLDivElement>(null);
+  // Re-runs the effect when the toggle flips, so turning it off tears the loop
+  // and its listeners down rather than leaving them running invisibly.
+  const [enabled, setEnabled] = useState(true);
 
   useEffect(() => {
+    const read = () => setEnabled(document.documentElement.getAttribute("data-cursor") !== "off");
+    read();
+    const obs = new MutationObserver(read);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-cursor"] });
+    return () => obs.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) return;
     const ring = ringRef.current;
     const dot = dotRef.current;
     if (!ring || !dot) return;
@@ -122,8 +134,9 @@ export default function Cursor() {
       window.removeEventListener("blur", up);
       document.removeEventListener("mouseleave", hide);
     };
-  }, []);
+  }, [enabled]);
 
+  if (!enabled) return null;
   return (
     <>
       <div ref={ringRef} className="cur-ring hide" aria-hidden="true"><i /></div>

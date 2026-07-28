@@ -3,6 +3,9 @@ import ThemeSwitcher from "./Theme";
 import StatsBar from "./StatsBar";
 import { BaseUrl, CopyButton } from "./Copy";
 import AccountNav from "./Account";
+import CursorToggle from "./CursorToggle";
+import LanguageSelector from "./LanguageSelector";
+import { getT } from "@/lib/i18nServer";
 
 const BASE = "https://qwen38-api-production.up.railway.app";
 
@@ -38,7 +41,8 @@ const r = await client.chat.completions.create({
   stream: true,
 });`;
 
-export default function Home() {
+export default async function Home() {
+  const t = await getT();
   return (
     <>
       <Aurora />
@@ -46,28 +50,27 @@ export default function Home() {
         <nav className="lp-nav glass">
           <div className="lp-brand"><span className="lp-logo" /> Qwen3.8&nbsp;API</div>
           <div className="lp-links">
-            <a href="/models">Models</a>
-            <a href="/playground">Playground</a>
-            <a href="/chat">Chat</a>
-            <a href="/docs">Docs</a>
+            <a href="/models">{t("nav_models")}</a>
+            <a href="/playground">{t("nav_playground")}</a>
+            <a href="/chat">{t("nav_chat")}</a>
+            <a href="/docs">{t("nav_docs")}</a>
           </div>
           <div className="lp-navcta">
             <ThemeSwitcher compact />
+            <CursorToggle compact />
+            <LanguageSelector compact />
             <AccountNav />
           </div>
         </nav>
 
         <div className="lp-wrap">
           <section className="lp-hero">
-            <div className="lp-pill glass"><span className="dot" /> OpenAI- and Anthropic-compatible</div>
-            <h1>Qwen and friends,<br /><span className="grad">one keyed API.</span></h1>
-            <p className="lp-sub">
-              Change two lines and reach every model — GPT, Grok, Kimi, Gemma, DeepSeek and Qwen,
-              plus vision, image, video and speech — through the SDK you already use.
-            </p>
+            <div className="lp-pill glass"><span className="dot" /> {t("home_badge")}</div>
+            <h1>{t("home_title_a")}<br /><span className="grad">{t("home_title_b")}</span></h1>
+            <p className="lp-sub">{t("home_sub")}</p>
             <div className="lp-ctarow">
-              <a className="g-btn lg" href="/login">Get an API key</a>
-              <a className="g-btn lg outline" href="/docs">Read the docs</a>
+              <a className="g-btn lg" href="/login">{t("home_cta_key")}</a>
+              <a className="g-btn lg outline" href="/docs">{t("home_cta_docs")}</a>
             </div>
 
             <BaseUrl url={BASE} />
@@ -76,10 +79,10 @@ export default function Home() {
 
           <section id="models">
             <div className="lp-sechead">
-              <div className="lp-eyebrow">01 — Models</div>
-              <a className="lp-seclink" href="/models">See all models →</a>
+              <div className="lp-eyebrow">01 — {t("home_sec_models")}</div>
+              <a className="lp-seclink" href="/models">{t("home_sec_models_all")}</a>
             </div>
-            <h2 className="lp-h2">Everything behind one key</h2>
+            <h2 className="lp-h2">{t("home_sec_models_h")}</h2>
             <div className="lp-models" style={{ marginTop: 26 }}>
               {MODELS.map((m) => (
                 <div key={m.name} className="lp-mcard glass">
@@ -99,9 +102,9 @@ export default function Home() {
 
           <section>
             <div className="lp-sechead">
-              <div className="lp-eyebrow">02 — Capabilities</div>
+              <div className="lp-eyebrow">02 — {t("home_sec_caps")}</div>
             </div>
-            <h2 className="lp-h2">Built like a real API</h2>
+            <h2 className="lp-h2">{t("home_sec_caps_h")}</h2>
             <div className="lp-feats" style={{ marginTop: 26 }}>
               {FEATURES.map((f, i) => (
                 <div key={f.title} className="lp-feat glass">
@@ -115,10 +118,10 @@ export default function Home() {
 
           <section id="quickstart">
             <div className="lp-sechead">
-              <div className="lp-eyebrow">03 — Quickstart</div>
-              <a className="lp-seclink" href="/docs">Full reference →</a>
+              <div className="lp-eyebrow">03 — {t("home_sec_quick")}</div>
+              <a className="lp-seclink" href="/docs">{t("home_sec_quick_all")}</a>
             </div>
-            <h2 className="lp-h2">Two lines to switch</h2>
+            <h2 className="lp-h2">{t("home_sec_quick_h")}</h2>
             <div className="lp-code glass" style={{ marginTop: 26 }}>
               <div className="lp-code-head">
                 <span className="lp-code-dot" style={{ background: "#ff5f57" }} />
@@ -133,13 +136,10 @@ export default function Home() {
 
           <section id="get-a-key" style={{ marginTop: 72 }}>
             <div className="lp-cta glass">
-              <h2>Get an API key</h2>
-              <p>
-                Link your Discord to create keys and manage them from your dashboard — usage,
-                analytics and revocation, all in one place.
-              </p>
+              <h2>{t("home_getkey_h")}</h2>
+              <p>{t("home_getkey_body")}</p>
               <div style={{ marginTop: 22 }}>
-                <a className="g-btn lg" href="/login">Log in with Discord</a>
+                <a className="g-btn lg" href="/login">{t("home_getkey_cta")}</a>
               </div>
             </div>
           </section>
@@ -147,28 +147,28 @@ export default function Home() {
           <footer className="lp-foot">
             <div className="lp-foot-brand">
               <div className="lp-brand"><span className="lp-logo" /> Qwen3.8&nbsp;API</div>
-              <p>An OpenAI- and Anthropic-compatible gateway to Qwen and OneCompiler.</p>
+              <p>{t("home_foot_tagline")}</p>
             </div>
             <div className="lp-foot-cols">
               <div>
-                <h4>Product</h4>
-                <a href="/models">Models</a>
-                <a href="/playground">Playground</a>
-                <a href="/chat">Chat</a>
+                <h4>{t("home_foot_product")}</h4>
+                <a href="/models">{t("nav_models")}</a>
+                <a href="/playground">{t("nav_playground")}</a>
+                <a href="/chat">{t("nav_chat")}</a>
               </div>
               <div>
-                <h4>Developers</h4>
-                <a href="/docs">Docs</a>
+                <h4>{t("home_foot_devs")}</h4>
+                <a href="/docs">{t("nav_docs")}</a>
                 <a href="#quickstart">Quickstart</a>
               </div>
               <div>
-                <h4>Account</h4>
-                <a href="/login">Log in</a>
-                <a href="/keys">Dashboard</a>
+                <h4>{t("home_foot_account")}</h4>
+                <a href="/login">{t("nav_login")}</a>
+                <a href="/keys">{t("nav_dashboard")}</a>
               </div>
             </div>
             <div className="lp-foot-fine">
-              Unofficial. Not affiliated with Alibaba Cloud, Qwen or OneCompiler.
+              {t("home_foot_fine")}
             </div>
           </footer>
         </div>

@@ -94,6 +94,11 @@ function err(message: string, status: number, type = "invalid_request_error") {
   return NextResponse.json({ error: { message, type } }, { status });
 }
 
+// Tool calls in an OpenAI streaming chunk. Shared by every provider path so a
+// client sees the same shape regardless of which backend answered.
+const streamDelta = (tcs: OAIToolCall[]) =>
+  tcs.map((tc, i) => ({ index: i, id: tc.id, type: "function", function: tc.function }));
+
 export async function POST(req: NextRequest) {
   // Either a key, or the session cookie when the request comes from our own UI.
   const record = await authenticate(req);
@@ -121,7 +126,7 @@ export async function POST(req: NextRequest) {
   // than the Qwen one. Exact registry match, so an unknown id falls through to
   // the Qwen path below.
   if (isOneCompilerModel(modelId)) {
-    return handleOneCompiler({ messages, modelId, wantStream, hadImage, recordId: record.id });
+    return handleOneCompiler({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
   }
 
   // Image / video generation models: generate a result and return it as markdown
@@ -198,9 +203,6 @@ export async function POST(req: NextRequest) {
     await Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);
   };
   const withReasoning = showReasoning();
-
-  const streamDelta = (tcs: OAIToolCall[]) =>
-    tcs.map((tc, i) => ({ index: i, id: tc.id, type: "function", function: tc.function }));
 
   // Tools + streaming: stream text token-by-token while pulling out tool calls as
   // they complete. ToolStream is the same machine the buffered path uses, so both
@@ -362,8 +364,9 @@ async function handleOneCompiler(args: {
   wantStream: boolean;
   hadImage: boolean;
   recordId: string;
+  body: any;
 }) {
-  const { messages, modelId, wantStream, hadImage, recordId } = args;
+  const { messages, modelId, wantStream, hadImage, recordId, body } = args;
 
   const model = resolveOneCompilerModel(modelId);
   if (!model) {
@@ -378,13 +381,23 @@ async function handleOneCompiler(args: {
     return err(`Model '${modelId}' does not accept image input.`, 400);
   }
 
+  // Tool calling is emulated exactly as on the Qwen path: the schemas are injected
+  // into the prompt and the model's <tool_call> blocks are parsed back into
+  // OpenAI tool_calls. Nothing about it is Qwen-specific — it is prompt plus
+  // parser — so the same machinery works here, and using the same one means both
+  // providers agree on what counts as a call.
+  const toolsOn = hasTools(body);
+  const effMessages: OpenAIMessage[] = toolsOn
+    ? (preprocessToolMessages(messages, body.tools, body.tool_choice) as OpenAIMessage[])
+    : messages;
+
   // Run through the pool: a capped account must not fail the request while other
   // accounts still have allowance left. Failover happens at stream OPEN, before
   // any bytes reach the client — once we are streaming it is too late to switch.
   let ocRes: Response;
   try {
     ({ result: ocRes } = await withOneCompilerFailover((token) =>
-      openOneCompilerCompletion({ model: modelId, messages, token })
+      openOneCompilerCompletion({ model: modelId, messages: effMessages, token })
     ));
   } catch (e: any) {
     const status = e instanceof OneCompilerError ? e.status : 502;
@@ -398,21 +411,51 @@ async function handleOneCompiler(args: {
   if (wantStream) {
     const encoder = new TextEncoder();
     let hb: ReturnType<typeof keepAlive> | null = null;
+    const registry = toolsOn ? buildRegistry(body.tools) : null;
     const stream = new ReadableStream({
       async start(controller) {
         hb = keepAlive(controller, encoder);
-        const send = (obj: unknown) => { hb!.touch(); controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); };
+        const send = (delta: any, finish: string | null = null) => {
+          hb!.touch();
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
+            )
+          );
+        };
         try {
-          send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
+          send({ role: "assistant" });
+
+          // The parser withholds a <tool_call> block from the text stream while it
+          // accumulates, so a half-written call never reaches the client as prose.
+          const parser = registry ? new ToolStream(registry) : null;
+          let toolCalls: OAIToolCall[] = [];
+
           try {
             for await (const { text } of oneCompilerDeltas(ocRes)) {
-              send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: text }, finish_reason: null }] });
+              if (parser) {
+                const out = parser.push(text);
+                if (out) send({ content: out });
+              } else {
+                send({ content: text });
+              }
+            }
+            if (parser) {
+              const fin = parser.end();
+              if (fin.text) send({ content: fin.text });
+              toolCalls = applyToolPolicy(fin.toolCalls, body, registry!);
             }
           } catch (e: any) {
-            send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: `\n[error: ${e.message}]` }, finish_reason: null }] });
+            // Salvage whatever the parser already resolved before the stream broke.
+            if (parser) {
+              try { toolCalls = applyToolPolicy(parser.end().toolCalls, body, registry!); } catch { /* nothing to salvage */ }
+            }
+            send({ content: `\n[error: ${e.message}]` });
           }
+
           hb.stop();
-          send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
+          if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
+          send({}, toolCalls.length ? "tool_calls" : "stop");
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
           logUsage(recordId, modelId, hadImage, true, 200);
@@ -442,12 +485,24 @@ async function handleOneCompiler(args: {
   }
   logUsage(recordId, modelId, hadImage, false, 200);
 
+  // Buffered path: same parser, so both agree on what counts as a call.
+  const { content: toolContent, toolCalls: parsed } = toolsOn
+    ? extractToolCalls(content, body.tools)
+    : { content: null, toolCalls: [] as OAIToolCall[] };
+  const toolCalls = toolsOn ? applyToolPolicy(parsed, body, buildRegistry(body.tools)) : [];
+
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: toolCalls.length ? toolContent : content,
+  };
+  if (toolCalls.length) message.tool_calls = toolCalls;
+
   return NextResponse.json({
     id,
     object: "chat.completion",
     created,
     model: modelId,
-    choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
+    choices: [{ index: 0, message, finish_reason: toolCalls.length ? "tool_calls" : "stop" }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
 }

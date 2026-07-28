@@ -4,12 +4,13 @@ import { getModels } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { CUSTOM_MODELS } from "@/lib/customModels";
+import { ONECOMPILER_MODELS } from "@/lib/onecompiler";
 
 export const runtime = "nodejs";
 
 // Public landing-page stats. Cached briefly so the auto-refreshing counter on the
 // homepage is cheap even under load.
-//   { poolAccounts, apiKeys, activeKeys24h, models }
+//   { poolAccounts, oneCompilerAccounts, apiKeys, activeKeys24h, models }
 // (A `users` counter gets added here once the account system ships.)
 let cache: { at: number; data: Record<string, number> } | null = null;
 const TTL_MS = 15_000;
@@ -26,8 +27,11 @@ export async function GET() {
   const db = admin();
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-  const [pool, keys, recent, qwenModels] = await Promise.all([
+  const [pool, ocPool, keys, recent, qwenModels] = await Promise.all([
     db.from("qwen_tokens").select("id", { count: "exact", head: true }).eq("active", true),
+    // Counted separately from the Qwen pool: the two rotate independently, so a
+    // combined figure would hide one provider being empty behind the other.
+    db.from("onecompiler_tokens").select("id", { count: "exact", head: true }).eq("active", true),
     db.from("api_keys").select("id", { count: "exact", head: true }),
     // Distinct keys active in the last 24h — dedupe client-side (cheap with the cache).
     db.from("usage_logs").select("api_key_id").gte("created_at", since).limit(20000),
@@ -35,10 +39,11 @@ export async function GET() {
   ]);
 
   const activeKeys24h = new Set((recent.data || []).map((r: any) => r.api_key_id).filter(Boolean)).size;
-  const models = (qwenModels || 0) + VIRTUAL_MODELS.length + CUSTOM_MODELS.length;
+  const models = (qwenModels || 0) + VIRTUAL_MODELS.length + CUSTOM_MODELS.length + ONECOMPILER_MODELS.length;
 
   const data = {
     poolAccounts: pool.count || 0,
+    oneCompilerAccounts: ocPool.count || 0,
     apiKeys: keys.count || 0,
     activeKeys24h,
     models,
