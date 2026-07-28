@@ -1,10 +1,9 @@
 // Flattening a conversation into a single prompt.
 //
-// Neither upstream accepts an OpenAI-style role array. Qwen's endpoint answers
-// "Invalid input too many messages" to anything but a single message, and
-// DeepSeek's takes one `prompt` string. Both keep real roles server-side, in a
-// chat tree addressed by parent message id — so passing history on a stateless
-// request means writing it into that one message.
+// Qwen's endpoint does not accept an OpenAI-style role array: it answers
+// "Invalid input too many messages" to anything but a single message, keeping
+// real roles server-side in a chat tree addressed by parent message id — so
+// passing history on a stateless request means writing it into that one message.
 //
 // The transcript this produces is read by the model as ordinary text, which is
 // what makes the details below matter.

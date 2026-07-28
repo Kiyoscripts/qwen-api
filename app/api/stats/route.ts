@@ -3,7 +3,6 @@ import { admin, cleanupUnlinkedKeys } from "@/lib/supabase";
 import { getModels } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
 import { VIRTUAL_MODELS } from "@/lib/media";
-import { DEEPSEEK_MODELS } from "@/lib/deepseek";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 
 export const runtime = "nodejs";
@@ -36,7 +35,7 @@ export async function GET() {
   ]);
 
   const activeKeys24h = new Set((recent.data || []).map((r: any) => r.api_key_id).filter(Boolean)).size;
-  const models = (qwenModels || 0) + VIRTUAL_MODELS.length + DEEPSEEK_MODELS.length + CUSTOM_MODELS.length;
+  const models = (qwenModels || 0) + VIRTUAL_MODELS.length + CUSTOM_MODELS.length;
 
   const data = {
     poolAccounts: pool.count || 0,

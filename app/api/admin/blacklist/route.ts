@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listBlacklist, blacklistIp, unblacklistIp, deleteKeysByIp } from "@/lib/supabase";
 
+import { requireAdmin } from "@/lib/auth";
+
 export const runtime = "nodejs";
 
-function authorized(req: NextRequest): boolean {
-  const secret = process.env.ADMIN_SECRET;
-  return Boolean(secret) && (req.headers.get("x-admin-secret") || "") === secret;
-}
-
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdmin(req);
+  if (auth.response) return auth.response;
   try {
     return NextResponse.json({ blacklist: await listBlacklist() });
   } catch (e: any) {
@@ -19,7 +17,8 @@ export async function GET(req: NextRequest) {
 
 // Manually blacklist an IP (and delete its keys).
 export async function POST(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdmin(req);
+  if (auth.response) return auth.response;
   let ip = "";
   try {
     ip = String((await req.json())?.ip || "").trim();
@@ -36,7 +35,8 @@ export async function POST(req: NextRequest) {
 
 // Un-blacklist an IP: DELETE ?ip=...
 export async function DELETE(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdmin(req);
+  if (auth.response) return auth.response;
   const ip = req.nextUrl.searchParams.get("ip");
   if (!ip) return NextResponse.json({ error: "ip required" }, { status: 400 });
   try {

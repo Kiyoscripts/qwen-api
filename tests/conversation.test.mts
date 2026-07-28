@@ -1,5 +1,5 @@
 // Collapsing a conversation into one prompt. Neither upstream accepts a role
-// array — Qwen answers "Invalid input too many messages", DeepSeek takes a
+// array — Qwen answers "Invalid input too many messages" and takes a
 // single `prompt` — so history reaches the model as text, and the shape of that
 // text is the only thing separating one speaker's words from another's.
 

@@ -4,7 +4,7 @@ import AccountNav from "../Account";
 import { getModels } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
 import { VIRTUAL_MODELS } from "@/lib/media";
-import { DEEPSEEK_MODELS } from "@/lib/deepseek";
+import { ONECOMPILER_MODELS, oneCompilerIcon } from "@/lib/onecompiler";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 // authenticated call to the account pool, and the production image is built
 // without secrets by design — so a statically generated copy is baked at build
 // time with the live Qwen models missing, leaving only the hardcoded media and
-// DeepSeek entries. getModels() already caches for five minutes in-process, so
+// OneCompiler entries. getModels() already caches for five minutes in-process, so
 // this costs a map lookup rather than an upstream call.
 export const dynamic = "force-dynamic";
 
@@ -57,9 +57,15 @@ async function loadModels(): Promise<Catalogue> {
   // Image / video virtual models
   for (const m of VIRTUAL_MODELS)
     rows.push({ id: m.id, name: m.name, owner: "qwen", icon: "/qwen.svg", tags: m.kind === "image" ? ["image", "edit"] : ["video"] });
-  // DeepSeek
-  for (const m of DEEPSEEK_MODELS)
-    rows.push({ id: m.id, name: m.name, owner: "deepseek", icon: "/deepseek.svg", tags: tagsFor(["t2t"], m.thinking, m.vision) });
+  // OneCompiler free tier — text-only, so every row tags as "text".
+  for (const m of ONECOMPILER_MODELS)
+    rows.push({
+      id: m.id,
+      name: m.name,
+      owner: "onecompiler",
+      icon: oneCompilerIcon(m.id) ?? "⌘",
+      tags: tagsFor(["t2t"], false, false),
+    });
   // Live Qwen models
   try {
     const { result } = await withTokenFailover((t) => getModels(t));
@@ -90,7 +96,6 @@ export default async function ModelsPage() {
           </div>
           <div className="lp-navcta">
             <ThemeSwitcher compact />
-            <a className="ghost" href="/link">Link DeepSeek</a>
             <AccountNav />
           </div>
         </nav>

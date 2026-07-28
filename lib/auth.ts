@@ -65,6 +65,43 @@ export async function currentUser(req: Request): Promise<User | null> {
   return getUserById(s.uid);
 }
 
+// --- authorization ----------------------------------------------------------
+
+/** Roles allowed into the admin dashboard and its API routes. */
+export function isAdminRole(role: Role | null | undefined): boolean {
+  return role === "owner" || role === "admin";
+}
+
+/**
+ * Gate an admin-only route on the caller's account rather than a shared secret.
+ *
+ * A shared password is one credential for everyone: it cannot say who acted, it
+ * cannot be revoked for one person, and it leaks permanently once pasted
+ * anywhere. Roles come from the Discord link flow, so access follows the account
+ * and disappears the moment the role is downgraded.
+ *
+ * Returns the user when authorised, otherwise the Response to send back:
+ * 401 when nobody is signed in (the client should redirect to /login) and 403
+ * when a real account simply lacks the role — collapsing those into one status
+ * makes a permissions problem look like a broken session.
+ */
+export async function requireAdmin(
+  req: Request
+): Promise<{ user: User; response?: undefined } | { user?: undefined; response: Response }> {
+  const user = await currentUser(req);
+  if (!user) {
+    return {
+      response: Response.json({ error: "Not signed in.", type: "unauthenticated" }, { status: 401 }),
+    };
+  }
+  if (!isAdminRole(user.discord_role)) {
+    return {
+      response: Response.json({ error: "Admin access required.", type: "forbidden" }, { status: 403 }),
+    };
+  }
+  return { user };
+}
+
 // Find the account whose login key matches (for login).
 export async function getUserByLoginKey(key: string): Promise<User | null> {
   const { data } = await admin().from("users").select(USER_COLS).eq("login_key_hash", hashLoginKey(key)).maybeSingle();

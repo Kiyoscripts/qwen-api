@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getModels } from "@/lib/qwen";
-import { DEEPSEEK_MODELS } from "@/lib/deepseek";
+import { ONECOMPILER_MODELS } from "@/lib/onecompiler";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 import { withTokenFailover } from "@/lib/tokens";
@@ -33,13 +33,15 @@ const customEntries = CUSTOM_MODELS.map((m) => ({
   capabilities: { vision: true, thinking: true, chat_types: ["t2t"] },
 }));
 
-const deepseekEntries = DEEPSEEK_MODELS.map((m) => ({
+// OneCompiler free-tier models. Its "Premium" models are not in the registry and
+// so are never advertised here.
+const oneCompilerEntries = ONECOMPILER_MODELS.map((m) => ({
   id: m.id,
   object: "model" as const,
   created: 0,
-  owned_by: "deepseek",
+  owned_by: "onecompiler",
   display_name: m.name,
-  capabilities: { vision: m.vision, thinking: m.thinking, chat_types: ["t2t"] },
+  capabilities: { vision: false, thinking: false, chat_types: ["t2t"] },
 }));
 
 export async function GET(req: NextRequest) {
@@ -47,7 +49,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: { message: "Invalid or missing API key.", type: "invalid_request_error" } }, { status: 401 });
   }
   try {
-    // DeepSeek models are always available; Qwen models depend on the account pool.
+    // The static entries are always available; Qwen models depend on the account pool.
     let qwenEntries: any[] = [];
     try {
       const { result: models } = await withTokenFailover((token) => getModels(token));
@@ -61,9 +63,9 @@ export async function GET(req: NextRequest) {
         capabilities: { vision: m.vision, thinking: m.thinking, chat_types: m.chatTypes },
       }));
     } catch {
-      /* Qwen pool unavailable -> still return DeepSeek models */
+      /* Qwen pool unavailable -> still return the static entries */
     }
-    return NextResponse.json({ object: "list", data: [...customEntries, ...mediaEntries, ...deepseekEntries, ...qwenEntries] });
+    return NextResponse.json({ object: "list", data: [...customEntries, ...mediaEntries, ...oneCompilerEntries, ...qwenEntries] });
   } catch (e: any) {
     return NextResponse.json({ error: { message: e.message, type: "upstream_error" } }, { status: 503 });
   }

@@ -5,7 +5,7 @@
 // logged in is enough to use them — no pasting a key into every page.
 //
 // Cookie auth still resolves to a real api_keys row (created once per account,
-// named below), so usage logging, DeepSeek token linkage and revocation all keep
+// named below), so usage logging and revocation all keep
 // working unchanged. The browser never sees that key's plaintext.
 //
 // Not a CSRF hole: qwen_session is SameSite=Lax, which browsers do not attach to

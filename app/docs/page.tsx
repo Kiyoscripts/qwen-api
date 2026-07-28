@@ -99,7 +99,6 @@ export default function DocsPage() {
           </div>
           <div className="lp-navcta">
             <ThemeSwitcher compact />
-            <a className="ghost" href="/link">Link DeepSeek</a>
             <AccountNav />
           </div>
         </nav>
@@ -115,7 +114,7 @@ export default function DocsPage() {
           <main className="docs-main">
             <Section id="start" eyebrow="Docs" title="Getting started">
               <p>
-                One keyed endpoint for Qwen and DeepSeek: chat, reasoning, vision, tool calling, image
+                One keyed endpoint for Qwen and OneCompiler: chat, reasoning, vision, tool calling, image
                 generation and editing, video, and speech. It speaks <b>both</b> the OpenAI and the
                 Anthropic wire formats, so most existing code works after changing a base URL and a key.
               </p>
@@ -292,7 +291,6 @@ export default function DocsPage() {
                   ["qwen3.8-max-preview", "chat", "Flagship. Always reasons, accepts images, supports tools."],
                   ["qwen-image-3.0 / 2.0", "image", "Text-to-image, and editing when given references."],
                   ["qwen-wan", "video", "Text-to-video and image-to-video, roughly 5s clips."],
-                  ["deepseek-v4-*", "chat", "DeepSeek, through your own linked token — see /link."],
                 ]}
               />
             </Section>
@@ -359,7 +357,7 @@ export default function DocsPage() {
             <footer className="lp-foot" style={{ marginTop: 40 }}>
               <div className="lp-foot-brand">
                 <div className="lp-brand"><span className="lp-logo" /> Qwen3.8&nbsp;API</div>
-                <p>Unofficial. Not affiliated with Alibaba Cloud, Qwen or DeepSeek.</p>
+                <p>Unofficial. Not affiliated with Alibaba Cloud, Qwen or OneCompiler.</p>
               </div>
               <div className="lp-foot-cols">
                 <div>
@@ -372,7 +370,6 @@ export default function DocsPage() {
                   <h4>Account</h4>
                   <a href="/login">Log in</a>
                   <a href="/keys">Dashboard</a>
-                  <a href="/link">Link DeepSeek</a>
                 </div>
               </div>
             </footer>

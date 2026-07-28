@@ -20,68 +20,109 @@ interface KeyRow {
   revoked: boolean;
   request_count: number;
 }
+// Shape returned by /api/auth/me — note it flattens the discord_* columns.
+interface Me {
+  id: string;
+  username: string | null;
+  role: string | null;
+}
+
+// The two pools are managed identically but must never share state or an
+// endpoint: a token filed into the wrong pool can only ever fail upstream.
+interface PoolSpec {
+  key: "qwen" | "onecompiler";
+  title: string;
+  endpoint: string;
+  blurb: string;
+  placeholder: string;
+  emptyNote: string;
+}
+
+const POOLS: PoolSpec[] = [
+  {
+    key: "qwen",
+    title: "Qwen account pool",
+    endpoint: "/api/admin/tokens",
+    blurb: "Rotated per request so no single account gets rate-limited or flagged.",
+    placeholder: "Paste a single Qwen account token…",
+    emptyNote: "No pooled tokens yet — the env QWEN_TOKEN is used as fallback.",
+  },
+  {
+    key: "onecompiler",
+    title: "OneCompiler account pool",
+    endpoint: "/api/admin/onecompiler-tokens",
+    blurb:
+      "Each Free account has a hard daily cap, so the pool rotates away from spent accounts until they reset. Paste the bearer token (a leading “Bearer ” is stripped for you).",
+    placeholder: "Paste a single OneCompiler bearer token…",
+    emptyNote: "No pooled tokens yet — the env ONECOMPILER_TOKEN is used as fallback.",
+  },
+];
 
 export default function Admin() {
-  const [secret, setSecret] = useState("");
-  const [unlocked, setUnlocked] = useState(false);
+  const [me, setMe] = useState<Me | null>(null);
+  const [state, setState] = useState<"loading" | "ok" | "unauthenticated" | "forbidden">("loading");
   const [error, setError] = useState<string | null>(null);
-  const [tokens, setTokens] = useState<TokenRow[]>([]);
+  const [pools, setPools] = useState<Record<string, TokenRow[]>>({ qwen: [], onecompiler: [] });
   const [keys, setKeys] = useState<KeyRow[]>([]);
   const [blacklist, setBlacklist] = useState<{ ip: string; reason: string | null; keys_deleted: number; created_at: string }[]>([]);
-  const [newToken, setNewToken] = useState("");
-  const [newLabel, setNewLabel] = useState("");
-  const [bulk, setBulk] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const authFetch = useCallback(
-    (url: string, init: RequestInit = {}) =>
-      fetch(url, { ...init, headers: { ...(init.headers || {}), "x-admin-secret": secret, "Content-Type": "application/json" } }),
-    [secret]
-  );
+  // Per-pool form state, keyed by pool so the two forms cannot bleed into each
+  // other — the failure mode being a Qwen token submitted to OneCompiler.
+  const [single, setSingle] = useState<Record<string, string>>({});
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const [bulk, setBulk] = useState<Record<string, string>>({});
 
+  // Auth now rides on the session cookie, so no header and no stored secret.
   const load = useCallback(async () => {
     setError(null);
-    const [t, k, b] = await Promise.all([
-      authFetch("/api/admin/tokens"),
-      authFetch("/api/admin/keys"),
-      authFetch("/api/admin/blacklist"),
+    const [meRes, ...rest] = await Promise.all([
+      fetch("/api/auth/me"),
+      ...POOLS.map((p) => fetch(p.endpoint)),
+      fetch("/api/admin/keys"),
+      fetch("/api/admin/blacklist"),
     ]);
-    if (t.status === 401) {
-      setUnlocked(false);
-      setError("Wrong password.");
-      return;
-    }
-    setTokens((await t.json()).tokens || []);
-    setKeys((await k.json()).keys || []);
-    setBlacklist((await b.json().catch(() => ({}))).blacklist || []);
-    setUnlocked(true);
-  }, [authFetch]);
 
-  useEffect(() => {
-    const saved = sessionStorage.getItem("qwen_admin_secret");
-    if (saved) setSecret(saved);
+    const poolRes = rest.slice(0, POOLS.length);
+    const [k, b] = rest.slice(POOLS.length);
+
+    if (poolRes[0].status === 401) return setState("unauthenticated");
+    if (poolRes[0].status === 403) {
+      setMe((await meRes.json().catch(() => ({}))).user ?? null);
+      return setState("forbidden");
+    }
+
+    setMe((await meRes.json().catch(() => ({}))).user ?? null);
+    const next: Record<string, TokenRow[]> = {};
+    await Promise.all(
+      POOLS.map(async (p, i) => {
+        next[p.key] = (await poolRes[i].json().catch(() => ({}))).tokens || [];
+      })
+    );
+    setPools(next);
+    setKeys((await k.json().catch(() => ({}))).keys || []);
+    setBlacklist((await b.json().catch(() => ({}))).blacklist || []);
+    setState("ok");
   }, []);
 
-  async function unlock() {
-    setBusy(true);
-    try {
-      await load();
-      if (secret) sessionStorage.setItem("qwen_admin_secret", secret);
-    } finally {
-      setBusy(false);
-    }
-  }
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  async function addToken() {
-    if (!newToken.trim()) return;
+  async function addToken(pool: PoolSpec) {
+    const token = (single[pool.key] || "").trim();
+    if (!token) return;
     setBusy(true);
     try {
-      const r = await authFetch("/api/admin/tokens", { method: "POST", body: JSON.stringify({ token: newToken.trim(), label: newLabel || null }) });
-      if (!r.ok) {
-        setError((await r.json()).error || "Failed to add token");
-      } else {
-        setNewToken("");
-        setNewLabel("");
+      const r = await fetch(pool.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, label: labels[pool.key] || null }),
+      });
+      if (!r.ok) setError((await r.json().catch(() => ({}))).error || "Failed to add token");
+      else {
+        setSingle((s) => ({ ...s, [pool.key]: "" }));
+        setLabels((s) => ({ ...s, [pool.key]: "" }));
         await load();
       }
     } finally {
@@ -89,15 +130,20 @@ export default function Admin() {
     }
   }
 
-  async function addBulk() {
-    if (!bulk.trim()) return;
+  async function addBulk(pool: PoolSpec) {
+    const text = (bulk[pool.key] || "").trim();
+    if (!text) return;
     setBusy(true);
     try {
-      const r = await authFetch("/api/admin/tokens", { method: "POST", body: JSON.stringify({ tokens: bulk }) });
-      const j = await r.json();
+      const r = await fetch(pool.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokens: text }),
+      });
+      const j = await r.json().catch(() => ({}));
       if (!r.ok) setError(j.error || "Bulk add failed");
       else {
-        setBulk("");
+        setBulk((s) => ({ ...s, [pool.key]: "" }));
         setError(null);
       }
       await load();
@@ -105,32 +151,36 @@ export default function Admin() {
       setBusy(false);
     }
   }
+
+  async function toggle(pool: PoolSpec, id: string, active: boolean) {
+    await fetch(pool.endpoint, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, active }),
+    });
+    await load();
+  }
+  async function remove(pool: PoolSpec, id: string) {
+    await fetch(`${pool.endpoint}?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    await load();
+  }
   async function unban(ip: string) {
-    await authFetch(`/api/admin/blacklist?ip=${encodeURIComponent(ip)}`, { method: "DELETE" });
-    await load();
-  }
-  async function toggle(id: string, active: boolean) {
-    await authFetch("/api/admin/tokens", { method: "PATCH", body: JSON.stringify({ id, active }) });
-    await load();
-  }
-  async function remove(id: string) {
-    await authFetch(`/api/admin/tokens?id=${id}`, { method: "DELETE" });
+    await fetch(`/api/admin/blacklist?ip=${encodeURIComponent(ip)}`, { method: "DELETE" });
     await load();
   }
   async function purgeSpam() {
     if (!confirm("Delete all unused keys named 'batch-…' (the spam keys)?")) return;
     setBusy(true);
     try {
-      const r = await authFetch("/api/admin/keys?spam=batch-", { method: "DELETE" });
-      const j = await r.json();
-      setError(r.ok ? null : j.error);
+      const r = await fetch("/api/admin/keys?spam=batch-", { method: "DELETE" });
+      setError(r.ok ? null : (await r.json().catch(() => ({}))).error);
       await load();
     } finally {
       setBusy(false);
     }
   }
   async function removeKey(id: string) {
-    await authFetch(`/api/admin/keys?id=${id}`, { method: "DELETE" });
+    await fetch(`/api/admin/keys?id=${id}`, { method: "DELETE" });
     await load();
   }
   async function revokeAll() {
@@ -138,83 +188,130 @@ export default function Admin() {
     if (!confirm("Are you absolutely sure? This revokes every key including your own.")) return;
     setBusy(true);
     try {
-      const r = await authFetch("/api/admin/keys?all=true", { method: "DELETE" });
-      const j = await r.json();
-      setError(r.ok ? null : j.error);
+      const r = await fetch("/api/admin/keys?all=true", { method: "DELETE" });
+      setError(r.ok ? null : (await r.json().catch(() => ({}))).error);
       await load();
     } finally {
       setBusy(false);
     }
   }
 
-  if (!unlocked) {
+  if (state === "loading") {
     return (
       <div className="wrap" style={{ maxWidth: 420 }}>
-        <h1 style={{ fontSize: 28 }}>Admin</h1>
-        <p className="lead" style={{ fontSize: 15 }}>Enter the admin password to manage the token pool.</p>
-        <div className="row">
-          <input
-            className="input"
-            type="password"
-            placeholder="Admin password"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && unlock()}
-          />
-          <button className="btn" onClick={unlock} disabled={busy || !secret}>Unlock</button>
-        </div>
-        {error && <p className="err">{error}</p>}
+        <p className="muted">Checking your access…</p>
       </div>
     );
   }
 
+  // Not signed in and signed-in-but-not-an-admin are different problems with
+  // different fixes, so they get different screens rather than one "denied".
+  if (state === "unauthenticated") {
+    return (
+      <div className="wrap" style={{ maxWidth: 460 }}>
+        <h1 style={{ fontSize: 28 }}>Admin</h1>
+        <p className="lead" style={{ fontSize: 15 }}>You need to be signed in to manage the pools.</p>
+        <a className="btn" href="/login">Log in with Discord</a>
+      </div>
+    );
+  }
+
+  if (state === "forbidden") {
+    const who = me?.username || "your account";
+    return (
+      <div className="wrap" style={{ maxWidth: 460 }}>
+        <h1 style={{ fontSize: 28 }}>Admin</h1>
+        <p className="lead" style={{ fontSize: 15 }}>
+          Signed in as {who}, but this area is limited to owner and admin accounts.
+          {me?.role ? ` Your role is “${me.role}”.` : ""}
+        </p>
+        <a className="btn" href="/keys">Back to your dashboard</a>
+      </div>
+    );
+  }
+
+  const who = me?.username || "admin";
+
   return (
     <div className="wrap" style={{ maxWidth: 900 }}>
       <h1 style={{ fontSize: 28, marginBottom: 4 }}>Admin</h1>
-      <p className="lead" style={{ fontSize: 14 }}>Pooled Qwen account tokens & issued API keys.</p>
+      <p className="lead" style={{ fontSize: 14 }}>
+        Signed in as {who}
+        {me?.role ? ` · ${me.role}` : ""} — account pools, issued API keys and bans.
+      </p>
       {error && <p className="err">{error}</p>}
 
-      <h2>Qwen token pool ({tokens.filter((t) => t.active).length} active / {tokens.length})</h2>
-      <div className="card" style={{ marginBottom: 12 }}>
-        <div className="row" style={{ marginBottom: 10 }}>
-          <input className="input" placeholder="Label (optional)" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} style={{ maxWidth: 180 }} />
-          <input className="input" placeholder="Paste a single Qwen account token…" value={newToken} onChange={(e) => setNewToken(e.target.value)} />
-          <button className="btn" onClick={addToken} disabled={busy || !newToken.trim()}>Add</button>
-        </div>
-        <textarea
-          className="input"
-          style={{ width: "100%", minHeight: 90, fontFamily: "ui-monospace, monospace", fontSize: 12 }}
-          placeholder="…or bulk add: paste many tokens, one per line"
-          value={bulk}
-          onChange={(e) => setBulk(e.target.value)}
-        />
-        <div className="row" style={{ marginTop: 8, justifyContent: "flex-end" }}>
-          <span className="muted" style={{ alignSelf: "center", fontSize: 12 }}>
-            {bulk.trim() ? `${bulk.split(/\r?\n/).filter((l) => l.trim()).length} token(s)` : ""}
-          </span>
-          <button className="btn" onClick={addBulk} disabled={busy || !bulk.trim()}>Add all</button>
-        </div>
-      </div>
-      <table className="tbl">
-        <thead>
-          <tr><th>Label</th><th>Token</th><th>Active</th><th>Last used</th><th>Errors</th><th></th></tr>
-        </thead>
-        <tbody>
-          {tokens.length === 0 && <tr><td colSpan={6} className="muted">No pooled tokens yet — the env QWEN_TOKEN is used as fallback.</td></tr>}
-          {tokens.map((t) => (
-            <tr key={t.id}>
-              <td>{t.label || <span className="muted">—</span>}</td>
-              <td><code>{t.masked}</code></td>
-              <td>
-                <button className={`pill ${t.active ? "on" : "off"}`} onClick={() => toggle(t.id, !t.active)}>{t.active ? "active" : "disabled"}</button>
-              </td>
-              <td className="muted">{t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "—"}</td>
-              <td className="muted">{t.error_count}</td>
-              <td><button className="pill del" onClick={() => remove(t.id)}>delete</button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {POOLS.map((pool) => {
+        const rows = pools[pool.key] || [];
+        const bulkText = bulk[pool.key] || "";
+        return (
+          <section key={pool.key} style={{ marginTop: 28 }}>
+            <h2 style={{ marginBottom: 2 }}>
+              {pool.title} ({rows.filter((t) => t.active).length} active / {rows.length})
+            </h2>
+            <p className="muted" style={{ fontSize: 13, marginTop: 0, marginBottom: 10 }}>{pool.blurb}</p>
+
+            <div className="card" style={{ marginBottom: 12 }}>
+              <div className="row" style={{ marginBottom: 10 }}>
+                <input
+                  className="input"
+                  placeholder="Label (optional)"
+                  value={labels[pool.key] || ""}
+                  onChange={(e) => setLabels((s) => ({ ...s, [pool.key]: e.target.value }))}
+                  style={{ maxWidth: 180 }}
+                />
+                <input
+                  className="input"
+                  placeholder={pool.placeholder}
+                  value={single[pool.key] || ""}
+                  onChange={(e) => setSingle((s) => ({ ...s, [pool.key]: e.target.value }))}
+                />
+                <button className="btn" onClick={() => addToken(pool)} disabled={busy || !(single[pool.key] || "").trim()}>
+                  Add
+                </button>
+              </div>
+              <textarea
+                className="input"
+                style={{ width: "100%", minHeight: 90, fontFamily: "ui-monospace, monospace", fontSize: 12 }}
+                placeholder="…or bulk add: paste many tokens, one per line"
+                value={bulkText}
+                onChange={(e) => setBulk((s) => ({ ...s, [pool.key]: e.target.value }))}
+              />
+              <div className="row" style={{ marginTop: 8, justifyContent: "flex-end" }}>
+                <span className="muted" style={{ alignSelf: "center", fontSize: 12 }}>
+                  {bulkText.trim() ? `${bulkText.split(/\r?\n/).filter((l) => l.trim()).length} token(s)` : ""}
+                </span>
+                <button className="btn" onClick={() => addBulk(pool)} disabled={busy || !bulkText.trim()}>
+                  Add all
+                </button>
+              </div>
+            </div>
+
+            <table className="tbl">
+              <thead>
+                <tr><th>Label</th><th>Token</th><th>Active</th><th>Last used</th><th>Errors</th><th></th></tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 && <tr><td colSpan={6} className="muted">{pool.emptyNote}</td></tr>}
+                {rows.map((t) => (
+                  <tr key={t.id}>
+                    <td>{t.label || <span className="muted">—</span>}</td>
+                    <td><code>{t.masked}</code></td>
+                    <td>
+                      <button className={`pill ${t.active ? "on" : "off"}`} onClick={() => toggle(pool, t.id, !t.active)}>
+                        {t.active ? "active" : "disabled"}
+                      </button>
+                    </td>
+                    <td className="muted">{t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "—"}</td>
+                    <td className="muted">{t.error_count}</td>
+                    <td><button className="pill del" onClick={() => remove(pool, t.id)}>delete</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        );
+      })}
 
       <div className="pg-controls" style={{ marginTop: 32, marginBottom: 4, justifyContent: "space-between" }}>
         <h2 style={{ margin: 0 }}>API keys ({keys.length})</h2>

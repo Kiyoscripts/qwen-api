@@ -10,7 +10,9 @@ const MODELS = [
   { name: "Qwen3.8 Max Preview", id: "qwen3.8-max-preview", icon: "/qwen.svg", desc: "Flagship reasoning and vision. Streaming, tool calls, 300s ceiling.", tags: ["reasoning", "vision", "tools"] },
   { name: "Qwen Image 3.0 / 2.0", id: "qwen-image-3.0", icon: "/qwen.svg", desc: "Text-to-image and editing. Any aspect ratio, reference images.", tags: ["image", "edit"] },
   { name: "Qwen Wan", id: "qwen-wan", icon: "/qwen.svg", desc: "Text- and image-to-video with live progress. Roughly 5s clips.", tags: ["video"] },
-  { name: "DeepSeek V4", id: "deepseek-v4-pro", icon: "/deepseek.svg", desc: "DeepSeek chat and reasoning, linkable with your own token.", tags: ["chat", "reasoning"] },
+  { name: "GPT 5.4 Mini", id: "openai/gpt-5.4-mini", icon: "/openai.svg", desc: "Fast general chat and coding, served from the OneCompiler pool.", tags: ["chat", "code"] },
+  { name: "Grok 4.3", id: "xai/grok-4.3", icon: "/grok.svg", desc: "Grok for everyday reasoning and code, plus Grok Code Fast 1.", tags: ["chat", "code"] },
+  { name: "Kimi K2.7 Code", id: "moonshotai/kimi-k2.7-code", icon: "/kimi.svg", desc: "Long-context coding model. Qwen3 Coder 480B sits alongside it.", tags: ["code"] },
   { name: "Qwen3-Omni", id: "qwen3-omni-flash", icon: "/qwen.svg", desc: "Around 78 voices of natural text-to-speech, returned as WAV.", tags: ["speech"] },
 ];
 
@@ -19,7 +21,7 @@ const FEATURES = [
   { title: "Anthropic-compatible", body: "/v1/messages speaks the Messages API too, count_tokens included — enough for Claude Code to run against it unmodified." },
   { title: "Reasoning and tools", body: "Toggle thinking per request, read reasoning_content off the stream, and call functions through emulated tool-calling that leaves your system prompt intact." },
   { title: "Image, video and speech", body: "Generate and edit images, render video with Qwen Wan, synthesise speech. One key, one host, no second integration." },
-  { title: "Pooled with failover", body: "Requests rotate across a pool of accounts and fail over automatically, so a single rate-limited account never surfaces as an error." },
+  { title: "Pooled with failover", body: "Qwen and OneCompiler each run their own pool of accounts. Requests rotate and fail over automatically, so one rate-limited or daily-capped account never surfaces as an error." },
   { title: "Keys you can audit", body: "Self-serve keys, hashed at rest and shown once. Per-key request counts, last-used timestamps and one-click revocation." },
 ];
 
@@ -51,7 +53,6 @@ export default function Home() {
           </div>
           <div className="lp-navcta">
             <ThemeSwitcher compact />
-            <a className="ghost" href="/link">Link DeepSeek</a>
             <AccountNav />
           </div>
         </nav>
@@ -59,10 +60,10 @@ export default function Home() {
         <div className="lp-wrap">
           <section className="lp-hero">
             <div className="lp-pill glass"><span className="dot" /> OpenAI- and Anthropic-compatible</div>
-            <h1>Qwen and DeepSeek,<br /><span className="grad">one keyed API.</span></h1>
+            <h1>Qwen and friends,<br /><span className="grad">one keyed API.</span></h1>
             <p className="lp-sub">
-              Change two lines and reach every model — chat, reasoning, vision, image, video and
-              speech — through the SDK you already use.
+              Change two lines and reach every model — GPT, Grok, Kimi, Gemma, DeepSeek and Qwen,
+              plus vision, image, video and speech — through the SDK you already use.
             </p>
             <div className="lp-ctarow">
               <a className="g-btn lg" href="/login">Get an API key</a>
@@ -146,7 +147,7 @@ export default function Home() {
           <footer className="lp-foot">
             <div className="lp-foot-brand">
               <div className="lp-brand"><span className="lp-logo" /> Qwen3.8&nbsp;API</div>
-              <p>An OpenAI- and Anthropic-compatible gateway to Qwen and DeepSeek.</p>
+              <p>An OpenAI- and Anthropic-compatible gateway to Qwen and OneCompiler.</p>
             </div>
             <div className="lp-foot-cols">
               <div>
@@ -159,7 +160,6 @@ export default function Home() {
                 <h4>Developers</h4>
                 <a href="/docs">Docs</a>
                 <a href="#quickstart">Quickstart</a>
-                <a href="/link">Link DeepSeek</a>
               </div>
               <div>
                 <h4>Account</h4>
@@ -168,7 +168,7 @@ export default function Home() {
               </div>
             </div>
             <div className="lp-foot-fine">
-              Unofficial. Not affiliated with Alibaba Cloud, Qwen or DeepSeek.
+              Unofficial. Not affiliated with Alibaba Cloud, Qwen or OneCompiler.
             </div>
           </footer>
         </div>

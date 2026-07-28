@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { AuroraDrive, orbAlpha, RIPPLE_ALPHA, type AuroraState } from "./auroraDrive";
+import { applyTier, createPaceMonitor, initialTier, nextTierDown, TIER_SETTINGS, type PerfTier } from "./perf";
 
 /**
  * The animated backdrop used on every page.
@@ -26,7 +27,6 @@ import { AuroraDrive, orbAlpha, RIPPLE_ALPHA, type AuroraState } from "./auroraD
  */
 export type { AuroraState } from "./auroraDrive";
 
-const DOWN = 4; // render scale divisor
 const MAX_RIPPLES = 8;
 
 type Rgb = readonly [number, number, number];
@@ -82,7 +82,17 @@ export default function Aurora({
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
 
-    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Graphics budget. `tier` can step down mid-session if frames run late; each
+    // step re-reads the settings below, so the loop adapts without remounting.
+    let tier: PerfTier = initialTier();
+    applyTier(tier);
+    let settings = TIER_SETTINGS[tier];
+
+    // `still` means "never schedule another frame". Reduced motion asks for it
+    // outright; the lite tier arrives at the same place from the other side,
+    // having measured that this machine cannot afford the animation.
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let still = reducedMotion || !settings.animate;
 
     // The canvas is opaque, so it — not --bg — is what the eye reads as the page
     // colour. Both must come from the theme or a light theme renders dark text
@@ -106,10 +116,13 @@ export default function Aurora({
     let w = 0;
     let h = 0;
     const resize = () => {
-      w = Math.max(1, Math.round(window.innerWidth / DOWN));
-      h = Math.max(1, Math.round(window.innerHeight / DOWN));
+      w = Math.max(1, Math.round(window.innerWidth / settings.down));
+      h = Math.max(1, Math.round(window.innerHeight / settings.down));
       canvas.width = w;
       canvas.height = h;
+      // The blur is the compositor's cost, not the canvas's, so it scales with
+      // the tier too — this is the line that actually buys frames back.
+      canvas.style.filter = `blur(${settings.blurPx}px) saturate(1.2)`;
     };
     resize();
     const onResize = () => {
@@ -129,7 +142,10 @@ export default function Aurora({
       mx = e.clientX / window.innerWidth;
       my = e.clientY / window.innerHeight;
     };
-    if (!still) window.addEventListener("pointermove", onMove, { passive: true });
+    // Parallax makes the canvas repaint on every pointer move, which drags the
+    // whole blur + backdrop-filter stack with it. Not worth it on a machine that
+    // is already behind, so it is skipped below the top tier.
+    if (!still && tier === "full") window.addEventListener("pointermove", onMove, { passive: true });
 
     const drive = new AuroraDrive(state);
     let seenPulse = pulseRef?.current ?? 0;
@@ -235,14 +251,52 @@ export default function Aurora({
         ctx.stroke();
       }
 
-      if (!still) raf = requestAnimationFrame(draw);
+      if (!still) raf = requestAnimationFrame(tick);
+    };
+
+    // Step down a tier when frames run late, re-reading the budget in place.
+    // Each monitor fires once and the ladder only descends — ending at `lite`,
+    // which stops the loop — so this can make the page cheaper but never
+    // oscillate between two tiers.
+    let monitor = createPaceMonitor(settings.fps, onStruggle);
+    function onStruggle() {
+      const next = nextTierDown(tier);
+      if (!next) return;
+      tier = next;
+      settings = TIER_SETTINGS[tier];
+      applyTier(tier);
+      resize(); // new render scale + blur radius
+      console.info(`[aurora] frames running late — dropping to "${tier}"`);
+      if (settings.animate) {
+        monitor = createPaceMonitor(settings.fps, onStruggle);
+      } else {
+        still = true;
+        cancelAnimationFrame(raf);
+        draw(performance.now()); // leave a correct static frame behind
+      }
+    }
+
+    // Frame gate: rAF fires at the display's rate, so a lower target is met by
+    // skipping frames rather than by drawing faster. Skipped frames cost nothing
+    // downstream — no canvas change means no backdrop-filter re-blur either,
+    // which is where the saving actually lands.
+    let lastDrawn = 0;
+    const tick = (t: number) => {
+      const minGap = settings.fps > 0 ? 1000 / settings.fps - 1 : 0;
+      if (lastDrawn) monitor.sample(t - lastDrawn);
+      if (t - lastDrawn < minGap) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      lastDrawn = t;
+      draw(t);
     };
 
     // Always paint one frame synchronously, so the backdrop is already correct
     // the moment the tab is shown rather than flashing empty. Resizing clears
     // the canvas, so that repaints too.
     draw(performance.now());
-    if (!still) raf = requestAnimationFrame(draw);
+    if (!still) raf = requestAnimationFrame(tick);
 
     return () => {
       cancelAnimationFrame(raf);

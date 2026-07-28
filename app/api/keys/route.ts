@@ -9,6 +9,7 @@ import {
   deleteKeysByIp,
   countKeysByIp,
 } from "@/lib/supabase";
+import { requireAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -47,10 +48,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // When public creation is off, only owner/admin accounts may mint keys. The
+  // gate is the signed-in account's role, not a shared password.
   if (!PUBLIC) {
-    const secret = process.env.ADMIN_SECRET;
-    if (!secret || (req.headers.get("x-admin-secret") || "") !== secret) {
-      return NextResponse.json({ error: "Key creation is currently admin-only." }, { status: 401 });
+    const auth = await requireAdmin(req);
+    if (auth.response) {
+      return NextResponse.json(
+        { error: "Key creation is currently admin-only." },
+        { status: auth.response.status }
+      );
     }
   }
 

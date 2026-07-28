@@ -44,16 +44,6 @@ create table if not exists public.usage_logs (
 create index if not exists usage_logs_api_key_id_idx on public.usage_logs (api_key_id);
 create index if not exists usage_logs_created_at_idx on public.usage_logs (created_at);
 
--- ---------------------------------------------------------------------------
--- DeepSeek "bring your own token" links. Each API key may link its owner's own
--- chat.deepseek.com token (used server-side only, never returned to a client).
--- ---------------------------------------------------------------------------
-create table if not exists public.deepseek_user_tokens (
-  api_key_id  uuid primary key references public.api_keys(id) on delete cascade,
-  token       text not null,
-  linked_at   timestamptz not null default now(),
-  last_error  text
-);
 
 -- ---------------------------------------------------------------------------
 -- Blacklisted IPs (auto-banned for mass key creation, or added by an admin).
@@ -80,14 +70,32 @@ create table if not exists public.qwen_tokens (
 );
 
 -- ---------------------------------------------------------------------------
+-- Pool of OneCompiler account tokens. Deliberately a SEPARATE table from
+-- qwen_tokens rather than one table with a provider column: the two pools have
+-- different credentials (Qwen session token vs OneCompiler bearer JWT), different
+-- exhaustion behaviour (Qwen rotates on rate-limit, OneCompiler on a hard daily
+-- cap) and are managed independently, so a shared table would only invite one
+-- provider's rows to be picked for the other.
+-- ---------------------------------------------------------------------------
+create table if not exists public.onecompiler_tokens (
+  id           uuid primary key default gen_random_uuid(),
+  label        text,
+  token        text not null,
+  active       boolean not null default true,
+  created_at   timestamptz not null default now(),
+  last_used_at timestamptz,
+  error_count  int not null default 0
+);
+
+-- ---------------------------------------------------------------------------
 -- Lock everything down: only the service role (used by the API server) may
 -- access these tables. anon / publishable keys get nothing.
 -- ---------------------------------------------------------------------------
 alter table public.api_keys            enable row level security;
 alter table public.usage_logs          enable row level security;
 alter table public.qwen_tokens         enable row level security;
+alter table public.onecompiler_tokens  enable row level security;
 alter table public.blacklisted_ips     enable row level security;
-alter table public.deepseek_user_tokens enable row level security;
 -- (No policies are created on purpose. Service role bypasses RLS.)
 
 -- ---------------------------------------------------------------------------

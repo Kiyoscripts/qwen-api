@@ -25,6 +25,7 @@ import { useMe, AccountChip } from "../Account";
 import { PhaseTimer } from "../PhaseTimer";
 import { useReadAloud, ReadAloudButton } from "./ReadAloud";
 import { DEMO_TOOLS, DEMO_TOOL_NAMES, runDemoTool } from "@/lib/demoTools";
+import { modelIcon } from "@/lib/modelIcons";
 
 interface ToolCallView {
   id: string;
@@ -150,11 +151,24 @@ export default function Chat() {
   const active = conversations.find((c) => c.id === activeId);
   const messages = active?.messages ?? [];
   const activeModel = models.find((m) => m.id === active?.model);
+  // Image input is offered only where the model can actually read one. Driven by
+  // the model's advertised capability rather than a provider name, so a
+  // text-only model added later is handled without touching this file. The
+  // server rejects images for these models too — this just stops the UI from
+  // inviting an attachment that can only come back as an error.
+  const canAttach = Boolean(activeModel?.vision);
   const isImageModel = (active?.model || "").startsWith("qwen-image");
   const isVideoModel = active?.model === "qwen-wan";
   const isMediaModel = isImageModel || isVideoModel;
   // Think/Fast: thinking-capable chat models, except 3.8 Max Preview (always reasons).
   const canPickThink = (activeModel?.thinking ?? false) && active?.model !== "qwen3.8-max-preview" && !isMediaModel;
+
+  // Switching to a text-only model drops anything already staged: leaving it in
+  // the composer would let it ride along on the next send, where the server can
+  // only reject it.
+  useEffect(() => {
+    if (!canAttach) setImage(null);
+  }, [canAttach]);
 
   // --- boot: restore key + conversations ---
   useEffect(() => {
@@ -663,7 +677,7 @@ export default function Chat() {
           setModelMenu(false);
         }}
       >
-        <img className="c-model-icon" src={m.id.startsWith("deepseek") ? "/deepseek.svg" : "/qwen.svg"} alt="" width={20} height={20} />
+        <img className="c-model-icon" src={modelIcon(m.id)} alt="" width={20} height={20} />
         <span className="c-model-text">
           <span className="c-model-name">{m.name}</span>
           <span className="c-model-desc">{describeModel(m)}</span>
@@ -697,9 +711,14 @@ export default function Chat() {
           onKeyDown={onKeyDown}
         />
         <div className="c-composer-row">
-          <label className="c-icon-btn" aria-label="Attach image">
+          <label
+            className={`c-icon-btn${canAttach ? "" : " disabled"}`}
+            aria-label={canAttach ? "Attach image" : `${activeModel?.name || "This model"} is text-only`}
+            title={canAttach ? "Attach image" : `${activeModel?.name || "This model"} cannot read images`}
+            aria-disabled={!canAttach}
+          >
             <Paperclip size={19} />
-            <input type="file" accept="image/*" hidden onChange={onImage} disabled={!authed} />
+            <input type="file" accept="image/*" hidden onChange={onImage} disabled={!authed || !canAttach} />
           </label>
           {canPickThink && (
             <div className="c-seg" role="group" aria-label="Reasoning">
@@ -943,7 +962,7 @@ export default function Chat() {
                           !m.toolCalls?.length && (
                             <img
                               className="c-gen-logo"
-                              src={active?.model?.startsWith("deepseek") ? "/deepseek.svg" : "/qwen.svg"}
+                              src={modelIcon(active?.model)}
                               alt="Generating response"
                               width={26}
                               height={26}

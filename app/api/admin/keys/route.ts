@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createApiKey, listApiKeys, deleteApiKey, purgeKeysByPrefix, deleteAllApiKeys } from "@/lib/supabase";
 
-export const runtime = "nodejs";
+import { requireAdmin } from "@/lib/auth";
 
-function authorized(req: NextRequest): boolean {
-  const secret = process.env.ADMIN_SECRET;
-  if (!secret) return false;
-  const provided = req.headers.get("x-admin-secret") || "";
-  return provided === secret;
-}
+export const runtime = "nodejs";
 
 // Create a new API key. Returns the raw key ONCE — store it, it can't be shown again.
 export async function POST(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdmin(req);
+  if (auth.response) return auth.response;
   let name: string | null = null;
   try {
     const body = await req.json();
@@ -35,7 +31,8 @@ export async function POST(req: NextRequest) {
 
 // List keys (metadata only, never the raw key).
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdmin(req);
+  if (auth.response) return auth.response;
   try {
     return NextResponse.json({ keys: await listApiKeys() });
   } catch (e: any) {
@@ -48,7 +45,8 @@ export async function GET(req: NextRequest) {
 //   ?spam=<prefix>      -> delete unused keys whose name starts with <prefix> (default "batch-")
 //   ?all=true           -> delete ALL keys
 export async function DELETE(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdmin(req);
+  if (auth.response) return auth.response;
   const p = req.nextUrl.searchParams;
   try {
     if (p.get("all") === "true") {

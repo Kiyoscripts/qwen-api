@@ -292,37 +292,53 @@ export async function deleteQwenToken(id: string) {
   if (error) throw new Error(error.message);
 }
 
-// --- DeepSeek "bring your own token" links ----------------------------------
-// Each API key links its owner's own chat.deepseek.com token, stored in
-// `deepseek_user_tokens` (RLS on, service-role only). Tokens are secrets: they are
-// used server-side and never returned to any client.
+// --- OneCompiler token pool (admin-managed) ---------------------------------
+// Mirrors the Qwen pool above but kept strictly separate: different credential
+// type, different exhaustion behaviour, managed on its own. Nothing here should
+// ever read or write qwen_tokens.
 
-export async function setDeepSeekToken(apiKeyId: string, token: string): Promise<void> {
-  const { error } = await admin()
-    .from("deepseek_user_tokens")
-    .upsert({ api_key_id: apiKeyId, token, linked_at: new Date().toISOString(), last_error: null }, { onConflict: "api_key_id" });
+export async function addOneCompilerToken(label: string | null, token: string) {
+  const { data, error } = await admin()
+    .from("onecompiler_tokens")
+    .insert({ label, token })
+    .select("id, label, active, created_at")
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+// Bulk-insert many tokens at once (one per entry). Returns how many were added.
+export async function addOneCompilerTokens(rows: { label: string | null; token: string }[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const { data, error } = await admin().from("onecompiler_tokens").insert(rows).select("id");
+  if (error) throw new Error(error.message);
+  return data?.length || 0;
+}
+
+// List tokens for the admin dashboard — the raw token is masked, never returned whole.
+export async function listOneCompilerTokens() {
+  const { data, error } = await admin()
+    .from("onecompiler_tokens")
+    .select("id, label, token, active, created_at, last_used_at, error_count")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data || []).map((t) => ({
+    id: t.id,
+    label: t.label,
+    active: t.active,
+    created_at: t.created_at,
+    last_used_at: t.last_used_at,
+    error_count: t.error_count,
+    masked: (t.token || "").slice(0, 6) + "…" + (t.token || "").slice(-4),
+  }));
+}
+
+export async function setOneCompilerTokenActive(id: string, active: boolean) {
+  const { error } = await admin().from("onecompiler_tokens").update({ active }).eq("id", id);
   if (error) throw new Error(error.message);
 }
 
-export async function getDeepSeekToken(apiKeyId: string): Promise<string | null> {
-  if (!supabaseConfigured()) return null;
-  const { data } = await admin().from("deepseek_user_tokens").select("token").eq("api_key_id", apiKeyId).maybeSingle();
-  return data?.token || null;
-}
-
-export async function isDeepSeekLinked(apiKeyId: string): Promise<boolean> {
-  if (!supabaseConfigured()) return false;
-  const { data } = await admin().from("deepseek_user_tokens").select("api_key_id").eq("api_key_id", apiKeyId).maybeSingle();
-  return Boolean(data);
-}
-
-export async function deleteDeepSeekToken(apiKeyId: string): Promise<void> {
-  const { error } = await admin().from("deepseek_user_tokens").delete().eq("api_key_id", apiKeyId);
+export async function deleteOneCompilerToken(id: string) {
+  const { error } = await admin().from("onecompiler_tokens").delete().eq("id", id);
   if (error) throw new Error(error.message);
-}
-
-// Mark a linked token as failing (e.g. expired/banned) so the user sees why.
-export function noteDeepSeekTokenError(apiKeyId: string, message: string) {
-  if (!supabaseConfigured()) return;
-  admin().from("deepseek_user_tokens").update({ last_error: message.slice(0, 200) }).eq("api_key_id", apiKeyId).then(() => {}, () => {});
 }

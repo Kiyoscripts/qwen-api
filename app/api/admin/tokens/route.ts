@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addQwenToken, addQwenTokens, listQwenTokens, setQwenTokenActive, deleteQwenToken } from "@/lib/supabase";
 import { invalidateTokenCache } from "@/lib/tokens";
+import { requireAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-function authorized(req: NextRequest): boolean {
-  const secret = process.env.ADMIN_SECRET;
-  return Boolean(secret) && (req.headers.get("x-admin-secret") || "") === secret;
-}
-
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdmin(req);
+  if (auth.response) return auth.response;
   try {
     return NextResponse.json({ tokens: await listQwenTokens() });
   } catch (e: any) {
@@ -19,7 +16,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdmin(req);
+  if (auth.response) return auth.response;
   let body: any;
   try {
     body = await req.json();
@@ -58,7 +56,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdmin(req);
+  if (auth.response) return auth.response;
   let body: any;
   try {
     body = await req.json();
@@ -76,7 +75,8 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdmin(req);
+  if (auth.response) return auth.response;
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   try {

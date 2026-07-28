@@ -22,17 +22,14 @@ import { resolveWatermark, buildMediaUrl } from "@/lib/watermark";
 import { hasTools, preprocessToolMessages, buildRegistry, ToolStream, extractToolCalls, applyToolPolicy, type OAIToolCall } from "@/lib/tools";
 import { customModel, systemPromptFor } from "@/lib/customModels";
 import {
-  isDeepSeekModel,
-  resolveDeepSeekModel,
-  createSession,
-  deleteSession,
-  openCompletion as openDeepSeekCompletion,
-  deepseekDeltas,
-  collapseMessages,
-  uploadImages as uploadDeepSeekImages,
-  DeepSeekError,
-} from "@/lib/deepseek";
-import { logUsage, getDeepSeekToken, noteDeepSeekTokenError } from "@/lib/supabase";
+  isOneCompilerModel,
+  resolveOneCompilerModel,
+  openCompletion as openOneCompilerCompletion,
+  oneCompilerDeltas,
+  OneCompilerError,
+} from "@/lib/onecompiler";
+import { withOneCompilerFailover } from "@/lib/onecompilerTokens";
+import { logUsage } from "@/lib/supabase";
 import { authenticate } from "@/lib/apiAuth";
 import { publicOrigin } from "@/lib/canonicalHost";
 import { randomUUID } from "node:crypto";
@@ -120,10 +117,11 @@ export async function POST(req: NextRequest) {
 
   const hadImage = imageUrlsIn(messages[messages.length - 1]).length > 0;
 
-  // DeepSeek models are served by a separate reverse-engineered backend
-  // (chat.deepseek.com) rather than the Qwen account pool.
-  if (isDeepSeekModel(modelId)) {
-    return handleDeepSeek({ messages, modelId, wantStream, hadImage, thinking: body.thinking === true, recordId: record.id });
+  // OneCompiler's free-tier models, served from their own account pool rather
+  // than the Qwen one. Exact registry match, so an unknown id falls through to
+  // the Qwen path below.
+  if (isOneCompilerModel(modelId)) {
+    return handleOneCompiler({ messages, modelId, wantStream, hadImage, recordId: record.id });
   }
 
   // Image / video generation models: generate a result and return it as markdown
@@ -353,69 +351,49 @@ export async function POST(req: NextRequest) {
   });
 }
 
-// --- DeepSeek (chat.deepseek.com) -------------------------------------------
-// Stateless like the Qwen path: create a throwaway session, send the collapsed
-// history as one prompt, stream, then delete the session. DeepThink reasoning is
-// exposed as `reasoning_content`. Images route to the dedicated "vision" model.
-async function handleDeepSeek(args: {
+// --- OneCompiler (onecompiler.com/chat) -------------------------------------
+// The simplest of the paths: the upstream keeps no server-side state and accepts
+// real roles, so there is no session to create, no history to collapse and
+// nothing to clean up. The response body is raw text rather than SSE, and these
+// models expose no reasoning channel, so every delta is answer content.
+async function handleOneCompiler(args: {
   messages: OpenAIMessage[];
   modelId: string;
   wantStream: boolean;
   hadImage: boolean;
-  thinking: boolean;
   recordId: string;
 }) {
-  const { messages, modelId, wantStream, hadImage, thinking, recordId } = args;
+  const { messages, modelId, wantStream, hadImage, recordId } = args;
 
-  const model = resolveDeepSeekModel(modelId);
+  const model = resolveOneCompilerModel(modelId);
   if (!model) {
     logUsage(recordId, modelId, hadImage, wantStream, 404);
     return err(`Model '${modelId}' is not available.`, 404, "model_not_found");
   }
 
-  // "Bring your own token": each key runs on its owner's own DeepSeek account.
-  // Fall back to an owner-wide DEEPSEEK_TOKEN only if the env has one set.
-  const token = (await getDeepSeekToken(recordId)) || process.env.DEEPSEEK_TOKEN || null;
-  if (!token) {
-    logUsage(recordId, modelId, hadImage, wantStream, 402);
-    return err(
-      "No DeepSeek account linked to this API key. Link your DeepSeek token at /link to use the deepseek-* models.",
-      402,
-      "deepseek_not_linked"
-    );
+  // The endpoint takes text only — there is no attachment field to put an image
+  // in, so say so rather than dropping it silently from the turn.
+  if (hadImage) {
+    logUsage(recordId, modelId, hadImage, wantStream, 400);
+    return err(`Model '${modelId}' does not accept image input.`, 400);
   }
 
-  // Only the vision model accepts images, so an image forces model_type "vision".
-  const imageUrls = imageUrlsIn(messages[messages.length - 1]);
-  const modelType = imageUrls.length > 0 ? "vision" : model.modelType;
-  const prompt = collapseMessages(messages);
-
-  let sessionId: string | undefined;
-  let dsRes: Response;
+  // Run through the pool: a capped account must not fail the request while other
+  // accounts still have allowance left. Failover happens at stream OPEN, before
+  // any bytes reach the client — once we are streaming it is too late to switch.
+  let ocRes: Response;
   try {
-    // Uploads + waits for each image to finish parsing (status SUCCESS) before use.
-    const refFileIds = imageUrls.length > 0 ? await uploadDeepSeekImages(token, imageUrls) : [];
-    sessionId = await createSession(token);
-    dsRes = await openDeepSeekCompletion(token, { sessionId, modelType, prompt, refFileIds, thinking });
+    ({ result: ocRes } = await withOneCompilerFailover((token) =>
+      openOneCompilerCompletion({ model: modelId, messages, token })
+    ));
   } catch (e: any) {
-    await deleteSession(token, sessionId);
-    const status = e instanceof DeepSeekError ? e.status : 502;
-    if (status === 401) noteDeepSeekTokenError(recordId, e.message || "token rejected");
+    const status = e instanceof OneCompilerError ? e.status : 502;
     logUsage(recordId, modelId, hadImage, wantStream, status);
     return err(e.message || "Upstream error", status, "upstream_error");
   }
 
   const id = "chatcmpl-" + randomUUID();
   const created = Math.floor(Date.now() / 1000);
-  // Deleting the session must happen exactly once, on every exit path — normal
-  // finish, upstream error, or the client hanging up mid-stream. A leaked
-  // session stays on the user's DeepSeek account forever.
-  let cleaned = false;
-  const cleanup = async () => {
-    if (cleaned) return;
-    cleaned = true;
-    await deleteSession(token, sessionId);
-  };
 
   if (wantStream) {
     const encoder = new TextEncoder();
@@ -427,9 +405,8 @@ async function handleDeepSeek(args: {
         try {
           send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
           try {
-            for await (const { kind, text } of deepseekDeltas(dsRes)) {
-              const delta = kind === "thinking" ? { reasoning_content: text } : { content: text };
-              send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: null }] });
+            for await (const { text } of oneCompilerDeltas(ocRes)) {
+              send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: text }, finish_reason: null }] });
             }
           } catch (e: any) {
             send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { content: `\n[error: ${e.message}]` }, finish_reason: null }] });
@@ -440,52 +417,37 @@ async function handleDeepSeek(args: {
           controller.close();
           logUsage(recordId, modelId, hadImage, true, 200);
         } catch {
-          // The consumer went away: enqueue/close throws once the stream is
-          // closed or errored. There is nobody left to tell, so just record it.
+          // Consumer went away mid-stream; nobody left to tell.
           logUsage(recordId, modelId, hadImage, true, 499);
         } finally {
           hb.stop();
-          // Stop pulling from DeepSeek before dropping the session.
-          await dsRes.body?.cancel().catch(() => {});
-          await cleanup();
+          await ocRes.body?.cancel().catch(() => {});
         }
       },
-      // Fires when the client disconnects: `start` may still be parked on a
-      // read that never resolves, so clean up from here too (cleanup is idempotent).
       async cancel() {
         hb?.stop();
-        await dsRes.body?.cancel().catch(() => {});
-        await cleanup();
+        await ocRes.body?.cancel().catch(() => {});
       },
     });
     return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
   }
 
   let content = "";
-  let reasoning = "";
   try {
-    for await (const { kind, text } of deepseekDeltas(dsRes)) {
-      if (kind === "thinking") reasoning += text;
-      else content += text;
-    }
+    for await (const { text } of oneCompilerDeltas(ocRes)) content += text;
   } catch (e: any) {
-    await cleanup();
-    const status = e instanceof DeepSeekError ? e.status : 502;
+    const status = e instanceof OneCompilerError ? e.status : 502;
     logUsage(recordId, modelId, hadImage, false, status);
     return err(e.message, status, "upstream_error");
   }
-  await cleanup();
   logUsage(recordId, modelId, hadImage, false, 200);
-
-  const message: Record<string, unknown> = { role: "assistant", content };
-  if (reasoning) message.reasoning_content = reasoning;
 
   return NextResponse.json({
     id,
     object: "chat.completion",
     created,
     model: modelId,
-    choices: [{ index: 0, message, finish_reason: "stop" }],
+    choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
 }

@@ -650,6 +650,10 @@ code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, mo
   background: none; border: none; color: #ececec;
 }
 .c-icon-btn:hover { background: #4a4a4a; }
+/* Text-only model: the control stays visible (so the row doesn't reflow when
+   switching models) but reads as unavailable and ignores clicks. */
+.c-icon-btn.disabled { opacity: 0.38; cursor: not-allowed; }
+.c-icon-btn.disabled:hover { background: none; }
 
 .c-send {
   width: 34px; height: 34px; border-radius: 999px; border: none; cursor: pointer;
@@ -787,6 +791,8 @@ code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, mo
 .amb { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .amb canvas {
   position: absolute; inset: -8%; width: 116%; height: 116%; display: block;
+  /* Set inline by Aurora so the radius can follow the performance tier; this is
+     the value used before the script runs. */
   filter: blur(28px) saturate(1.2);
 }
 .amb-grain {
@@ -1464,3 +1470,62 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 .c-action:disabled { opacity: .4; cursor: default; }
 .c-action:disabled:hover { background: none; }
 .ra-spin { animation: spin .9s linear infinite; }
+
+/* ============================================================================
+   Performance tiers.
+
+   Set on <html> by app/perf.ts, either from a stored/heuristic starting point
+   or after the Aurora loop measures frames running late.
+
+   The expensive part of this design is not any one effect, it is the stack: an
+   animated canvas under a large blur, with a dozen backdrop-filter surfaces
+   above it. Because the canvas changes every frame, every one of those surfaces
+   re-blurs every frame too. Dropping backdrop-filter is therefore worth far
+   more than it looks — it removes a per-frame, full-screen cost, not a static
+   one. Glass elements keep their translucent `background`, so they degrade to a
+   flat tint rather than turning invisible.
+   ========================================================================== */
+
+/* Grain is a 4x-viewport tiled layer for a 0.04-opacity texture. First to go. */
+:root[data-perf="reduced"] .amb-grain,
+:root[data-perf="lite"] .amb-grain { display: none; }
+
+/* Measured on a 4-core machine: 26 elements resolve to a live backdrop-filter.
+   Each one re-blurs whenever the canvas beneath it changes, so at 30fps that is
+   26 full-screen blurs a second before any content has been drawn. It is the
+   single largest cost on the page, which is why it goes at `reduced` and not
+   only at `lite` — a machine slow enough to be stepped down is exactly the one
+   that cannot afford it. */
+:root[data-perf="reduced"] *,
+:root[data-perf="reduced"] *::before,
+:root[data-perf="reduced"] *::after,
+:root[data-perf="lite"] *,
+:root[data-perf="lite"] *::before,
+:root[data-perf="lite"] *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Without the blur behind them, glass surfaces lean on their own translucent
+   background, so the variables stop advertising a blur that no longer runs. */
+:root[data-perf="reduced"],
+:root[data-perf="lite"] {
+  --glass-blur: 0px;
+  --glass-sat: 100%;
+}
+
+/* Decorative transitions and looping animations are cheap individually and
+   noisy in aggregate on a machine that is already dropping frames. Anything
+   driving layout or filters is the costly kind, so this stops them wholesale
+   while leaving opacity/colour feedback intact via the shortened duration. */
+:root[data-perf="lite"] * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.06s !important;
+}
+/* The one exception: a spinner that does not spin reads as a hung request. */
+:root[data-perf="lite"] .ra-spin {
+  animation: spin .9s linear infinite !important;
+  animation-duration: .9s !important;
+  animation-iteration-count: infinite !important;
+}
