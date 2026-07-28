@@ -32,8 +32,6 @@ interface Row {
   owner: string;
   icon: string;
   tags: string[];
-  /** Show the provenance warning on this card. See models_proxy_warning. */
-  unverified?: boolean;
 }
 
 function tagsFor(chatTypes: string[], thinking: boolean, vision: boolean): string[] {
@@ -72,8 +70,7 @@ async function loadModels(): Promise<Catalogue> {
       icon: oneCompilerIcon(m.id) ?? "⌘",
       tags: tagsFor(["t2t"], false, false),
     });
-  // crax-gpt aggregator — text-only, and flagged: advertised names on a
-  // third-party relay whose behaviour does not match the models it claims.
+  // crax-gpt aggregator — text-only.
   for (const m of CRAX_MODELS)
     rows.push({
       id: m.id,
@@ -81,7 +78,6 @@ async function loadModels(): Promise<Catalogue> {
       owner: "crax",
       icon: craxIcon(m.id),
       tags: tagsFor(["t2t"], false, false),
-      unverified: true,
     });
   // Live Qwen models
   try {
@@ -138,7 +134,6 @@ export default async function ModelsPage() {
                 </div>
                 <div className="md"><code>{m.id}</code></div>
                 <div className="lp-tags">{m.tags.map((t) => <span key={t} className="lp-tag">{t}</span>)}</div>
-                {m.unverified && <p className="model-warning">{t("models_proxy_warning")}</p>}
               </div>
             ))}
           </div>

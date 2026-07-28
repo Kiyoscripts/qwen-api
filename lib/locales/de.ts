@@ -48,8 +48,6 @@ export const de: Partial<Dict> = {
     "Jedes Modell ist über denselben OpenAI-kompatiblen Endpoint erreichbar. Gib die Modell-id in deiner Anfrage an.",
   models_degraded:
     "Der Account-Pool ist gerade nicht erreichbar, deshalb fehlen die Qwen-Chatmodelle in dieser Liste. Die API selbst ist nicht betroffen — versuch es gleich noch einmal.",
-  models_proxy_warning:
-    "WARNUNG: Dies wird über eine unbekannte Website geleitet, Modelle KÖNNEN gefälscht sein, nicht für den täglichen Gebrauch empfohlen.",
   tag_reasoning: "Reasoning",
   tag_vision: "Vision",
   tag_text: "Text",

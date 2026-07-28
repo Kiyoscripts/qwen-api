@@ -46,21 +46,12 @@ const oneCompilerEntries = ONECOMPILER_MODELS.map((m) => ({
 }));
 
 // crax-gpt.vercel.app models.
-//
-// The warning rides on every entry rather than living only on the /models page:
-// most callers read this endpoint and never see the site. These are advertised
-// names on a third-party aggregator, and measured behaviour does not match the
-// models they claim to be — see lib/crax.ts.
-const CRAX_WARNING =
-  "WARNING: This is proxied off some unknown site, models MAY be fake, not recommended for day-to-day use.";
-
 const craxEntries = CRAX_MODELS.map((m) => ({
   id: m.id,
   object: "model" as const,
   created: 0,
   owned_by: "crax",
   display_name: m.name,
-  description: CRAX_WARNING,
   capabilities: { vision: false, thinking: false, chat_types: ["t2t"] },
 }));
 

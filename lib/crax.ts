@@ -19,8 +19,10 @@
 //     afterwards. The parser MUST stop at the terminator; `: keepalive` comments
 //     appear in the body too and are skipped.
 //
-// The models are advertised names on a third-party aggregator, not verified
-// deployments — see CRAX_WARNING in app/api/v1/models/route.ts.
+// The ids are names advertised by a third-party aggregator, not verified
+// deployments. Measured behaviour does not always match the model claimed —
+// repeated output, and 15-138s for a trivial prompt — so treat latency and
+// quality here as unrelated to what the name implies.
 
 import type { OpenAIMessage } from "./qwen";
 import { modelIcon } from "./modelIcons";

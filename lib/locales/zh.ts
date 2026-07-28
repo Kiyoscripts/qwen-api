@@ -47,8 +47,6 @@ export const zh: Partial<Dict> = {
   models_sub: "所有模型都通过同一个兼容 OpenAI 的接口提供。在请求中传入模型 id 即可。",
   models_degraded:
     "账号池当前不可达，因此列表中缺少 Qwen 的对话模型。API 本身不受影响，请稍后重试。",
-  models_proxy_warning:
-    "警告：此服务通过某个未知网站代理，模型可能是假的，不建议日常使用。",
   tag_reasoning: "推理",
   tag_vision: "视觉",
   tag_text: "文本",
