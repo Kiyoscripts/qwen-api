@@ -23,6 +23,7 @@ import {
   CRAX_MODELS,
 } from "../lib/crax.ts";
 import { ONECOMPILER_MODELS } from "../lib/onecompiler.ts";
+import { modelIcon } from "../lib/modelIcons.ts";
 import { existsSync } from "node:fs";
 
 let passed = 0;
@@ -206,9 +207,37 @@ console.log("crax stream + registry");
   const unbranded = CRAX_MODELS.filter((m) => !craxIcon(m.id));
   check("no model falls back to a neutral chip", unbranded.length === 0, unbranded.map((m) => m.id).join(", "));
 
-  // Regression: a bare id must never inherit the Qwen mark by accident.
+  // Regression: a bare id must never inherit the Qwen mark by accident. This was
+  // the original bug — every crax model rendered as Qwen in the chat picker,
+  // because that surface calls modelIcon() and only /models had been fixed.
   const wrongQwen = CRAX_MODELS.filter((m) => craxIcon(m.id) === "/qwen.svg");
   check("no model wears the Qwen mark", wrongQwen.length === 0, wrongQwen.map((m) => m.id).join(", "));
+
+  // modelIcon() is shared with the chat picker, playground and OneCompiler, so
+  // teaching it bare-id prefixes must not disturb what already worked.
+  const shared: Array<[string, string]> = [
+    // Namespaced ids keep resolving by maker, as before.
+    ["openai/gpt-5.4-mini", "/openai.svg"],
+    ["moonshotai/kimi-k2.6", "/kimi.svg"],
+    ["xai/grok-4.3", "/grok.svg"],
+    ["google/gemma-3.12b", "/gemini.svg"],
+    ["deepseek/deepseek-v4-pro", "/deepseek.svg"],
+    ["qwen/qwen3-coder-480b", "/qwen.svg"],
+    // Bare Qwen ids still fall to the Qwen mark.
+    ["qwen3.8-max-preview", "/qwen.svg"],
+    ["qwen-image-3.0", "/qwen.svg"],
+    // An unknown maker, and an unknown bare id, keep the default.
+    ["acme/whatever", "/qwen.svg"],
+    ["something-unheard-of", "/qwen.svg"],
+  ];
+  for (const [id, expected] of shared) {
+    check(`modelIcon(${id}) -> ${expected}`, modelIcon(id) === expected, modelIcon(id));
+  }
+  check("modelIcon(undefined) is the default", modelIcon(undefined) === "/qwen.svg");
+
+  // Every OneCompiler model must still resolve to a file that exists.
+  const ocMissing = ONECOMPILER_MODELS.map((m) => modelIcon(m.id)).filter((i) => !existsSync(`public${i}`));
+  check("OneCompiler icons all exist", ocMissing.length === 0, ocMissing.join(", "));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

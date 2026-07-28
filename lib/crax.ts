@@ -23,6 +23,7 @@
 // deployments — see CRAX_WARNING in app/api/v1/models/route.ts.
 
 import type { OpenAIMessage } from "./qwen";
+import { modelIcon } from "./modelIcons";
 
 export const CRAX_BASE = process.env.CRAX_BASE || "https://crax-gpt.vercel.app/v1";
 
@@ -90,22 +91,15 @@ export function resolveCraxModel(id: string): CraxModel | null {
 }
 
 /**
- * Brand mark for a model id, or "" for a neutral chip.
+ * Brand mark for a model id.
  *
- * Keyed on the id's own prefix rather than modelIcon(), which maps `maker/model`
- * shapes and falls back to the Qwen mark for anything bare — every id here is
- * bare, so routing through it would badge Claude and Llama models as Qwen.
+ * Delegates rather than keeping its own table: the chat picker and playground
+ * call modelIcon() directly, so a second mapping here would fix /models and leave
+ * every other surface showing the wrong logo — which is exactly what happened.
+ * The bare-id prefixes these models need live in lib/modelIcons.ts.
  */
 export function craxIcon(id: string): string {
-  if (id.startsWith("gpt-")) return "/openai.svg";
-  // Fable is an Anthropic model, so it wears the same mark as Claude.
-  if (id.startsWith("claude-") || id.startsWith("fable-")) return "/claude.svg";
-  if (id.startsWith("gemini-")) return "/gemini.svg";
-  if (id.startsWith("deepseek-")) return "/deepseek.svg";
-  if (id.startsWith("kimi-")) return "/kimi.svg";
-  if (id.startsWith("glm-")) return "/zai.svg";
-  if (id.startsWith("llama-")) return "/meta.svg";
-  return "";
+  return modelIcon(id);
 }
 
 // --- request ----------------------------------------------------------------
