@@ -48,6 +48,8 @@ export const fr: Partial<Dict> = {
     "Tous les modèles sont accessibles via le même endpoint compatible OpenAI. Indiquez l'id du modèle dans votre requête.",
   models_degraded:
     "Le pool de comptes est injoignable pour le moment, les modèles de chat Qwen manquent donc dans cette liste. L'API elle-même n'est pas affectée — réessayez dans un instant.",
+  models_g4f_warning:
+    "AVERTISSEMENT : ceci passe par un site inconnu, les modèles PEUVENT être faux, déconseillé pour un usage quotidien.",
   tag_reasoning: "raisonnement",
   tag_vision: "vision",
   tag_text: "texte",

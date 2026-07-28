@@ -8,6 +8,7 @@ import { getModels } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { ONECOMPILER_MODELS, oneCompilerIcon } from "@/lib/onecompiler";
+import { G4F_MODELS, g4fIcon } from "@/lib/g4f";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 
 export const runtime = "nodejs";
@@ -31,6 +32,8 @@ interface Row {
   owner: string;
   icon: string;
   tags: string[];
+  /** Show the provenance warning on this card. See models_g4f_warning. */
+  unverified?: boolean;
 }
 
 function tagsFor(chatTypes: string[], thinking: boolean, vision: boolean): string[] {
@@ -68,6 +71,17 @@ async function loadModels(): Promise<Catalogue> {
       owner: "onecompiler",
       icon: oneCompilerIcon(m.id) ?? "⌘",
       tags: tagsFor(["t2t"], false, false),
+    });
+  // g4f.dev — text-only, and flagged: these are third-party endpoints of unknown
+  // provenance, so a model's id is a claim about what answers, not a guarantee.
+  for (const m of G4F_MODELS)
+    rows.push({
+      id: m.id,
+      name: m.name,
+      owner: "g4f",
+      icon: g4fIcon(m.upstream),
+      tags: tagsFor(["t2t"], true, false),
+      unverified: true,
     });
   // Live Qwen models
   try {
@@ -124,6 +138,7 @@ export default async function ModelsPage() {
                 </div>
                 <div className="md"><code>{m.id}</code></div>
                 <div className="lp-tags">{m.tags.map((t) => <span key={t} className="lp-tag">{t}</span>)}</div>
+                {m.unverified && <p className="model-warning">{t("models_g4f_warning")}</p>}
               </div>
             ))}
           </div>

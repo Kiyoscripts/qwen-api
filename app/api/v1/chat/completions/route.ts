@@ -29,6 +29,14 @@ import {
   OneCompilerError,
 } from "@/lib/onecompiler";
 import { withOneCompilerFailover } from "@/lib/onecompilerTokens";
+import {
+  isG4FModel,
+  resolveG4FModel,
+  openCompletion as openG4FCompletion,
+  g4fDeltas,
+  quotaFrom,
+  G4FError,
+} from "@/lib/g4f";
 import { logUsage } from "@/lib/supabase";
 import { authenticate } from "@/lib/apiAuth";
 import { publicOrigin } from "@/lib/canonicalHost";
@@ -137,6 +145,12 @@ export async function POST(req: NextRequest) {
   // the Qwen path below.
   if (isOneCompilerModel(modelId)) {
     return handleOneCompiler({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
+  }
+
+  // g4f.dev models. Same rule as above: an exact registry match, so anything
+  // unknown carries on to the Qwen path.
+  if (isG4FModel(modelId)) {
+    return handleG4F({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
   }
 
   // Image / video generation models: generate a result and return it as markdown
@@ -522,6 +536,171 @@ async function handleOneCompiler(args: {
     content: toolCalls.length ? toolContent : content,
   };
   if (toolCalls.length) message.tool_calls = toolCalls;
+
+  return NextResponse.json({
+    id,
+    object: "chat.completion",
+    created,
+    model: modelId,
+    choices: [{ index: 0, message, finish_reason: toolCalls.length ? "tool_calls" : "stop" }],
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  });
+}
+
+// --- g4f.dev ----------------------------------------------------------------
+// The thinnest path of the three. The upstream already returns OpenAI SSE with a
+// separate reasoning channel, so there is no session, no history flattening and
+// no bespoke framing — deltas are forwarded almost as they arrive.
+//
+// Reasoning is gated on the same QWEN_SHOW_REASONING switch the Qwen path uses:
+// one knob for the whole proxy, rather than a second one meaning the same thing.
+async function handleG4F(args: {
+  messages: OpenAIMessage[];
+  modelId: string;
+  wantStream: boolean;
+  hadImage: boolean;
+  recordId: string;
+  body: any;
+}) {
+  const { messages, modelId, wantStream, hadImage, recordId, body } = args;
+
+  const model = resolveG4FModel(modelId);
+  if (!model) {
+    logUsage(recordId, modelId, hadImage, wantStream, 404);
+    return err(`Model '${modelId}' is not available.`, 404, "model_not_found");
+  }
+
+  // Text-only upstream: there is no attachment field to carry an image, so refuse
+  // rather than silently dropping it from the turn.
+  if (hadImage) {
+    logUsage(recordId, modelId, hadImage, wantStream, 400);
+    return err(`Model '${modelId}' does not accept image input.`, 400);
+  }
+
+  // Tool calling reuses the same prompt-injection machinery as the other two
+  // providers — it is prompt plus parser, nothing provider-specific — so all
+  // three agree on what counts as a call.
+  const toolsOn = hasTools(body);
+  const effMessages: OpenAIMessage[] = toolsOn
+    ? (preprocessToolMessages(messages, body.tools, body.tool_choice) as OpenAIMessage[])
+    : messages;
+
+  let gRes: Response;
+  try {
+    gRes = await openG4FCompletion({ model: modelId, messages: effMessages, stream: true });
+  } catch (e: any) {
+    const status = e instanceof G4FError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, wantStream, status);
+    return err(e.message || "Upstream error", status, "upstream_error");
+  }
+
+  // Remaining quota is per-IP and shared by every caller on this deploy, so it is
+  // worth seeing in the logs before a 429 makes it obvious.
+  const quota = quotaFrom(gRes);
+  if (quota.remainingRequests !== null && quota.remainingRequests < 25) {
+    console.warn(
+      `[g4f] ${quota.provider || model.route}: ${quota.remainingRequests} requests / ${quota.remainingTokens ?? "?"} tokens left`
+    );
+  }
+
+  const id = "chatcmpl-" + randomUUID();
+  const created = Math.floor(Date.now() / 1000);
+  const withReasoning = showReasoning();
+
+  if (wantStream) {
+    const encoder = new TextEncoder();
+    let hb: ReturnType<typeof keepAlive> | null = null;
+    const registry = toolsOn ? buildRegistry(body.tools) : null;
+    const stream = new ReadableStream({
+      async start(controller) {
+        hb = keepAlive(controller, encoder);
+        const send = (delta: any, finish: string | null = null) => {
+          hb!.touch();
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
+            )
+          );
+        };
+        try {
+          send({ role: "assistant" });
+
+          const parser = registry ? new ToolStream(registry) : null;
+          let toolCalls: OAIToolCall[] = [];
+
+          try {
+            for await (const { kind, text } of g4fDeltas(gRes)) {
+              // Reasoning never goes through the tool parser: a <tool_call> block
+              // only counts as a call when the model emits it as its answer.
+              if (kind === "reasoning") {
+                if (withReasoning && text) send({ reasoning_content: text });
+                continue;
+              }
+              if (parser) {
+                const out = parser.push(text);
+                if (out) send({ content: out });
+              } else {
+                send({ content: text });
+              }
+            }
+            if (parser) {
+              const fin = parser.end();
+              if (fin.text) send({ content: fin.text });
+              toolCalls = applyToolPolicy(fin.toolCalls, body, registry!);
+            }
+          } catch (e: any) {
+            if (parser) {
+              try { toolCalls = applyToolPolicy(parser.end().toolCalls, body, registry!); } catch { /* nothing to salvage */ }
+            }
+            send({ content: `\n[error: ${e.message}]` });
+          }
+
+          hb.stop();
+          if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
+          send({}, toolCalls.length ? "tool_calls" : "stop");
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          logUsage(recordId, modelId, hadImage, true, 200);
+        } catch {
+          logUsage(recordId, modelId, hadImage, true, 499);
+        } finally {
+          hb.stop();
+          await gRes.body?.cancel().catch(() => {});
+        }
+      },
+      async cancel() {
+        hb?.stop();
+        await gRes.body?.cancel().catch(() => {});
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  }
+
+  let content = "";
+  let reasoning = "";
+  try {
+    for await (const { kind, text } of g4fDeltas(gRes)) {
+      if (kind === "reasoning") reasoning += text;
+      else content += text;
+    }
+  } catch (e: any) {
+    const status = e instanceof G4FError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, false, status);
+    return err(e.message, status, "upstream_error");
+  }
+  logUsage(recordId, modelId, hadImage, false, 200);
+
+  const { content: toolContent, toolCalls: parsed } = toolsOn
+    ? extractToolCalls(content, body.tools)
+    : { content: null, toolCalls: [] as OAIToolCall[] };
+  const toolCalls = toolsOn ? applyToolPolicy(parsed, body, buildRegistry(body.tools)) : [];
+
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: toolCalls.length ? toolContent : content,
+  };
+  if (toolCalls.length) message.tool_calls = toolCalls;
+  if (withReasoning && reasoning) message.reasoning_content = reasoning;
 
   return NextResponse.json({
     id,

@@ -60,6 +60,8 @@ export const en = {
   models_sub: "Every model is available through the same OpenAI-compatible endpoint. Pass the model id in your request.",
   models_degraded:
     "The account pool is unreachable right now, so the live Qwen chat models are missing from this list. They are unaffected on the API itself — try again shortly.",
+  models_g4f_warning:
+    "WARNING: This is proxied off some unknown site, models MAY be fake, not recommended for day-to-day use.",
   tag_reasoning: "reasoning",
   tag_vision: "vision",
   tag_text: "text",

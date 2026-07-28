@@ -48,6 +48,8 @@ export const es: Partial<Dict> = {
     "Todos los modelos están disponibles en el mismo endpoint compatible con OpenAI. Indica el id del modelo en tu petición.",
   models_degraded:
     "El grupo de cuentas no está accesible ahora mismo, así que faltan los modelos de chat de Qwen en esta lista. La API no está afectada: vuelve a intentarlo en un momento.",
+  models_g4f_warning:
+    "ADVERTENCIA: Esto se redirige desde un sitio desconocido; los modelos PUEDEN ser falsos, no se recomienda para uso diario.",
   tag_reasoning: "razonamiento",
   tag_vision: "visión",
   tag_text: "texto",

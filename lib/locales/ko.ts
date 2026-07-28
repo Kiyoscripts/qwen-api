@@ -48,6 +48,8 @@ export const ko: Partial<Dict> = {
     "모든 모델을 같은 OpenAI 호환 엔드포인트로 사용할 수 있습니다. 요청에 모델 id를 넣으세요.",
   models_degraded:
     "지금 계정 풀에 연결할 수 없어 Qwen 채팅 모델이 목록에서 빠져 있습니다. API 자체는 정상입니다. 잠시 후 다시 시도해 주세요.",
+  models_g4f_warning:
+    "경고: 알 수 없는 사이트를 통해 프록시됩니다. 모델이 가짜일 수 있으며 일상적인 사용에는 권장되지 않습니다.",
   tag_reasoning: "추론",
   tag_vision: "비전",
   tag_text: "텍스트",
