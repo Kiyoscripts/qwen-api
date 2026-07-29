@@ -1,4 +1,5 @@
-// crax-gpt.vercel.app client (server-side).
+// crax-gpt client (server-side). Currently the Railway host; the base URL is
+// env-overridable via CRAX_BASE, and it has moved once already.
 //
 // An OpenAI-compatible aggregator: one base URL, one bearer key, standard
 // `{model, messages, stream}` in and SSE frames out. That makes this the
@@ -7,7 +8,7 @@
 //
 //   POST /v1/chat/completions   Authorization: Bearer <key>
 //
-// TWO UPSTREAM QUIRKS, both measured, and both of which hang the caller if missed:
+// THREE UPSTREAM QUIRKS, all measured, and each one silently wrong if missed:
 //
 //  1. IT ALWAYS STREAMS. A request without `stream: true` still comes back as
 //     `text/event-stream` full of `chat.completion.chunk` frames — there is no
@@ -18,16 +19,25 @@
 //     blocks until its timeout — measured at 7.1s to [DONE] against a 90s hang
 //     afterwards. The parser MUST stop at the terminator; `: keepalive` comments
 //     appear in the body too and are skipped.
+//  3. BACKEND FAILURES ARRIVE AS HTTP 200 WITH THE ERROR AS THE ANSWER. The relay
+//     hands its own upstream's failure back as ordinary completion content:
+//     "Error: Unexpected server response: 403", "Error: read ECONNRESET",
+//     "Error: Socks4 Proxy rejected connection", "Error: connect ETIMEDOUT ...",
+//     and "Please wait for the account pool to fill up. ETA: ~2 minutes". Status
+//     codes cannot be trusted to signal failure, so see ERROR_SENTINELS below.
+//
+// It also rate-limits sharply: four concurrent requests earned an immediate
+// 429 "Too many requests. Slow down."
 //
 // The ids are names advertised by a third-party aggregator, not verified
-// deployments. Measured behaviour does not always match the model claimed —
-// repeated output, and 15-138s for a trivial prompt — so treat latency and
-// quality here as unrelated to what the name implies.
+// deployments, so treat latency and quality as unrelated to what the name
+// implies.
 
 import type { OpenAIMessage } from "./qwen";
 import { modelIcon } from "./modelIcons";
 
-export const CRAX_BASE = process.env.CRAX_BASE || "https://crax-gpt.vercel.app/v1";
+export const CRAX_BASE =
+  process.env.CRAX_BASE || "https://overflowing-smile-production-9e13.up.railway.app/v1";
 
 // The upstream's shared demo key. Not a secret — it ships in the clear and is the
 // documented way in — but env-overridable so a rotation does not need a deploy.
@@ -49,9 +59,22 @@ export class CraxError extends Error {
 // OneCompiler's are all `maker/model`, Qwen's all start `qwen`. Matching is exact,
 // so an id that is not listed here falls through to the Qwen path untouched.
 export interface CraxModel {
+  /** What callers ask for. Stable across upstream renames. */
   id: string;
+  /**
+   * What the upstream calls it, when the two differ.
+   *
+   * Three ids were renamed when this provider moved hosts, so the public id is
+   * pinned and the difference absorbed here. Changing the advertised ids instead
+   * would have broken every caller already using them for the sake of an upstream
+   * detail they never see.
+   */
+  upstream?: string;
   name: string;
 }
+
+/** The id to send upstream — the override when present, otherwise the public id. */
+export const upstreamId = (m: CraxModel): string => m.upstream ?? m.id;
 
 export const CRAX_MODELS: CraxModel[] = [
   // OpenAI
@@ -74,10 +97,10 @@ export const CRAX_MODELS: CraxModel[] = [
   { id: "gemini-3-flash", name: "Gemini 3 Flash" },
   { id: "gemini-2-5-flash", name: "Gemini 2.5 Flash" },
   // Others
-  { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+  { id: "deepseek-v4-flash", upstream: "deepseek-flash", name: "DeepSeek V4 Flash" },
   { id: "deepseek-r1", name: "DeepSeek R1" },
-  { id: "kimi-k2-6", name: "Kimi K2.6" },
-  { id: "glm-5-2", name: "GLM 5.2" },
+  { id: "kimi-k2-6", upstream: "oc-kimi-k2-6", name: "Kimi K2.6" },
+  { id: "glm-5-2", upstream: "glm-5.2", name: "GLM 5.2" },
   { id: "llama-3-3-70b-versatile", name: "Llama 3.3 70B Versatile" },
 ];
 
@@ -112,7 +135,8 @@ export interface CraxCompletionOpts {
 }
 
 export async function openCompletion(opts: CraxCompletionOpts): Promise<Response> {
-  if (!resolveCraxModel(opts.model)) {
+  const model = resolveCraxModel(opts.model);
+  if (!model) {
     throw new CraxError(`Model '${opts.model}' is not available.`, 404);
   }
 
@@ -127,7 +151,7 @@ export async function openCompletion(opts: CraxCompletionOpts): Promise<Response
       },
       // `stream` is sent for correctness, but see the header note: the upstream
       // streams either way, so nothing downstream may depend on it being honoured.
-      body: JSON.stringify({ model: opts.model, messages: opts.messages, stream: true }),
+      body: JSON.stringify({ model: upstreamId(model), messages: opts.messages, stream: true }),
     });
   } catch (e: any) {
     throw new CraxError(`Could not reach ${CRAX_BASE}: ${e.message}`, 502);
@@ -162,6 +186,41 @@ function classify(status: number, body: string): CraxError {
 export interface CraxDelta {
   kind: "text" | "reasoning";
   text: string;
+}
+
+/**
+ * Failures the relay hands back as ordinary completion content, HTTP 200.
+ *
+ * All observed against the live host: its own backend connections fail (403,
+ * ECONNRESET, ETIMEDOUT, a rejected SOCKS proxy) and the message becomes the
+ * "answer". Without this, a caller asking Claude a question gets a reply reading
+ * "Error: read ECONNRESET" and no indication anything went wrong.
+ *
+ * 503 rather than 502 for the pool message: it is explicitly temporary and names
+ * its own ETA, so it is worth retrying where a dead proxy connection is not.
+ */
+const ERROR_SENTINELS: Array<{ re: RegExp; status: number }> = [
+  { re: /^please wait for the account pool/i, status: 503 },
+  // "Error: " followed by a network/transport failure, not prose. Anchoring on
+  // the recognised failure words is what keeps this from matching an answer that
+  // merely begins with the word "Error".
+  { re: /^error:\s*(unexpected server response|read econnreset|connect etimedout|socks\d? proxy|client network socket|getaddrinfo|connect econnrefused|socket hang up)/i, status: 502 },
+];
+
+/**
+ * Cap on how much leading content is buffered before deciding.
+ *
+ * The point is to catch a body that is *nothing but* one of these messages. A
+ * real answer that happens to open with "Error:" keeps streaming and so runs past
+ * this bound, which is what stops a legitimate reply being swallowed — the same
+ * rule lib/onecompiler.ts uses for its plain-text sentinels.
+ */
+const SENTINEL_MAX_LEN = 160;
+
+function sentinelFor(text: string): { re: RegExp; status: number } | null {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > SENTINEL_MAX_LEN) return null;
+  return ERROR_SENTINELS.find((s) => s.re.test(trimmed)) || null;
 }
 
 /**
@@ -204,6 +263,34 @@ export async function* craxDeltas(res: Response): AsyncGenerator<CraxDelta> {
     }
   };
 
+  // Leading answer text, held back until there is enough of it to tell an error
+  // message from a real reply. Reasoning deltas pass straight through — the
+  // sentinels only ever appear as content.
+  let head = "";
+  let decided = false;
+
+  /** Release what was held back, once the content is known not to be an error. */
+  const flush = function* (): Generator<CraxDelta> {
+    decided = true;
+    if (head) {
+      yield { kind: "text", text: head };
+      head = "";
+    }
+  };
+
+  /** Gate a delta on the sentinel check, buffering until the answer is clear. */
+  const gate = function* (d: CraxDelta): Generator<CraxDelta> {
+    if (decided || d.kind === "reasoning") {
+      yield d;
+      return;
+    }
+    head += d.text;
+    const hit = sentinelFor(head);
+    if (hit) throw new CraxError(head.trim(), hit.status);
+    // Past the bound it cannot be one of these messages, so stop holding it.
+    if (head.length > SENTINEL_MAX_LEN) yield* flush();
+  };
+
   try {
     outer: while (true) {
       const { done, value } = await reader.read();
@@ -215,8 +302,15 @@ export async function* craxDeltas(res: Response): AsyncGenerator<CraxDelta> {
         const line = buffer.slice(0, nl).trim();
         buffer = buffer.slice(nl + 1);
         if (line.startsWith("data:") && line.slice(5).trim() === "[DONE]") break outer;
-        yield* parse(line);
+        for (const d of parse(line)) yield* gate(d);
       }
+    }
+    // A reply shorter than the bound never tripped the flush, so release it —
+    // and re-check, since this is the first point the whole answer is known.
+    if (!decided && head) {
+      const hit = sentinelFor(head);
+      if (hit) throw new CraxError(head.trim(), hit.status);
+      yield* flush();
     }
   } finally {
     // Cancel rather than drain: the socket does not close on its own.

@@ -1,5 +1,5 @@
-// crax-gpt is OpenAI-shaped, so the parser is thin — but two upstream behaviours
-// make it easy to hang the caller, and both are pinned down here:
+// crax-gpt is OpenAI-shaped, so the parser is thin — but three upstream
+// behaviours make it easy to be silently wrong, and each is pinned down here:
 //
 //  1. THE SOCKET STAYS OPEN AFTER `data: [DONE]`. Measured: 7.1s to the
 //     terminator, then 90s of nothing until the client gave up. A reader that
@@ -9,9 +9,14 @@
 //  2. IT ALWAYS STREAMS, even unasked. There is no JSON-object mode, so the
 //     buffered path reassembles the same SSE frames and must agree with the
 //     streaming one.
+//  3. BACKEND FAILURES COME BACK AS HTTP 200 WITH THE ERROR AS THE ANSWER, so
+//     the sentinels are the only thing between a caller and a reply that reads
+//     "Error: read ECONNRESET" — while a real answer opening with the word
+//     "Error" must still get through.
 //
 // Also guarded: ids are matched exactly (they are bare names like `gpt-5`, and a
-// loose match would swallow ids belonging to Qwen or OneCompiler), and icons
+// loose match would swallow ids belonging to Qwen or OneCompiler), the three
+// upstream-renamed models stay callable under their original ids, and icons
 // resolve to files that exist.
 
 import {
@@ -19,6 +24,7 @@ import {
   isCraxModel,
   resolveCraxModel,
   craxIcon,
+  upstreamId,
   CraxError,
   CRAX_MODELS,
 } from "../lib/crax.ts";
@@ -157,6 +163,66 @@ console.log("crax stream + registry");
   check("error keeps its message", (threw as CraxError)?.message === "upstream exploded");
 }
 
+// --- 3b. errors delivered as HTTP 200 content -------------------------------
+// The relay hands its own backend's failures back as the answer. Without the
+// sentinels, asking Claude a question returns a reply reading
+// "Error: read ECONNRESET" and nothing signals that anything went wrong.
+{
+  const cases: Array<[string, number]> = [
+    ["Error: Unexpected server response: 403", 502],
+    ["Error: read ECONNRESET", 502],
+    ["Error: connect ETIMEDOUT 177.234.210.47:999", 502],
+    ["Error: Socks4 Proxy rejected connection - Unknown", 502],
+    ["Error: Client network socket disconnected before secure TLS", 502],
+    ["Please wait for the account pool to fill up. ETA: ~2 minutes", 503],
+  ];
+  for (const [msg, status] of cases) {
+    let threw: any = null;
+    try {
+      await collect(sse(frame({ content: msg }) + "data: [DONE]\n\n"));
+    } catch (e) {
+      threw = e;
+    }
+    check(`sentinel: ${msg.slice(0, 34)}…`, threw instanceof CraxError && threw.status === status,
+      threw ? `status ${threw.status}` : "did not throw");
+  }
+
+  // Split across deltas, which is how it actually arrives.
+  {
+    let threw: any = null;
+    try {
+      await collect(sse(frame({ content: "Error: read " }) + frame({ content: "ECONNRESET" }) + "data: [DONE]\n\n"));
+    } catch (e) {
+      threw = e;
+    }
+    check("sentinel matches across split deltas", threw instanceof CraxError && threw.status === 502);
+  }
+
+  // A real answer must survive, including one that merely starts with "Error".
+  const keep = [
+    "Error handling in Rust uses Result<T, E> rather than exceptions, which means",
+    "PROXY TEST OK",
+    "Please wait — actually, here is the answer you asked for: 42.",
+  ];
+  for (const text of keep) {
+    const ds = await collect(sse(frame({ content: text }) + "data: [DONE]\n\n"));
+    check(`passes through: ${text.slice(0, 30)}…`, textOf(ds) === text, JSON.stringify(textOf(ds)));
+  }
+
+  // A long answer must not be held back waiting for a verdict.
+  {
+    const long = "x".repeat(400);
+    const ds = await collect(sse(frame({ content: long }) + "data: [DONE]\n\n"));
+    check("long answer emitted intact", textOf(ds) === long, `${textOf(ds).length} chars`);
+  }
+
+  // Reasoning is never gated — sentinels only appear as content.
+  {
+    const ds = await collect(sse(frame({ reasoning_content: "Error: thinking aloud" }) + frame({ content: "ok" }) + "data: [DONE]\n\n"));
+    check("reasoning bypasses the sentinel gate", ds.some((d) => d.kind === "reasoning") && textOf(ds) === "ok");
+  }
+}
+
 // --- 4. registry ------------------------------------------------------------
 {
   check("all 21 requested models present", CRAX_MODELS.length === 21, String(CRAX_MODELS.length));
@@ -184,6 +250,29 @@ console.log("crax stream + registry");
 
   check("unknown id resolves to null", resolveCraxModel("nope") === null);
   check("resolve returns the display name", resolveCraxModel("gpt-4o")?.name === "GPT-4o");
+
+  // Three ids were renamed by the upstream when this provider moved hosts. The
+  // public ids stay put — callers already use them — and the difference is
+  // absorbed by `upstream`, which is what actually goes on the wire.
+  const renamed: Array<[string, string]> = [
+    ["deepseek-v4-flash", "deepseek-flash"],
+    ["kimi-k2-6", "oc-kimi-k2-6"],
+    ["glm-5-2", "glm-5.2"],
+  ];
+  for (const [pub, up] of renamed) {
+    const m = resolveCraxModel(pub);
+    check(`${pub} still advertised`, !!m);
+    check(`${pub} sends ${up} upstream`, !!m && upstreamId(m) === up, m ? upstreamId(m) : "unresolved");
+  }
+
+  // Everything else sends its own id, so the override is never applied blindly.
+  const plain = CRAX_MODELS.filter((m) => !m.upstream);
+  check("un-overridden models send their public id", plain.every((m) => upstreamId(m) === m.id));
+  check("exactly three overrides", CRAX_MODELS.filter((m) => m.upstream).length === 3);
+
+  // The renamed upstream ids must not themselves become callable, or the same
+  // model would be reachable under two names with only one of them advertised.
+  for (const [, up] of renamed) check(`does not claim upstream id ${up}`, !isCraxModel(up));
 }
 
 // --- 5. icons ---------------------------------------------------------------
