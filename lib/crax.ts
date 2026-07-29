@@ -1,5 +1,9 @@
-// crax-gpt client (server-side). Currently the Railway host; the base URL is
-// env-overridable via CRAX_BASE, and it has moved once already.
+// crax-gpt client (server-side).
+//
+// The base URL has moved twice and is env-overridable via CRAX_BASE for that
+// reason. The Vercel domain and the Railway one now front the SAME backend —
+// identical 70-model catalogue, identical behaviour — so a move is a one-line
+// change here rather than anything structural.
 //
 // An OpenAI-compatible aggregator: one base URL, one bearer key, standard
 // `{model, messages, stream}` in and SSE frames out. That makes this the
@@ -36,8 +40,7 @@
 import type { OpenAIMessage } from "./qwen";
 import { modelIcon } from "./modelIcons";
 
-export const CRAX_BASE =
-  process.env.CRAX_BASE || "https://overflowing-smile-production-9e13.up.railway.app/v1";
+export const CRAX_BASE = process.env.CRAX_BASE || "https://crax-gpt.vercel.app/v1";
 
 // The upstream's shared demo key. Not a secret — it ships in the clear and is the
 // documented way in — but env-overridable so a rotation does not need a deploy.
