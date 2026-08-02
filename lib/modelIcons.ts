@@ -20,47 +20,12 @@ export const MAKER_ICONS: Record<string, string> = {
   xai: "/grok.svg",
 };
 
-/**
- * Bare ids, matched on their leading segment.
- *
- * Not every provider namespaces: the crax registry ships ids like `gpt-5-6-sol`
- * and `claude-opus-5` verbatim. Without these rules such ids fall to the default
- * below and every one of them renders as Qwen — which is not a cosmetic slip but
- * a false claim about who made the model.
- *
- * Order matters: the list is scanned in sequence, so a longer prefix must precede
- * any shorter one it starts with.
- */
-const BARE_PREFIX_ICONS: Array<[string, string]> = [
-  ["gpt-", "/openai.svg"],
-  // Fable is Anthropic's, so it wears the Claude mark.
-  ["claude-", "/claude.svg"],
-  ["fable-", "/claude.svg"],
-  ["gemini-", "/gemini.svg"],
-  ["gemma", "/gemini.svg"],
-  ["deepseek", "/deepseek.svg"],
-  ["kimi", "/kimi.svg"],
-  ["glm-", "/zai.svg"],
-  ["llama-", "/meta.svg"],
-  ["grok", "/grok.svg"],
-  ["qwen", "/qwen.svg"],
-];
-
-/**
- * Fallback for bare Qwen ids like `qwen3.8-max-preview`.
- *
- * Qwen is this proxy's primary backend, so an unrecognised bare id is far more
- * likely to be one of its models than anything else.
- */
+/** Fallback for bare (non-namespaced) Qwen ids like `qwen3.8-max-preview`. */
 export const DEFAULT_MODEL_ICON = "/qwen.svg";
 
 export function modelIcon(id: string | undefined | null): string {
   if (!id) return DEFAULT_MODEL_ICON;
   const slash = id.indexOf("/");
-  if (slash > 0) return MAKER_ICONS[id.slice(0, slash)] ?? DEFAULT_MODEL_ICON;
-  const lower = id.toLowerCase();
-  for (const [prefix, icon] of BARE_PREFIX_ICONS) {
-    if (lower.startsWith(prefix)) return icon;
-  }
-  return DEFAULT_MODEL_ICON;
+  if (slash <= 0) return DEFAULT_MODEL_ICON;
+  return MAKER_ICONS[id.slice(0, slash)] ?? DEFAULT_MODEL_ICON;
 }

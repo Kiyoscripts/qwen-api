@@ -8,7 +8,6 @@ import { getModels } from "@/lib/qwen";
 import { withTokenFailover } from "@/lib/tokens";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { ONECOMPILER_MODELS, oneCompilerIcon } from "@/lib/onecompiler";
-import { CRAX_MODELS, craxIcon } from "@/lib/crax";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 
 export const runtime = "nodejs";
@@ -68,15 +67,6 @@ async function loadModels(): Promise<Catalogue> {
       name: m.name,
       owner: "onecompiler",
       icon: oneCompilerIcon(m.id) ?? "⌘",
-      tags: tagsFor(["t2t"], false, false),
-    });
-  // crax-gpt aggregator — text-only.
-  for (const m of CRAX_MODELS)
-    rows.push({
-      id: m.id,
-      name: m.name,
-      owner: "crax",
-      icon: craxIcon(m.id),
       tags: tagsFor(["t2t"], false, false),
     });
   // Live Qwen models

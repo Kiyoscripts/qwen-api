@@ -29,12 +29,6 @@ import {
   OneCompilerError,
 } from "@/lib/onecompiler";
 import { withOneCompilerFailover } from "@/lib/onecompilerTokens";
-import {
-  isCraxModel,
-  openCompletion as openCraxCompletion,
-  craxDeltas,
-  CraxError,
-} from "@/lib/crax";
 import { logUsage } from "@/lib/supabase";
 import { authenticate } from "@/lib/apiAuth";
 import { publicOrigin } from "@/lib/canonicalHost";
@@ -143,12 +137,6 @@ export async function POST(req: NextRequest) {
   // the Qwen path below.
   if (isOneCompilerModel(modelId)) {
     return handleOneCompiler({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
-  }
-
-  // crax-gpt aggregator. Same rule as above: an exact registry match, so anything
-  // unknown carries on to the Qwen path.
-  if (isCraxModel(modelId)) {
-    return handleCrax({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
   }
 
   // Image / video generation models: generate a result and return it as markdown
@@ -534,150 +522,6 @@ async function handleOneCompiler(args: {
     content: toolCalls.length ? toolContent : content,
   };
   if (toolCalls.length) message.tool_calls = toolCalls;
-
-  return NextResponse.json({
-    id,
-    object: "chat.completion",
-    created,
-    model: modelId,
-    choices: [{ index: 0, message, finish_reason: toolCalls.length ? "tool_calls" : "stop" }],
-    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-  });
-}
-
-// --- crax-gpt ---------------------------------------------------------------
-// An OpenAI-compatible aggregator, so this is close to a passthrough. The one
-// thing it does differently from every other provider here: it streams whether or
-// not streaming was asked for, and holds the socket open past `data: [DONE]`.
-// Both are handled inside craxDeltas() — the buffered branch below just
-// reassembles the same stream.
-async function handleCrax(args: {
-  messages: OpenAIMessage[];
-  modelId: string;
-  wantStream: boolean;
-  hadImage: boolean;
-  recordId: string;
-  body: any;
-}) {
-  const { messages, modelId, wantStream, hadImage, recordId, body } = args;
-
-  // Text-only upstream: no attachment field, so refuse rather than silently
-  // dropping the image from the turn.
-  if (hadImage) {
-    logUsage(recordId, modelId, hadImage, wantStream, 400);
-    return err(`Model '${modelId}' does not accept image input.`, 400);
-  }
-
-  const toolsOn = hasTools(body);
-  const effMessages: OpenAIMessage[] = toolsOn
-    ? (preprocessToolMessages(messages, body.tools, body.tool_choice) as OpenAIMessage[])
-    : messages;
-
-  let cRes: Response;
-  try {
-    cRes = await openCraxCompletion({ model: modelId, messages: effMessages });
-  } catch (e: any) {
-    const status = e instanceof CraxError ? e.status : 502;
-    logUsage(recordId, modelId, hadImage, wantStream, status);
-    return err(e.message || "Upstream error", status, "upstream_error");
-  }
-
-  const id = "chatcmpl-" + randomUUID();
-  const created = Math.floor(Date.now() / 1000);
-  const withReasoning = showReasoning();
-
-  if (wantStream) {
-    const encoder = new TextEncoder();
-    let hb: ReturnType<typeof keepAlive> | null = null;
-    const registry = toolsOn ? buildRegistry(body.tools) : null;
-    const stream = new ReadableStream({
-      async start(controller) {
-        hb = keepAlive(controller, encoder);
-        const send = (delta: any, finish: string | null = null) => {
-          hb!.touch();
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
-            )
-          );
-        };
-        try {
-          send({ role: "assistant" });
-
-          const parser = registry ? new ToolStream(registry) : null;
-          let toolCalls: OAIToolCall[] = [];
-
-          try {
-            for await (const { kind, text } of craxDeltas(cRes)) {
-              if (kind === "reasoning") {
-                if (withReasoning && text) send({ reasoning_content: text });
-                continue;
-              }
-              if (parser) {
-                const out = parser.push(text);
-                if (out) send({ content: out });
-              } else {
-                send({ content: text });
-              }
-            }
-            if (parser) {
-              const fin = parser.end();
-              if (fin.text) send({ content: fin.text });
-              toolCalls = applyToolPolicy(fin.toolCalls, body, registry!);
-            }
-          } catch (e: any) {
-            if (parser) {
-              try { toolCalls = applyToolPolicy(parser.end().toolCalls, body, registry!); } catch { /* nothing to salvage */ }
-            }
-            send({ content: `\n[error: ${e.message}]` });
-          }
-
-          hb.stop();
-          if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
-          send({}, toolCalls.length ? "tool_calls" : "stop");
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-          logUsage(recordId, modelId, hadImage, true, 200);
-        } catch {
-          logUsage(recordId, modelId, hadImage, true, 499);
-        } finally {
-          hb.stop();
-          await cRes.body?.cancel().catch(() => {});
-        }
-      },
-      async cancel() {
-        hb?.stop();
-        await cRes.body?.cancel().catch(() => {});
-      },
-    });
-    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
-  }
-
-  let content = "";
-  let reasoning = "";
-  try {
-    for await (const { kind, text } of craxDeltas(cRes)) {
-      if (kind === "reasoning") reasoning += text;
-      else content += text;
-    }
-  } catch (e: any) {
-    const status = e instanceof CraxError ? e.status : 502;
-    logUsage(recordId, modelId, hadImage, false, status);
-    return err(e.message, status, "upstream_error");
-  }
-  logUsage(recordId, modelId, hadImage, false, 200);
-
-  const { content: toolContent, toolCalls: parsed } = toolsOn
-    ? extractToolCalls(content, body.tools)
-    : { content: null, toolCalls: [] as OAIToolCall[] };
-  const toolCalls = toolsOn ? applyToolPolicy(parsed, body, buildRegistry(body.tools)) : [];
-
-  const message: Record<string, unknown> = {
-    role: "assistant",
-    content: toolCalls.length ? toolContent : content,
-  };
-  if (toolCalls.length) message.tool_calls = toolCalls;
-  if (withReasoning && reasoning) message.reasoning_content = reasoning;
 
   return NextResponse.json({
     id,
