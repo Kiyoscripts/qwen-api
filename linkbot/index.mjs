@@ -1,0 +1,143 @@
+// VENDORED from /Users/manoli/Documents/Qwen38_LinkAPI/index.js so it can run inside
+// the deployed web service (Railway has only this repo). Keep in sync with the
+// source bot; runtime env: DISCORD_TOKEN, SITE_URL, LINK_BOT_SECRET, WHITELIST_CHANNEL.
+//
+// Qwen3.8 API — Discord link bot.
+//
+//  /link           -> asks the site for a one-time code, shows it to the user.
+//  DM delivery     -> the bot POLLS the site for login-key DMs to send.
+//
+// Everything is OUTBOUND (Discord + the website), so the bot needs no public URL,
+// no open ports, no tunnel — it can run on your own PC or any free host.
+
+import "dotenv/config";
+import { Client, GatewayIntentBits, PermissionsBitField, MessageFlags } from "discord.js";
+
+const {
+  DISCORD_TOKEN,
+  SITE_URL,
+  LINK_BOT_SECRET,
+  WHITELIST_CHANNEL, // optional: /link only works here; other messages get deleted
+} = process.env;
+
+for (const [k, v] of Object.entries({ DISCORD_TOKEN, SITE_URL, LINK_BOT_SECRET })) {
+  if (!v) { console.error(`Missing env var: ${k}`); process.exit(1); }
+}
+const SITE = SITE_URL.replace(/\/$/, "");
+const auth = { Authorization: `Bearer ${LINK_BOT_SECRET}` };
+
+// ---------------------------------------------------------------------------
+// Discord client — GuildMessages lets us auto-delete chatter in the link channel.
+// ---------------------------------------------------------------------------
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
+
+client.once("clientReady", () => {
+  console.log(`✓ Logged in as ${client.user.tag}`);
+  console.log("✓ Polling the site for login-key DMs…");
+  setInterval(pollOutbox, 4000);
+});
+
+// /link -> get a code from the site
+client.on("interactionCreate", async (i) => {
+  if (!i.isChatInputCommand() || i.commandName !== "link") return;
+
+  if (WHITELIST_CHANNEL && i.channelId !== WHITELIST_CHANNEL) {
+    return i.reply({ content: `Please use \`/link\` in <#${WHITELIST_CHANNEL}>.`, flags: MessageFlags.Ephemeral });
+  }
+  await i.deferReply({ flags: MessageFlags.Ephemeral });
+
+  let role = "member";
+  try {
+    if (i.guild && i.guild.ownerId === i.user.id) role = "owner";
+    else if (i.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) role = "admin";
+  } catch { /* member */ }
+
+  try {
+    const r = await fetch(`${SITE}/api/discord/code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...auth },
+      body: JSON.stringify({
+        discord_id: i.user.id,
+        username: i.user.username,
+        global_name: i.user.globalName || i.user.username,
+        avatar: i.user.displayAvatarURL({ extension: "png", size: 128 }),
+        role,
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.code) throw new Error(j.error || "no code");
+    await i.editReply(
+      `**Your link code:**  \`${j.code}\`\n` +
+      `Go to <${SITE}/login> → **Link Discord** tab → paste the code.\n` +
+      `We'll DM you a login key. (Code expires in 10 minutes.)`
+    );
+  } catch (e) {
+    console.error("link error:", e.message);
+    await i.editReply("Couldn't create a code right now — try again in a moment.");
+  }
+});
+
+// Keep the link channel command-only.
+client.on("messageCreate", async (msg) => {
+  if (!WHITELIST_CHANNEL || msg.channelId !== WHITELIST_CHANNEL) return;
+  if (msg.author.bot) return;
+  try {
+    await msg.delete();
+    const warn = await msg.channel.send(`<@${msg.author.id}> this channel is for \`/link\` only.`);
+    setTimeout(() => warn.delete().catch(() => {}), 5000);
+  } catch { /* missing Manage Messages, or already gone */ }
+});
+
+// ---------------------------------------------------------------------------
+// Outbox polling: fetch queued DMs from the site, send them, report the result.
+// ---------------------------------------------------------------------------
+let lastPollError = "";
+let polling = false;
+async function pollOutbox() {
+  if (polling) return; // don't let a slow poll overlap the next tick
+  polling = true;
+  try {
+    await doPoll();
+  } finally {
+    polling = false;
+  }
+}
+async function doPoll() {
+  let dms;
+  try {
+    const r = await fetch(`${SITE}/api/discord/outbox`, { headers: auth });
+    if (!r.ok) {
+      const msg = `outbox poll -> HTTP ${r.status}` +
+        (r.status === 401 ? " (LINK_BOT_SECRET doesn't match the site, or site not redeployed)" : "") +
+        (r.status === 404 ? " (site missing /api/discord/outbox — redeploy the site)" : "");
+      if (msg !== lastPollError) { console.error("✗ " + msg); lastPollError = msg; }
+      return;
+    }
+    lastPollError = "";
+    ({ dms } = await r.json());
+  } catch (e) {
+    if (lastPollError !== e.message) { console.error("✗ outbox poll network error:", e.message); lastPollError = e.message; }
+    return;
+  }
+
+  if (!dms || dms.length === 0) return;
+  console.log(`→ ${dms.length} DM(s) queued to send`);
+  for (const dm of dms) {
+    let status = "sent";
+    try {
+      const user = await client.users.fetch(String(dm.discord_id));
+      await user.send(String(dm.message));
+      console.log(`  ✓ sent login key to ${dm.discord_id}`);
+    } catch (e) {
+      status = "dms_closed"; // 50007: can't DM this user (DMs off)
+      console.log(`  ✗ couldn't DM ${dm.discord_id} — code ${e.code || "?"} (their DMs are likely off)`);
+    }
+    await fetch(`${SITE}/api/discord/outbox`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...auth },
+      body: JSON.stringify({ id: dm.id, status }),
+    }).catch(() => {});
+  }
+}
+
+client.login(DISCORD_TOKEN);

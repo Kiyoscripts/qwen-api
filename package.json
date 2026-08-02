@@ -4,17 +4,21 @@
   "private": true,
   "description": "OpenAI-compatible API for qwen3.8-max-preview (with vision), gated by Supabase-managed API keys.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/supervise.mjs dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/supervise.mjs start",
     "test:tools": "tsx tests/tools.test.mts && tsx tests/tools.stream.test.mts",
     "test": "tsx tests/tools.test.mts && tsx tests/tools.stream.test.mts && tsx tests/aurora.flash.test.mts && tsx tests/truncation.test.mts && tsx tests/movednotice.test.mts && tsx tests/origin.test.mts && tsx tests/readaloud.test.mts && tsx tests/onecompiler.stream.test.mts && tsx tests/i18n.test.mts && tsx tests/toolhistory.test.mts && tsx tests/conversation.test.mts && tsx tests/refusal.test.mts",
-    "env:railway": "node scripts/env-railway.mjs"
+    "env:railway": "node scripts/env-railway.mjs",
+    "dev:web": "next dev",
+    "start:web": "next start"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
     "@supabase/supabase-js": "^2.45.4",
     "botid": "^1.5.11",
+    "discord.js": "^14.27.0",
+    "dotenv": "^16.6.1",
     "highlight.js": "^11.11.1",
     "next": "^15.1.6",
     "opentype.js": "^2.0.0",
