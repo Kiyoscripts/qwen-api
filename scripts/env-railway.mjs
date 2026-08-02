@@ -22,7 +22,7 @@ const OPTIONAL = ["QWEN_CLIENT_VERSION", "QWEN_MEDIA_MODEL", "QWEN_TTS_MODEL", "
 // bogus DISCORD_TOKEN makes the bot crash-loop, whereas an absent one makes the
 // supervisor skip it cleanly and run the site alone. SITE_URL is deliberately
 // absent — the supervisor points the bot at the site's own loopback address.
-const BOT = ["DISCORD_TOKEN", "DISCORD_GUILD_ID", "WHITELIST_CHANNEL"];
+const BOT = ["DISCORD_TOKEN", "DISCORD_GUILD_ID", "WHITELIST_CHANNEL", "PUBLIC_SITE_URL"];
 
 const out = {};
 const missing = [];

@@ -12,6 +12,7 @@
 
 import "dotenv/config";
 import { Client, GatewayIntentBits, PermissionsBitField, MessageFlags } from "discord.js";
+import { publicSiteUrl, isLoopback } from "./publicUrl.mjs";
 
 const {
   DISCORD_TOKEN,
@@ -25,6 +26,9 @@ for (const [k, v] of Object.entries({ DISCORD_TOKEN, SITE_URL, LINK_BOT_SECRET }
   if (!v) { console.error(`Missing env var: ${k}`); process.exit(1); }
 }
 const SITE = SITE_URL.replace(/\/$/, "");
+// Where the bot's own requests go (loopback inside the container) and where it
+// sends people are separate concerns; see publicUrl.mjs.
+const PUBLIC_SITE = publicSiteUrl(process.env) || SITE;
 const auth = { Authorization: `Bearer ${LINK_BOT_SECRET}` };
 
 // ---------------------------------------------------------------------------
@@ -66,6 +70,14 @@ async function registerCommands() {
 
 client.once("clientReady", async () => {
   console.log(`✓ Logged in as ${client.user.tag}`);
+  // A loopback address in the reply sends people to their own machine, and the
+  // bot otherwise looks like it is working perfectly. Say so at boot.
+  if (isLoopback(PUBLIC_SITE)) {
+    console.error(`✗ Links shown to users would point at ${PUBLIC_SITE}, which only resolves inside this container.`);
+    console.error("  Set PUBLIC_SITE_URL to the site's public address (Railway normally supplies RAILWAY_PUBLIC_DOMAIN).");
+  } else {
+    console.log(`✓ Links shown to users point at ${PUBLIC_SITE}`);
+  }
   await registerCommands();
   console.log("✓ Polling the site for login-key DMs…");
   setInterval(pollOutbox, 4000);
@@ -102,7 +114,7 @@ client.on("interactionCreate", async (i) => {
     if (!r.ok || !j.code) throw new Error(j.error || "no code");
     await i.editReply(
       `**Your link code:**  \`${j.code}\`\n` +
-      `Go to <${SITE}/login> → **Link Discord** tab → paste the code.\n` +
+      `Go to <${PUBLIC_SITE}/login> → **Link Discord** tab → paste the code.\n` +
       `We'll DM you a login key. (Code expires in 10 minutes.)`
     );
   } catch (e) {
