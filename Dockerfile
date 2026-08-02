@@ -24,6 +24,17 @@ COPY . .
 # be baked into the image layers.
 RUN npm run build
 
+# ---- production dependencies ----------------------------------------------
+# Next's output tracing only follows what the *site* imports, so the Discord bot's
+# dependencies (discord.js, dotenv) are absent from the standalone bundle. This
+# stage resolves the same lockfile without dev packages, and the runner overlays
+# it on the bundle. Versions are therefore identical to the ones the site was
+# built against, so overlaying cannot introduce a second copy of anything.
+FROM node:22-slim AS proddeps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+
 # ---- run -------------------------------------------------------------------
 FROM node:22-slim AS runner
 WORKDIR /app
@@ -44,8 +55,18 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # so it has to be copied explicitly or image watermarking throws at runtime.
 COPY --from=builder --chown=nextjs:nodejs /app/assets ./assets
 
+# The Discord link bot ships in the same image and is started alongside the site
+# by the supervisor, so a deploy can never leave the site up with the bot down.
+# The overlay lands after the standalone bundle so the bot's dependencies are
+# present; identical lockfile versions mean nothing the site uses is displaced.
+COPY --from=proddeps --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/linkbot ./linkbot
+COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
+
 USER nextjs
 EXPOSE 8080
 
-# Cloud Run injects PORT; the standalone server honours PORT and HOSTNAME.
-CMD ["node", "server.js"]
+# Cloud Run and Railway inject PORT; the standalone server honours PORT and
+# HOSTNAME. The supervisor detects server.js and boots it rather than `next
+# start`, which cannot serve a standalone bundle.
+CMD ["node", "scripts/supervise.mjs", "start"]

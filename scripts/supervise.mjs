@@ -49,8 +49,20 @@ function stopAll(signal = "SIGTERM") {
 }
 
 // --- web (primary) ---------------------------------------------------------
-const web = spawn(nextBin, [mode === "start" ? "start" : "dev", "-p", PORT], {
-  env: process.env,
+// Two shapes of production runtime, told apart by whether the standalone
+// server exists next to us. In the container the image contains only
+// .next/standalone + .next/static, which `next start` cannot serve — it wants
+// the full .next directory — so the standalone entrypoint is the only correct
+// way to boot there. Outside the container (`npm start` on a normal build)
+// there is no server.js and `next start` is right.
+const standalone = mode === "start" && existsSync("server.js");
+const [webCmd, webArgs] = standalone
+  ? [process.execPath, ["server.js"]]
+  : [nextBin, [mode === "start" ? "start" : "dev", "-p", PORT]];
+
+const web = spawn(webCmd, webArgs, {
+  // The standalone server takes its port from the environment rather than argv.
+  env: { ...process.env, PORT },
   stdio: ["inherit", "pipe", "pipe"],
 });
 children.add(web);
