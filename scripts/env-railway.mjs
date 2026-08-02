@@ -17,6 +17,13 @@ const OPTIONAL = ["QWEN_CLIENT_VERSION", "QWEN_MEDIA_MODEL", "QWEN_TTS_MODEL", "
                   "PUBLIC_KEY_CREATION", "KEY_RL_PER_IP_HOUR",
                   "KEY_RL_PER_IP_DAY", "KEY_BLACKLIST_THRESHOLD", "KEY_RL_GLOBAL_HOUR", "CRON_SECRET"];
 
+// The Discord bot ships in the same image, so its config belongs in the same
+// paste. Copied only when present rather than placeholdered like REQUIRED: a
+// bogus DISCORD_TOKEN makes the bot crash-loop, whereas an absent one makes the
+// supervisor skip it cleanly and run the site alone. SITE_URL is deliberately
+// absent — the supervisor points the bot at the site's own loopback address.
+const BOT = ["DISCORD_TOKEN", "DISCORD_GUILD_ID", "WHITELIST_CHANNEL"];
+
 const out = {};
 const missing = [];
 for (const k of REQUIRED) {
@@ -25,8 +32,14 @@ for (const k of REQUIRED) {
 }
 for (const [k, d] of Object.entries(DEFAULTS)) out[k] = env[k] ?? d;
 for (const k of OPTIONAL) if (env[k]) out[k] = env[k];
+for (const k of BOT) if (env[k]) out[k] = env[k];
 
 writeFileSync("railway.env.json", JSON.stringify(out, null, 2) + "\n");
 console.log(`wrote railway.env.json — ${Object.keys(out).length} variables`);
 if (missing.length) console.log("NEEDS FILLING IN:", missing.join(", "));
+if (!env.DISCORD_TOKEN) {
+  console.log("NOTE: no DISCORD_TOKEN in .env.local — the deploy will run the site without the link bot.");
+} else if (!env.DISCORD_GUILD_ID) {
+  console.log("NOTE: no DISCORD_GUILD_ID — /link registers globally and can take an hour to appear.");
+}
 console.log("PORT is intentionally absent: Railway injects it.");
