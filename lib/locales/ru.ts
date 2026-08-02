@@ -55,6 +55,12 @@ export const ru: Partial<Dict> = {
   tag_edit: "редактирование",
   tag_video: "видео",
   tag_persona: "персона",
+  models_search: "Поиск моделей",
+  models_clear: "Очистить поиск",
+  models_company: "Компания",
+  models_all: "Все",
+  models_none: "Нет моделей, соответствующих запросу.",
+  models_reset: "Сбросить фильтры",
 
   keys_title: "Ключи API",
   keys_new: "Новый ключ",

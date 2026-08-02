@@ -55,6 +55,12 @@ export const ja: Partial<Dict> = {
   tag_edit: "編集",
   tag_video: "動画",
   tag_persona: "ペルソナ",
+  models_search: "モデルを検索",
+  models_clear: "検索をクリア",
+  models_company: "企業",
+  models_all: "すべて",
+  models_none: "検索に一致するモデルはありません。",
+  models_reset: "フィルターをリセット",
 
   keys_title: "API キー",
   keys_new: "新しいキー",

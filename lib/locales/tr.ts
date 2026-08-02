@@ -55,6 +55,12 @@ export const tr: Partial<Dict> = {
   tag_edit: "düzenleme",
   tag_video: "video",
   tag_persona: "persona",
+  models_search: "Model ara",
+  models_clear: "Aramayı temizle",
+  models_company: "Şirket",
+  models_all: "Tümü",
+  models_none: "Aramanızla eşleşen model yok.",
+  models_reset: "Filtreleri sıfırla",
 
   keys_title: "API anahtarları",
   keys_new: "Yeni anahtar",

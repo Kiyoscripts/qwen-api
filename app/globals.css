@@ -1003,6 +1003,82 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 @media (max-width: 860px) { .lp-models { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .lp-models { grid-template-columns: 1fr; } }
 
+/* --- Model catalogue: search + company filter ------------------------------ */
+
+/* The toolbar sticks under the nav so the filters stay reachable while reading
+   a long catalogue. `top` clears the nav bar's own height. */
+.mdl-bar {
+  position: sticky; top: 57px; z-index: 20;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 14px 0 16px; margin-bottom: 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.mdl-search {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 12px; border-radius: var(--r-sm);
+  background: var(--glass); border: 1px solid var(--border);
+  max-width: 380px; color: var(--faint);
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+.mdl-search:focus-within { border-color: var(--accent); color: var(--accent); }
+.mdl-search input {
+  flex: 1; min-width: 0; background: none; border: 0; outline: none; padding: 0;
+  font: inherit; font-size: 14px; color: var(--text);
+}
+.mdl-search input::placeholder { color: var(--faint); }
+/* Safari draws its own clear affordance on type=search; ours is the only one. */
+.mdl-search input::-webkit-search-decoration,
+.mdl-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.mdl-search button {
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; padding: 2px; cursor: pointer;
+  color: var(--faint); border-radius: 3px;
+}
+.mdl-search button:hover { color: var(--text); }
+
+.mdl-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.mdl-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 11px; border-radius: var(--r-sm); cursor: pointer;
+  background: transparent; border: 1px solid var(--border);
+  color: var(--muted); font: inherit; font-size: 13px;
+  transition: color var(--t-fast) ease, border-color var(--t-fast) ease, background var(--t-fast) ease;
+}
+.mdl-chip:hover { color: var(--text); border-color: var(--border-strong); }
+.mdl-chip.on { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.mdl-chip img { border-radius: 3px; }
+.mdl-chip .n {
+  font-family: var(--font-mono), ui-monospace, Menlo, monospace;
+  font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums;
+}
+.mdl-chip.on .n { color: var(--accent-ink); opacity: .75; }
+
+.mdl-group { margin-top: 34px; }
+.mdl-grouphead {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 10px; margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.mdl-grouphead img { border-radius: 4px; flex: none; }
+.mdl-grouphead h2 { margin: 0; font-size: 17px; font-weight: 640; letter-spacing: -.3px; color: var(--text); }
+.mdl-grouphead .n {
+  margin-left: auto; font-family: var(--font-mono), ui-monospace, Menlo, monospace;
+  font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums;
+}
+
+.mdl-empty {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 14px;
+  padding: 44px 0 20px;
+}
+.mdl-empty p { margin: 0; color: var(--muted); font-size: 15px; }
+
+@media (max-width: 560px) { .mdl-search { max-width: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .mdl-search, .mdl-chip { transition: none; }
+}
+
 /* --- Top-used models: three cards, each led by a big request count ---------- */
 .lp-usegrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 @media (max-width: 760px) { .lp-usegrid { grid-template-columns: 1fr; } }

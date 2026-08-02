@@ -55,6 +55,12 @@ export const fr: Partial<Dict> = {
   tag_edit: "édition",
   tag_video: "vidéo",
   tag_persona: "persona",
+  models_search: "Rechercher des modèles",
+  models_clear: "Effacer la recherche",
+  models_company: "Entreprise",
+  models_all: "Tous",
+  models_none: "Aucun modèle ne correspond à votre recherche.",
+  models_reset: "Réinitialiser les filtres",
 
   keys_title: "Clés d'API",
   keys_new: "Nouvelle clé",

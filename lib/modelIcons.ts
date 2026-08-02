@@ -29,3 +29,42 @@ export function modelIcon(id: string | undefined | null): string {
   if (slash <= 0) return DEFAULT_MODEL_ICON;
   return MAKER_ICONS[id.slice(0, slash)] ?? DEFAULT_MODEL_ICON;
 }
+
+// --- makers -----------------------------------------------------------------
+//
+// The company that built the model, which is not the same thing as the pool it
+// is served from: Grok and Kimi both arrive through OneCompiler, but a reader
+// browsing the catalogue is looking for xAI and Moonshot. Derived from the same
+// maker prefix the icons use, so the two never disagree.
+
+export const MAKER_LABELS: Record<string, string> = {
+  openai: "OpenAI",
+  google: "Google",
+  deepseek: "DeepSeek",
+  moonshotai: "Moonshot AI",
+  qwen: "Qwen",
+  xai: "xAI",
+};
+
+export interface Maker {
+  /** Stable key for filtering and React keys. */
+  key: string;
+  label: string;
+  icon: string;
+}
+
+/**
+ * The maker of a model. `owner` distinguishes the one case the id cannot:
+ * custom persona slugs are bare names with no prefix, so they would otherwise
+ * fall through to Qwen.
+ */
+export function modelMaker(id: string, owner?: string): Maker {
+  if (owner === "custom") return { key: "custom", label: "Custom", icon: DEFAULT_MODEL_ICON };
+  const slash = id.indexOf("/");
+  const prefix = slash > 0 ? id.slice(0, slash) : "qwen";
+  return {
+    key: prefix,
+    label: MAKER_LABELS[prefix] ?? prefix,
+    icon: MAKER_ICONS[prefix] ?? DEFAULT_MODEL_ICON,
+  };
+}

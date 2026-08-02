@@ -54,6 +54,12 @@ export const zh: Partial<Dict> = {
   tag_edit: "编辑",
   tag_video: "视频",
   tag_persona: "人格",
+  models_search: "搜索模型",
+  models_clear: "清除搜索",
+  models_company: "公司",
+  models_all: "全部",
+  models_none: "没有符合搜索条件的模型。",
+  models_reset: "重置筛选",
 
   keys_title: "API 密钥",
   keys_new: "新建密钥",

@@ -56,6 +56,12 @@ export const ar: Partial<Dict> = {
   tag_edit: "تحرير",
   tag_video: "فيديو",
   tag_persona: "شخصية",
+  models_search: "البحث عن النماذج",
+  models_clear: "مسح البحث",
+  models_company: "الشركة",
+  models_all: "الكل",
+  models_none: "لا توجد نماذج تطابق بحثك.",
+  models_reset: "إعادة تعيين عوامل التصفية",
 
   keys_title: "مفاتيح API",
   keys_new: "مفتاح جديد",

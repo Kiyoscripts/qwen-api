@@ -67,6 +67,12 @@ export const en = {
   tag_edit: "edit",
   tag_video: "video",
   tag_persona: "persona",
+  models_search: "Search models",
+  models_clear: "Clear search",
+  models_company: "Company",
+  models_all: "All",
+  models_none: "No models match your search.",
+  models_reset: "Reset filters",
 
   // --- keys / login ---------------------------------------------------------
   keys_title: "API keys",

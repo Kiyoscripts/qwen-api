@@ -8,6 +8,8 @@ import { withTokenFailover } from "@/lib/tokens";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { ONECOMPILER_MODELS, oneCompilerIcon } from "@/lib/onecompiler";
 import { CUSTOM_MODELS } from "@/lib/customModels";
+import { modelMaker } from "@/lib/modelIcons";
+import Browser, { type ModelRow } from "./Browser";
 
 export const runtime = "nodejs";
 // Rendered per request, never prerendered. The catalogue comes from an
@@ -85,6 +87,13 @@ async function loadModels(): Promise<Catalogue> {
 export default async function ModelsPage() {
   const { rows: models, degraded } = await loadModels();
   const t = await getT();
+  // The company that built each model, resolved here so the client component
+  // stays a pure renderer over data it is given.
+  const rows: ModelRow[] = models.map((m) => {
+    const maker = modelMaker(m.id, m.owner);
+    return { id: m.id, name: m.name, icon: m.icon, tags: m.tags,
+             makerKey: maker.key, makerLabel: maker.label, makerIcon: maker.icon };
+  });
   return (
     <>
       <Aurora />
@@ -111,20 +120,7 @@ export default async function ModelsPage() {
             <p className="models-degraded">{t("models_degraded")}</p>
           )}
           <p className="lp-sub" style={{ margin: "10px 0 22px", maxWidth: 640 }}>{t("models_sub")}</p>
-          <div className="lp-models">
-            {models.map((m) => (
-              <div key={m.id} className="lp-mcard glass">
-                <div className="mt">
-                  {m.icon.startsWith("/")
-                    ? <img className="chip-img" src={m.icon} alt="" width={22} height={22} />
-                    : <span className="chip" />}
-                  {m.name}
-                </div>
-                <div className="md"><code>{m.id}</code></div>
-                <div className="lp-tags">{m.tags.map((t) => <span key={t} className="lp-tag">{t}</span>)}</div>
-              </div>
-            ))}
-          </div>
+          <Browser rows={rows} />
         </div>
       </div>
     </>

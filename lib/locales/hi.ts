@@ -54,6 +54,12 @@ export const hi: Partial<Dict> = {
   tag_edit: "एडिट",
   tag_video: "वीडियो",
   tag_persona: "पर्सोना",
+  models_search: "मॉडल खोजें",
+  models_clear: "खोज साफ़ करें",
+  models_company: "कंपनी",
+  models_all: "सभी",
+  models_none: "आपकी खोज से कोई मॉडल मेल नहीं खाता।",
+  models_reset: "फ़िल्टर रीसेट करें",
 
   keys_title: "API कीज़",
   keys_new: "नई की",

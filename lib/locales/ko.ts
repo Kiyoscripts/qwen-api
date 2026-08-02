@@ -55,6 +55,12 @@ export const ko: Partial<Dict> = {
   tag_edit: "편집",
   tag_video: "영상",
   tag_persona: "페르소나",
+  models_search: "모델 검색",
+  models_clear: "검색 지우기",
+  models_company: "회사",
+  models_all: "전체",
+  models_none: "검색과 일치하는 모델이 없습니다.",
+  models_reset: "필터 초기화",
 
   keys_title: "API 키",
   keys_new: "새 키",
