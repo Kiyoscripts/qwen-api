@@ -772,7 +772,8 @@ export default function Chat() {
 
   return (
     <div className="c-app">
-      <Aurora state={auroraState} pulseRef={pulseRef} />
+      {/* No decorative backdrop in chat — a flat canvas keeps the surface calm
+          and removes the animated-background bug this page used to have. */}
       {/* ---------- sidebar ---------- */}
       <aside className={`c-side ${sidebarOpen ? "open" : ""}`}>
         <div className="c-side-top">

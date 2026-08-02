@@ -2,143 +2,133 @@
    Design tokens — the single place the whole surface is tuned from.
    ============================================================================
 
-   Every rule in globals.css already reads these variables, so a theme is just a
+   Every rule in globals.css reads these variables, so a theme is just a
    different set of values: no component needs to know which one is active.
 
-   Three complete variants ship. `data-theme` on <html> selects one; absent, the
-   OS preference decides via the media query at the bottom.
+   The design language here is deliberately calm and modern — one confident
+   accent, hairline borders, a single soft shadow, quick eased motion. No
+   perpetual animation, no pointer-tracked sheen, no heavy backdrop blur. The
+   old "liquid glass" material tokens are kept by NAME (so globals.css keeps
+   working) but retuned to a quiet, near-flat surface.
 
-     midnight   dark liquid glass, violet/mint accent  (default)
-     daylight   light liquid glass, same accent family
-     contrast   high-contrast dark — flat, opaque, no blur, for legibility
+   Three variants ship. `data-theme` on <html> selects one; absent, the OS
+   preference decides via the media query at the bottom.
 
-   The glass "material" is expressed as tokens too (tint, edge, sheen, blur), so
-   contrast mode can switch the material off wholesale rather than every
-   component special-casing it.
+     midnight   clean neutral dark, indigo accent   (default)
+     daylight   clean neutral light, same accent
+     contrast   high-contrast dark, flat and opaque, for legibility
    ========================================================================== */
 
 :root,
 :root[data-theme="midnight"] {
   color-scheme: dark;
 
-  /* --- canvas --- */
-  --bg: #07080e;
-  --bg-2: #0b0c14;
-  --panel: #141417;
+  /* --- canvas: near-neutral, a hair of warmth so it doesn't read as blue --- */
+  --bg: #0b0c0f;
+  --bg-2: #101116;
+  --panel: #15161c;
 
   /* --- ink --- */
-  --text: #eef0f7;
-  --muted: #9aa0b4;
-  --faint: #6b7189;
-  --text-2: #cdd2e6;   /* secondary ink: chips, tags, inline code */
+  --text: #f3f4f7;
+  --muted: #9ca1ad;
+  --faint: #6a6f7b;
+  --text-2: #d3d6de;   /* secondary ink: chips, tags, inline code */
 
-  /* --- accent: one family, used sparingly --- */
-  --accent: #8b7dff;
-  --accent-2: #4fd3ac;
-  --accent-3: #5a8dff;
-  --accent-ink: #0a0b12;
+  /* --- accent: one indigo family, used sparingly --- */
+  --accent: #6d6efc;
+  --accent-2: #34d399;   /* success / active only */
+  --accent-3: #8b8dff;
+  --accent-ink: #ffffff;
 
   /* --- structure --- */
-  --border: #22232c;
-  --border-strong: #33343f;
+  --border: #23252d;
+  --border-strong: #313440;
 
-  /* --- liquid glass material -------------------------------------------
-     tint      the frosted body
-     tint-2    a denser variant for raised surfaces
-     edge      the thin specular rim that sells it as glass
-     edge-top  brighter highlight along the top edge only
-     sheen     the moving specular wash
-     blur/sat  backdrop-filter parameters                                  */
-  --glass: rgba(255, 255, 255, 0.04);
-  --glass-strong: rgba(255, 255, 255, 0.07);
-  --glass-brd: rgba(255, 255, 255, 0.09);
-  --glass-edge: rgba(255, 255, 255, 0.14);
-  --glass-edge-top: rgba(255, 255, 255, 0.30);
-  --glass-sheen: rgba(255, 255, 255, 0.10);
-  --glass-blur: 20px;
-  --glass-sat: 180%;
+  /* --- surface material (quiet: subtle fill, hairline edge, no moving sheen) -
+     The names survive from the old glass system; the values no longer describe
+     glass. `sheen` is transparent everywhere now, so Sheen.tsx paints nothing. */
+  --glass: rgba(255, 255, 255, 0.028);
+  --glass-strong: rgba(255, 255, 255, 0.05);
+  --glass-brd: rgba(255, 255, 255, 0.08);
+  --glass-edge: rgba(255, 255, 255, 0.10);
+  --glass-edge-top: rgba(255, 255, 255, 0.14);
+  --glass-sheen: transparent;
+  --glass-blur: 10px;
+  --glass-sat: 130%;
 
-  /* --- depth: layered, not one flat drop --- */
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, .28);
-  --shadow-2: 0 6px 16px -6px rgba(0, 0, 0, .45);
-  --shadow-3: 0 22px 48px -20px rgba(0, 0, 0, .70);
-  --shadow-glow: 0 10px 40px rgba(0, 0, 0, 0.45);
+  /* --- depth: one soft shadow, layered only where it earns it --- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .30);
+  --shadow-2: 0 8px 24px -12px rgba(0, 0, 0, .55);
+  --shadow-3: 0 24px 60px -28px rgba(0, 0, 0, .70);
+  --shadow-glow: 0 8px 30px rgba(0, 0, 0, .40);
 
-  /* --- shape: continuous "squircle" corners need a larger radius to read
-         the same as a small one on a rounded rect --- */
-  --r-sm: 10px;
-  --r-md: 14px;
-  --r-lg: 20px;
-  --r-xl: 28px;
+  /* --- shape --- */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
   --radius: var(--r-md);
 
-  /* --- motion: spring-ish cubic-beziers for anything CSS drives --- */
-  /* --- animated backdrop (app/Aurora.tsx paints these) ---
-     base   the opaque canvas fill
-     blend  how the light bodies composite onto it
-     scrim  the vignette that keeps the middle legible                     */
-  --amb-base: #07080e;
-  --amb-blend: lighter;
-  --amb-scrim: 7, 8, 14;
-  --nav-tint: rgba(10, 11, 18, .55);
+  /* --- static backdrop (a calm gradient, painted by CSS — no canvas) --- */
+  --amb-base: #0b0c0f;
+  --amb-blend: normal;
+  --amb-scrim: 11, 12, 15;
+  --nav-tint: rgba(12, 13, 18, .72);
 
-  --spring: cubic-bezier(.22, 1.2, .36, 1);
+  /* --- motion: quick and eased, no overshoot --- */
+  --spring: cubic-bezier(.16, 1, .3, 1);
   --ease-out: cubic-bezier(.16, 1, .3, 1);
-  --t-fast: .14s;
-  --t-mid: .24s;
-  --t-slow: .42s;
+  --t-fast: .12s;
+  --t-mid: .18s;
+  --t-slow: .30s;
 }
 
 /* --------------------------------------------------------------------------
-   Daylight — the same material over a bright canvas. Glass on light needs a
-   darker edge and a much softer shadow, or it reads as a grey box.
+   Daylight — the same system on a bright neutral canvas.
    -------------------------------------------------------------------------- */
 :root[data-theme="daylight"] {
   color-scheme: light;
 
-  --bg: #eef0f6;
-  --bg-2: #e6e9f2;
+  --bg: #f7f8fa;
+  --bg-2: #eef0f4;
   --panel: #ffffff;
 
-  --text: #12141c;
-  --muted: #565d72;
-  --faint: #838aa0;
-  --text-2: #2b3145;
+  --text: #14151a;
+  --muted: #5b616e;
+  --faint: #878d9a;
+  --text-2: #2c313c;
 
-  --accent: #6b58f6;
-  --accent-2: #10a37f;
-  --accent-3: #2f6bff;
+  --accent: #5b57f0;
+  --accent-2: #0ea371;
+  --accent-3: #6d6afc;
   --accent-ink: #ffffff;
 
-  --border: #d7dae6;
-  --border-strong: #c2c7d8;
+  --border: #e4e6ec;
+  --border-strong: #d2d6de;
 
-  --glass: rgba(255, 255, 255, 0.58);
-  --glass-strong: rgba(255, 255, 255, 0.78);
-  --glass-brd: rgba(16, 20, 40, 0.10);
-  --glass-edge: rgba(255, 255, 255, 0.90);
-  --glass-edge-top: rgba(255, 255, 255, 0.95);
-  --glass-sheen: rgba(255, 255, 255, 0.65);
-  --glass-blur: 22px;
-  --glass-sat: 165%;
+  --glass: rgba(255, 255, 255, 0.70);
+  --glass-strong: rgba(255, 255, 255, 0.90);
+  --glass-brd: rgba(16, 20, 40, 0.09);
+  --glass-edge: rgba(16, 20, 40, 0.08);
+  --glass-edge-top: rgba(16, 20, 40, 0.05);
+  --glass-sheen: transparent;
+  --glass-blur: 12px;
+  --glass-sat: 120%;
 
-  --shadow-1: 0 1px 2px rgba(23, 27, 48, .07);
-  --shadow-2: 0 8px 20px -10px rgba(23, 27, 48, .18);
-  --shadow-3: 0 26px 56px -26px rgba(23, 27, 48, .28);
-  --shadow-glow: 0 10px 40px rgba(23, 27, 48, .12);
+  --shadow-1: 0 1px 2px rgba(23, 27, 48, .06);
+  --shadow-2: 0 10px 26px -14px rgba(23, 27, 48, .16);
+  --shadow-3: 0 28px 60px -30px rgba(23, 27, 48, .24);
+  --shadow-glow: 0 8px 30px rgba(23, 27, 48, .10);
 
-  /* On a bright canvas, additive light blows straight out to white. Multiply
-     turns the same coloured bodies into soft tinted shadows instead. */
-  --amb-base: #eef0f6;
-  --amb-blend: multiply;
-  --amb-scrim: 238, 240, 246;
-  --nav-tint: rgba(255, 255, 255, .62);
+  --amb-base: #f7f8fa;
+  --amb-blend: normal;
+  --amb-scrim: 247, 248, 250;
+  --nav-tint: rgba(255, 255, 255, .78);
 }
 
 /* --------------------------------------------------------------------------
-   Contrast — deliberately NOT glass. Translucency and low-contrast hairlines
-   are exactly what hurts here, so the material tokens go opaque, the blur goes
-   to zero and the edges become visible borders.
+   Contrast — flat, opaque, high-contrast. Translucency and faint hairlines are
+   what hurt here, so the material goes solid and the edges become real borders.
    -------------------------------------------------------------------------- */
 :root[data-theme="contrast"] {
   color-scheme: dark;
@@ -152,9 +142,9 @@
   --faint: #a6abb8;
   --text-2: #ffffff;
 
-  --accent: #a596ff;
-  --accent-2: #5ce0b8;
-  --accent-3: #7fa8ff;
+  --accent: #9b9dff;
+  --accent-2: #52e0a0;
+  --accent-3: #b3b5ff;
   --accent-ink: #000000;
 
   --border: #4a4a55;
@@ -163,8 +153,8 @@
   --glass: #141419;
   --glass-strong: #1c1c23;
   --glass-brd: #5a5a68;
-  --glass-edge: #7a7a8a;
-  --glass-edge-top: #8d8d9e;
+  --glass-edge: #5a5a68;
+  --glass-edge-top: #5a5a68;
   --glass-sheen: transparent;
   --glass-blur: 0px;
   --glass-sat: 100%;
@@ -174,70 +164,57 @@
   --shadow-3: 0 12px 28px rgba(0, 0, 0, .9);
   --shadow-glow: none;
 
-  /* Contrast mode has no decorative field behind the text at all. */
   --amb-base: #000000;
-  --amb-blend: lighter;
+  --amb-blend: normal;
   --amb-scrim: 0, 0, 0;
   --nav-tint: #0d0d11;
 }
-
-/* Contrast keeps the animated field, but heavily damped and scrimmed so text
-   contrast is unaffected — the motion stays, the interference does not. */
-:root[data-theme="contrast"] .amb canvas { opacity: .38; filter: blur(34px) saturate(.9); }
-:root[data-theme="contrast"] .amb-grain { opacity: .02; }
 
 /* Respect the OS when no explicit choice has been stored. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     color-scheme: light;
-    --bg: #eef0f6;
-    --bg-2: #e6e9f2;
+    --bg: #f7f8fa;
+    --bg-2: #eef0f4;
     --panel: #ffffff;
-    --text: #12141c;
-    --muted: #565d72;
-    --faint: #838aa0;
-    --text-2: #2b3145;
-    --accent: #6b58f6;
-    --accent-2: #10a37f;
+    --text: #14151a;
+    --muted: #5b616e;
+    --faint: #878d9a;
+    --text-2: #2c313c;
+    --accent: #5b57f0;
+    --accent-2: #0ea371;
+    --accent-3: #6d6afc;
     --accent-ink: #ffffff;
-    --border: #d7dae6;
-    --border-strong: #c2c7d8;
-    --glass: rgba(255, 255, 255, 0.58);
-    --glass-strong: rgba(255, 255, 255, 0.78);
-    --glass-brd: rgba(16, 20, 40, 0.10);
-    --glass-edge: rgba(255, 255, 255, 0.90);
-    --glass-edge-top: rgba(255, 255, 255, 0.95);
-    --glass-sheen: rgba(255, 255, 255, 0.65);
-    --shadow-1: 0 1px 2px rgba(23, 27, 48, .07);
-    --shadow-2: 0 8px 20px -10px rgba(23, 27, 48, .18);
-    --shadow-3: 0 26px 56px -26px rgba(23, 27, 48, .28);
-    --amb-base: #eef0f6;
-    --amb-blend: multiply;
-    --amb-scrim: 238, 240, 246;
-    --nav-tint: rgba(255, 255, 255, .62);
+    --border: #e4e6ec;
+    --border-strong: #d2d6de;
+    --glass: rgba(255, 255, 255, 0.70);
+    --glass-strong: rgba(255, 255, 255, 0.90);
+    --glass-brd: rgba(16, 20, 40, 0.09);
+    --glass-edge: rgba(16, 20, 40, 0.08);
+    --glass-edge-top: rgba(16, 20, 40, 0.05);
+    --shadow-1: 0 1px 2px rgba(23, 27, 48, .06);
+    --shadow-2: 0 10px 26px -14px rgba(23, 27, 48, .16);
+    --shadow-3: 0 28px 60px -30px rgba(23, 27, 48, .24);
+    --amb-base: #f7f8fa;
+    --amb-blend: normal;
+    --amb-scrim: 247, 248, 250;
+    --nav-tint: rgba(255, 255, 255, .78);
   }
 }
 
 /* ============================================================================
-   The Liquid Glass material itself.
+   Surface material.
+
+   `.glass` is the one surface class every panel opts into. It is now a clean
+   card: a subtle translucent fill, a single hairline border, a soft shadow, and
+   a light backdrop blur. The moving sheen and the bright specular rim are gone —
+   that is what made the old look read as "cyberpunk glass".
    ==========================================================================*/
 
-/*
- * `.glass` is the single material every surface opts into.
- *
- * Four layers, in paint order:
- *   1. the frosted body            background + backdrop-filter
- *   2. the specular rim            ::before, a gradient-masked 1px border
- *   3. the moving sheen            ::after, positioned from --mx/--my
- *   4. depth                       layered shadows, not one blur
- *
- * The rim is drawn with a masked gradient border rather than `border`, because
- * a flat border colour cannot be bright at the top and dim at the bottom, and
- * that asymmetry is most of what makes it read as a lit physical edge.
- */
 .glass {
   position: relative;
   background: var(--glass);
+  border: 1px solid var(--glass-brd);
   border-radius: var(--radius);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
@@ -245,76 +222,30 @@
   isolation: isolate;
 }
 
-.glass::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    160deg,
-    var(--glass-edge-top) 0%,
-    var(--glass-edge) 28%,
-    transparent 55%,
-    color-mix(in oklab, var(--glass-edge) 40%, transparent) 100%
-  );
-  /* Mask the fill away so only the 1px padding ring paints — a gradient border. */
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 1;
-}
+/* The old rim/sheen pseudo-elements are neutralised rather than deleted, so any
+   globals.css rule that still references them simply has nothing to paint. */
+.glass::before,
+.glass::after { content: none; }
 
-/* The specular wash. --mx/--my are set by app/Sheen.tsx on pointer move; with
-   no pointer they stay at the default and this is a soft top-left highlight. */
-.glass::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(
-    60% 80% at var(--mx, 30%) var(--my, 0%),
-    var(--glass-sheen),
-    transparent 70%
-  );
-  opacity: .55;
-  pointer-events: none;
-  transition: opacity var(--t-mid) var(--ease-out);
-  z-index: 0;
-}
-.glass:hover::after { opacity: .85; }
-
-/* Raised variant: more body, deeper shadow. */
+/* Raised variant: a touch more body and a deeper shadow. */
 .glass-raised {
   background: var(--glass-strong);
-  box-shadow: var(--shadow-1), var(--shadow-2), var(--shadow-3);
+  box-shadow: var(--shadow-1), var(--shadow-3);
 }
 
-/* Contrast mode has no material to speak of — make the edge a real border. */
-:root[data-theme="contrast"] .glass { border: 1px solid var(--glass-brd); }
-:root[data-theme="contrast"] .glass::before,
-:root[data-theme="contrast"] .glass::after { display: none; }
-
 @media (prefers-reduced-motion: reduce) {
-  .glass::after { transition: none; }
+  .glass { transition: none; }
 }
 
 /* ============================================================================
-   Glass controls — the same material, at control scale.
-   ============================================================================
+   Controls — the same quiet material at control scale.
 
-   Buttons, checkboxes and dropdowns all get the four layers `.glass` has: a
-   frosted body, a specular rim, a pointer-tracked sheen, and layered depth. The
-   rim is the part that does the work — a flat 1px border reads as a box, a
-   gradient that is bright at the top and fades by the bottom reads as a lit
-   physical edge.
-
-   `.gc-rim` is the shared rim; anything that wants the material adds it to its
-   own selector list rather than each control reinventing the gradient.
+   Buttons, checkboxes and dropdowns share one frosted body and a hairline
+   border. Hover lifts the fill and the surface by a pixel; active presses it in.
+   No rim gradients, no sheen.
    ========================================================================== */
 
+/* Neutralise the old rim pseudo-element on every control that declared one. */
 .g-btn::before,
 .g-btn.outline::before,
 .ui-sel::before,
@@ -326,46 +257,29 @@
 .lp-base-copy::before,
 .pgx-send::before,
 .c-send::before,
-input[type="checkbox"]::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    165deg,
-    var(--glass-edge-top) 0%,
-    var(--glass-edge) 30%,
-    transparent 58%,
-    color-mix(in oklab, var(--glass-edge) 35%, transparent) 100%
-  );
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 2;
-}
+input[type="checkbox"]::before { content: none; }
 
-/* Positioning context for the rim + sheen. */
+/* Positioning context (kept: several controls position children against these). */
 .g-btn, .ui-sel, .ui-sel-menu, .themesw, .c-primary,
 .pgx-ghost, .dc-copy, .lp-base-copy, .pgx-send, .c-send,
 input[type="checkbox"] { position: relative; }
 
-/* --- secondary / ghost controls: true frosted glass ---------------------- */
+/* --- secondary / ghost controls -------------------------------------------- */
 .g-btn.outline,
 .ui-sel,
 .pgx-ghost,
 .dc-copy,
 .lp-base-copy {
   background: var(--glass);
-  border-color: transparent;
+  border: 1px solid var(--glass-brd);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  box-shadow: var(--shadow-1), var(--shadow-2);
-  transition: background var(--t-mid) var(--ease-out), transform var(--t-mid) var(--spring),
-              box-shadow var(--t-mid) var(--ease-out), color var(--t-fast) ease;
-  will-change: transform;
+  box-shadow: var(--shadow-1);
+  transition: background var(--t-fast) var(--ease-out),
+              border-color var(--t-fast) var(--ease-out),
+              transform var(--t-fast) var(--ease-out),
+              box-shadow var(--t-fast) var(--ease-out),
+              color var(--t-fast) ease;
 }
 .g-btn.outline:hover,
 .ui-sel:hover,
@@ -373,73 +287,64 @@ input[type="checkbox"] { position: relative; }
 .dc-copy:hover,
 .lp-base-copy:hover {
   background: var(--glass-strong);
+  border-color: var(--border-strong);
   transform: translateY(-1px);
-  box-shadow: var(--shadow-1), var(--shadow-2), var(--shadow-3);
+  box-shadow: var(--shadow-1), var(--shadow-2);
 }
 .g-btn.outline:active,
 .ui-sel:active,
 .pgx-ghost:active,
 .dc-copy:active,
-.lp-base-copy:active { transform: scale(.97); transition-duration: .06s; }
+.lp-base-copy:active { transform: translateY(0) scale(.98); transition-duration: .05s; }
 
-/* --- the dropdown menu itself -------------------------------------------- */
+/* --- the dropdown menu ----------------------------------------------------- */
 .ui-sel-menu {
-  background: color-mix(in oklab, var(--glass-strong) 100%, transparent);
-  background-color: color-mix(in srgb, var(--bg) 72%, transparent);
-  border-color: transparent;
+  background-color: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--glass-brd);
   box-shadow: var(--shadow-2), var(--shadow-3);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
 }
 .ui-sel-opt {
   position: relative;
-  transition: background var(--t-fast) ease, transform var(--t-fast) var(--ease-out);
+  transition: background var(--t-fast) ease, color var(--t-fast) ease;
 }
 .ui-sel-opt.active {
   background: var(--glass-strong);
-  /* A hairline of accent on the leading edge marks the active row without
-     shifting anything. */
-  box-shadow: inset 2px 0 0 var(--accent-2);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
-/* --- checkbox: frosted when off, accent glass when on -------------------- */
+/* --- checkbox: frosted off, accent on -------------------------------------- */
 input[type="checkbox"] {
   background: var(--glass);
-  border-color: transparent;
+  border: 1px solid var(--glass-brd);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   box-shadow: var(--shadow-1);
-  transition: background var(--t-mid) var(--ease-out), box-shadow var(--t-mid) var(--ease-out),
-              transform var(--t-mid) var(--spring);
+  transition: background var(--t-fast) var(--ease-out),
+              border-color var(--t-fast) var(--ease-out),
+              box-shadow var(--t-fast) var(--ease-out),
+              transform var(--t-fast) var(--ease-out);
 }
-input[type="checkbox"]:hover { background: var(--glass-strong); transform: translateY(-1px); }
-input[type="checkbox"]:active { transform: scale(.9); transition-duration: .06s; }
+input[type="checkbox"]:hover { background: var(--glass-strong); border-color: var(--border-strong); }
+input[type="checkbox"]:active { transform: scale(.92); transition-duration: .05s; }
 input[type="checkbox"]:checked {
-  background: linear-gradient(135deg, var(--accent), color-mix(in oklab, var(--accent-2) 82%, var(--accent)));
-  box-shadow: var(--shadow-1), 0 4px 12px -4px color-mix(in oklab, var(--accent) 65%, transparent);
+  background: var(--accent);
+  border-color: transparent;
+  box-shadow: var(--shadow-1), 0 4px 12px -4px color-mix(in oklab, var(--accent) 60%, transparent);
 }
-/* The tick sits above the rim. */
 input[type="checkbox"]:checked::after { z-index: 3; }
 
-/* --- send buttons: circular, same material ------------------------------- */
+/* --- send buttons: circular, same material --------------------------------- */
 .pgx-send, .c-send {
-  transition: transform var(--t-mid) var(--spring), filter var(--t-fast) ease,
-              box-shadow var(--t-mid) var(--ease-out);
-  will-change: transform;
+  transition: transform var(--t-fast) var(--ease-out), filter var(--t-fast) ease,
+              box-shadow var(--t-fast) var(--ease-out);
 }
-.pgx-send:hover:not(:disabled), .c-send:hover:not(:disabled) { transform: scale(1.06); }
-.pgx-send:active:not(:disabled), .c-send:active:not(:disabled) { transform: scale(.92); transition-duration: .06s; }
+.pgx-send:hover:not(:disabled), .c-send:hover:not(:disabled) { transform: scale(1.05); }
+.pgx-send:active:not(:disabled), .c-send:active:not(:disabled) { transform: scale(.94); transition-duration: .05s; }
 
-/* Contrast mode drops the rim and sheen everywhere — flat, bordered, legible. */
-:root[data-theme="contrast"] .g-btn::before,
-:root[data-theme="contrast"] .ui-sel::before,
-:root[data-theme="contrast"] .ui-sel-menu::before,
-:root[data-theme="contrast"] .themesw::before,
-:root[data-theme="contrast"] .c-primary::before,
-:root[data-theme="contrast"] .pgx-ghost::before,
-:root[data-theme="contrast"] .dc-copy::before,
-:root[data-theme="contrast"] .lp-base-copy::before,
-:root[data-theme="contrast"] .pgx-send::before,
-:root[data-theme="contrast"] .c-send::before,
-:root[data-theme="contrast"] input[type="checkbox"]::before { display: none; }
+/* Contrast mode: real borders, no translucency. */
+:root[data-theme="contrast"] .glass,
 :root[data-theme="contrast"] .g-btn.outline,
 :root[data-theme="contrast"] .ui-sel,
 :root[data-theme="contrast"] .pgx-ghost,
