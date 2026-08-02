@@ -925,6 +925,42 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 .lp-ctarow { display: flex; gap: 12px; justify-content: flex-start; flex-wrap: wrap; }
 @media (max-width: 560px) { .lp-hero h1 { font-size: 42px; letter-spacing: -1.5px; } .lp-sub { font-size: 16px; } }
 
+/* --- Two-column hero: copy left, live code card right ----------------------
+   A dev tool shows its own API in the first fold. The code card is the visual
+   anchor on the right; the copy column stays narrow so the headline breaks the
+   way it's written. Collapses to a single column below the tablet breakpoint. */
+.lp-hero2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 56px;
+  align-items: center;
+  padding: 80px 0 44px;
+}
+.lp-hero2-copy { min-width: 0; }
+.lp-hero2-copy h1 {
+  font-size: 58px; line-height: 1.04; font-weight: 680; letter-spacing: -2.2px;
+  margin: 0; color: var(--text);
+}
+.lp-hero2-copy h1 .grad { color: var(--accent); background: none; -webkit-text-fill-color: currentColor; }
+.lp-hero2-copy .lp-sub { margin: 20px 0 28px; max-width: 500px; }
+.lp-hero2-code {
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  align-self: stretch;
+  min-width: 0;
+  box-shadow: var(--shadow-1), var(--shadow-3);
+}
+.lp-hero2-code pre {
+  margin: 0; padding: 20px 22px; overflow-x: auto;
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.7; color: var(--text-2);
+  background: color-mix(in srgb, var(--bg-2) 60%, transparent);
+}
+@media (max-width: 900px) {
+  .lp-hero2 { grid-template-columns: 1fr; gap: 36px; padding: 56px 0 32px; }
+  .lp-hero2-copy h1 { font-size: 46px; letter-spacing: -1.6px; }
+}
+@media (max-width: 560px) { .lp-hero2-copy h1 { font-size: 38px; letter-spacing: -1.2px; } }
+
 /* base URL chip — the thing people actually came to copy */
 .lp-base {
   display: inline-flex; align-items: center; gap: 12px; margin-top: 34px;
@@ -968,6 +1004,25 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 .lp-models { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 @media (max-width: 860px) { .lp-models { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .lp-models { grid-template-columns: 1fr; } }
+
+/* --- Top-used models: three cards, each led by a big request count ---------- */
+.lp-usegrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+@media (max-width: 760px) { .lp-usegrid { grid-template-columns: 1fr; } }
+.lp-usecard {
+  position: relative; display: flex; flex-direction: column; gap: 12px;
+  padding: 22px; border-radius: var(--r-lg); overflow: hidden;
+  transition: transform var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+}
+.lp-usecard:hover { transform: translateY(-2px); background: var(--glass-strong); border-color: var(--border-strong); }
+.lp-userank {
+  position: absolute; top: 16px; right: 18px;
+  font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--accent);
+}
+.lp-usecard .mt { display: flex; align-items: center; gap: 10px; font-weight: 640; font-size: 15px; color: var(--text); padding-right: 28px; }
+.lp-usecard .lp-mid { align-self: flex-start; }
+.lp-usenum { display: flex; align-items: baseline; gap: 8px; margin-top: auto; }
+.lp-usenum b { font-size: 34px; font-weight: 720; letter-spacing: -1px; color: var(--text); font-variant-numeric: tabular-nums; }
+.lp-usenum span { font-size: 13px; color: var(--muted); }
 .lp-mcard { position: relative; display: flex; flex-direction: column; padding: 18px; border-radius: 14px; overflow: hidden;
   transition: transform .16s ease, border-color .16s ease, background .16s ease; }
 /* A hairline of accent light along the top edge, revealed on hover. */

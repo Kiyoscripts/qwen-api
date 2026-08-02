@@ -6,6 +6,10 @@ import AccountNav from "./Account";
 import CursorToggle from "./CursorToggle";
 import LanguageSelector from "./LanguageSelector";
 import { getT } from "@/lib/i18nServer";
+import { getTopModels } from "@/lib/supabase";
+import { modelIcon } from "@/lib/modelIcons";
+
+export const dynamic = "force-dynamic";
 
 const BASE = "https://qwen38-api-production.up.railway.app";
 
@@ -41,8 +45,24 @@ const r = await client.chat.completions.create({
   stream: true,
 });`;
 
+const MODEL_NAME: Record<string, string> = Object.fromEntries(MODELS.map((m) => [m.id, m.name]));
+const featuredName = (id: string) => MODEL_NAME[id] ?? id;
+const featuredIcon = (id: string) => MODELS.find((m) => m.id === id)?.icon ?? modelIcon(id);
+
 export default async function Home() {
   const t = await getT();
+
+  // Top models by request count. Padded from the featured list so three cards
+  // always render — a brand-new deployment with no traffic yet still looks
+  // intentional rather than empty, and the padded rows honestly read 0.
+  const used = await getTopModels(3).catch(() => []);
+  const top: { model: string; requests: number }[] = [...used];
+  for (const m of MODELS) {
+    if (top.length >= 3) break;
+    if (!top.some((r) => r.model === m.id)) top.push({ model: m.id, requests: 0 });
+  }
+  const topRows = top.slice(0, 3);
+
   return (
     <>
       <Aurora />
@@ -64,18 +84,33 @@ export default async function Home() {
         </nav>
 
         <div className="lp-wrap">
-          <section className="lp-hero">
-            <div className="lp-pill glass"><span className="dot" /> {t("home_badge")}</div>
-            <h1>{t("home_title_a")}<br /><span className="grad">{t("home_title_b")}</span></h1>
-            <p className="lp-sub">{t("home_sub")}</p>
-            <div className="lp-ctarow">
-              <a className="g-btn lg" href="/login">{t("home_cta_key")}</a>
-              <a className="g-btn lg outline" href="/docs">{t("home_cta_docs")}</a>
+          <section className="lp-hero2">
+            <div className="lp-hero2-copy">
+              <div className="lp-pill glass"><span className="dot" /> {t("home_badge")}</div>
+              <h1>{t("home_title_a")} <span className="grad">{t("home_title_b")}</span></h1>
+              <p className="lp-sub">{t("home_sub")}</p>
+              <div className="lp-ctarow">
+                <a className="g-btn lg" href="/login">{t("home_cta_key")}</a>
+                <a className="g-btn lg outline" href="/docs">{t("home_cta_docs")}</a>
+              </div>
+              <BaseUrl url={BASE} />
             </div>
 
-            <BaseUrl url={BASE} />
-            <StatsBar />
+            {/* The quickstart snippet is promoted into the hero — a dev tool
+                should show its own API in the first fold, not paragraphs. */}
+            <div className="lp-hero2-code glass">
+              <div className="lp-code-head">
+                <span className="lp-code-dot" style={{ background: "#ff5f57" }} />
+                <span className="lp-code-dot" style={{ background: "#febc2e" }} />
+                <span className="lp-code-dot" style={{ background: "#28c840" }} />
+                <span style={{ marginLeft: 8 }}>openai-sdk.ts</span>
+                <CopyButton text={SNIPPET} className="lp-code-copy" />
+              </div>
+              <pre>{SNIPPET}</pre>
+            </div>
           </section>
+
+          <StatsBar />
 
           <section id="models">
             <div className="lp-sechead">
@@ -83,18 +118,19 @@ export default async function Home() {
               <a className="lp-seclink" href="/models">{t("home_sec_models_all")}</a>
             </div>
             <h2 className="lp-h2">{t("home_sec_models_h")}</h2>
-            <div className="lp-models" style={{ marginTop: 26 }}>
-              {MODELS.map((m) => (
-                <div key={m.name} className="lp-mcard glass">
+            <div className="lp-usegrid" style={{ marginTop: 26 }}>
+              {topRows.map((r, i) => (
+                <div key={r.model} className="lp-usecard glass">
+                  <div className="lp-userank">#{i + 1}</div>
                   <div className="mt">
-                    {m.icon
-                      ? <img className="chip-img" src={m.icon} alt="" width={22} height={22} />
-                      : <span className="chip" />}
-                    {m.name}
+                    <img className="chip-img" src={featuredIcon(r.model)} alt="" width={24} height={24} />
+                    {featuredName(r.model)}
                   </div>
-                  <div className="md">{m.desc}</div>
-                  <code className="lp-mid">{m.id}</code>
-                  <div className="lp-tags">{m.tags.map((t) => <span key={t} className="lp-tag">{t}</span>)}</div>
+                  <code className="lp-mid">{r.model}</code>
+                  <div className="lp-usenum">
+                    <b>{r.requests.toLocaleString()}</b>
+                    <span>{r.requests === 1 ? "request" : "requests"}</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -113,24 +149,6 @@ export default async function Home() {
                   <p>{f.body}</p>
                 </div>
               ))}
-            </div>
-          </section>
-
-          <section id="quickstart">
-            <div className="lp-sechead">
-              <div className="lp-eyebrow">03 — {t("home_sec_quick")}</div>
-              <a className="lp-seclink" href="/docs">{t("home_sec_quick_all")}</a>
-            </div>
-            <h2 className="lp-h2">{t("home_sec_quick_h")}</h2>
-            <div className="lp-code glass" style={{ marginTop: 26 }}>
-              <div className="lp-code-head">
-                <span className="lp-code-dot" style={{ background: "#ff5f57" }} />
-                <span className="lp-code-dot" style={{ background: "#febc2e" }} />
-                <span className="lp-code-dot" style={{ background: "#28c840" }} />
-                <span style={{ marginLeft: 8 }}>openai-sdk.ts</span>
-                <CopyButton text={SNIPPET} className="lp-code-copy" />
-              </div>
-              <pre>{SNIPPET}</pre>
             </div>
           </section>
 

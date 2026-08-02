@@ -236,6 +236,30 @@ export async function listApiKeys() {
   return data;
 }
 
+/**
+ * The most-requested models, by count, for the landing page.
+ *
+ * Tallied client-side over a bounded row scan — the same shape the stats route
+ * uses for its 24h active-key count — rather than a GROUP BY, which the JS
+ * client can't express without a stored procedure. The cap keeps it O(one query)
+ * even as usage grows; at real volume it becomes a sample of the busiest models,
+ * which is exactly what a "most used" list wants. Empty when no DB is configured.
+ */
+export async function getTopModels(limit = 3): Promise<{ model: string; requests: number }[]> {
+  if (!supabaseConfigured()) return [];
+  const { data } = await admin().from("usage_logs").select("model").limit(50000);
+  if (!data) return [];
+  const counts = new Map<string, number>();
+  for (const r of data as { model: string | null }[]) {
+    if (!r.model) continue;
+    counts.set(r.model, (counts.get(r.model) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([model, requests]) => ({ model, requests }))
+    .sort((a, b) => b.requests - a.requests)
+    .slice(0, limit);
+}
+
 export async function logUsage(apiKeyId: string, model: string, hadImage: boolean, streamed: boolean, status: number) {
   if (!supabaseConfigured()) return; // no DB in local-dev / bypass mode
   admin()
