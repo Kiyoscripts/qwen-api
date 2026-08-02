@@ -18,6 +18,7 @@ const {
   SITE_URL,
   LINK_BOT_SECRET,
   WHITELIST_CHANNEL, // optional: /link only works here; other messages get deleted
+  DISCORD_GUILD_ID,  // optional: register commands here instead of globally
 } = process.env;
 
 for (const [k, v] of Object.entries({ DISCORD_TOKEN, SITE_URL, LINK_BOT_SECRET })) {
@@ -31,8 +32,41 @@ const auth = { Authorization: `Bearer ${LINK_BOT_SECRET}` };
 // ---------------------------------------------------------------------------
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 
-client.once("clientReady", () => {
+// ---------------------------------------------------------------------------
+// Slash commands.
+//
+// Discord only surfaces commands that have been registered with it — listening
+// for the interaction is not enough, which is why a bot can sit online showing
+// no commands at all. Registration is done on every startup rather than by a
+// separate deploy script, so a fresh deploy can never leave the two out of step.
+// The call is idempotent: `set` replaces the list with exactly this array.
+// ---------------------------------------------------------------------------
+const COMMANDS = [
+  { name: "link", description: "Get a one-time code to link your Discord to Qwen3.8 API" },
+];
+
+async function registerCommands() {
+  try {
+    if (DISCORD_GUILD_ID) {
+      // Guild commands appear the moment they are registered. Global ones can
+      // take up to an hour to propagate, which reads exactly like a broken bot.
+      await client.application.commands.set(COMMANDS, DISCORD_GUILD_ID);
+      console.log(`✓ Registered /link in guild ${DISCORD_GUILD_ID} — available immediately`);
+    } else {
+      await client.application.commands.set(COMMANDS);
+      console.log("✓ Registered /link globally — Discord may take up to an hour to show it");
+      console.log("  Set DISCORD_GUILD_ID to your server's id to register instantly instead.");
+    }
+  } catch (e) {
+    // Never fatal: the outbox poll still delivers login keys without commands.
+    console.error("✗ Could not register slash commands:", e.message);
+    console.error("  The bot's invite link needs the applications.commands scope.");
+  }
+}
+
+client.once("clientReady", async () => {
   console.log(`✓ Logged in as ${client.user.tag}`);
+  await registerCommands();
   console.log("✓ Polling the site for login-key DMs…");
   setInterval(pollOutbox, 4000);
 });
