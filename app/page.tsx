@@ -3,7 +3,6 @@ import ThemeSwitcher from "./Theme";
 import StatsBar from "./StatsBar";
 import { BaseUrl, CopyButton } from "./Copy";
 import AccountNav from "./Account";
-import CursorToggle from "./CursorToggle";
 import LanguageSelector from "./LanguageSelector";
 import { getT } from "@/lib/i18nServer";
 import { getTopModels } from "@/lib/supabase";
@@ -25,7 +24,7 @@ const MODELS = [
 
 const FEATURES = [
   { title: "OpenAI-compatible", body: "Point any OpenAI SDK at the base URL and pass your key. Chat, streaming, vision and tools keep their standard shapes." },
-  { title: "Anthropic-compatible", body: "/v1/messages speaks the Messages API too, count_tokens included — enough for Claude Code to run against it unmodified." },
+  { title: "Anthropic-compatible", body: "/v1/messages speaks the Messages API too, count_tokens included, which is enough for Claude Code to run against it unmodified." },
   { title: "Reasoning and tools", body: "Toggle thinking per request, read reasoning_content off the stream, and call functions through emulated tool-calling that leaves your system prompt intact." },
   { title: "Image, video and speech", body: "Generate and edit images, render video with Qwen Wan, synthesise speech. One key, one host, no second integration." },
   { title: "Pooled with failover", body: "Qwen and OneCompiler each run their own pool of accounts. Requests rotate and fail over automatically, so one rate-limited or daily-capped account never surfaces as an error." },
@@ -77,7 +76,6 @@ export default async function Home() {
           </div>
           <div className="lp-navcta">
             <ThemeSwitcher compact />
-            <CursorToggle compact />
             <LanguageSelector compact />
             <AccountNav />
           </div>
@@ -114,10 +112,9 @@ export default async function Home() {
 
           <section id="models">
             <div className="lp-sechead">
-              <div className="lp-eyebrow">01 — {t("home_sec_models")}</div>
+              <h2 className="lp-h2">{t("home_sec_models_h")}</h2>
               <a className="lp-seclink" href="/models">{t("home_sec_models_all")}</a>
             </div>
-            <h2 className="lp-h2">{t("home_sec_models_h")}</h2>
             <div className="lp-usegrid" style={{ marginTop: 26 }}>
               {topRows.map((r, i) => (
                 <div key={r.model} className="lp-usecard glass">
@@ -138,9 +135,8 @@ export default async function Home() {
 
           <section>
             <div className="lp-sechead">
-              <div className="lp-eyebrow">02 — {t("home_sec_caps")}</div>
+              <h2 className="lp-h2">{t("home_sec_caps_h")}</h2>
             </div>
-            <h2 className="lp-h2">{t("home_sec_caps_h")}</h2>
             <div className="lp-feats" style={{ marginTop: 26 }}>
               {FEATURES.map((f, i) => (
                 <div key={f.title} className="lp-feat glass">

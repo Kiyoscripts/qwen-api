@@ -3,8 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "highlight.js/styles/github-dark.css";
 import "./theme.css";
 import "./globals.css";
-import Cursor from "./Cursor";
-import Sheen from "./Sheen";
 import { I18nProvider } from "./I18n";
 import { getLocale } from "@/lib/i18nServer";
 import { dirFor } from "@/lib/i18n";
@@ -46,8 +44,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         <I18nProvider locale={locale}>
           {children}
-          <Cursor />
-          <Sheen />
         </I18nProvider>
       </body>
     </html>

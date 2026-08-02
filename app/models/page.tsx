@@ -1,7 +1,6 @@
 import Aurora from "../Aurora";
 import ThemeSwitcher from "../Theme";
 import AccountNav from "../Account";
-import CursorToggle from "../CursorToggle";
 import LanguageSelector from "../LanguageSelector";
 import { getT } from "@/lib/i18nServer";
 import { getModels } from "@/lib/qwen";
@@ -100,7 +99,6 @@ export default async function ModelsPage() {
           </div>
           <div className="lp-navcta">
             <ThemeSwitcher compact />
-            <CursorToggle compact />
             <LanguageSelector compact />
             <AccountNav />
           </div>

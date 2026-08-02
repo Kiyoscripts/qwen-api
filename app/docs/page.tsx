@@ -1,7 +1,6 @@
 import Aurora from "../Aurora";
 import ThemeSwitcher from "../Theme";
 import AccountNav from "../Account";
-import CursorToggle from "../CursorToggle";
 import LanguageSelector from "../LanguageSelector";
 import { CodeTabs, Code } from "./CodeTabs";
 import {
@@ -101,7 +100,6 @@ export default function DocsPage() {
           </div>
           <div className="lp-navcta">
             <ThemeSwitcher compact />
-            <CursorToggle compact />
             <LanguageSelector compact />
             <AccountNav />
           </div>

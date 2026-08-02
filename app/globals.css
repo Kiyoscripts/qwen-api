@@ -866,54 +866,49 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 .ui-sel-check { color: var(--accent-2); flex: none; }
 .ui-sel-empty { padding: 10px; font-size: 12.5px; color: var(--faint); }
 
-/* --- Frosted glass + button primitives ------------------------------------- */
-.lp-nav.glass { box-shadow: var(--shadow-1), var(--shadow-2), var(--shadow-3); }
-
+/* --- Button primitives (flat, sharp, single accent) ------------------------- */
 .g-btn {
   display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;
-  padding: 10px 18px; border-radius: 11px; border: 1px solid transparent; cursor: pointer;
+  padding: 10px 18px; border-radius: 4px; border: 1px solid transparent; cursor: pointer;
   color: var(--accent-ink);
   background: var(--accent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 8px 20px -10px color-mix(in oklab, var(--accent) 70%, transparent);
-  transition: filter var(--t-fast) ease, transform var(--t-mid) var(--spring), box-shadow var(--t-mid) var(--ease-out);
-  will-change: transform;
+  transition: background var(--t-fast) ease, transform var(--t-fast) var(--ease-out), color var(--t-fast) ease;
 }
-.g-btn:hover {
-  filter: brightness(1.06);
-  transform: translateY(-1px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 12px 28px -10px color-mix(in oklab, var(--accent) 85%, transparent);
+.g-btn:hover { background: var(--accent-3); transform: translateY(-1px); }
+.g-btn:active { transform: translateY(0); transition-duration: .05s; }
+.g-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.g-btn.lg { padding: 12px 22px; font-size: 15px; }
+.g-btn.outline {
+  background: transparent; color: var(--text); border: 1px solid var(--border-strong);
 }
-/* Press: scale down into the surface, then spring back on release. The spring
-   lives on the default transition so the rebound overshoots slightly. */
-.g-btn:active { transform: scale(.965); transition-duration: .06s; }
-.g-btn:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
-.g-btn.lg { padding: 12px 24px; font-size: 15px; }
-.g-btn.outline { background: var(--glass); color: var(--text); border: 1px solid var(--glass-brd);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-.g-btn.outline:hover { background: var(--glass-strong); filter: none; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07); }
-.g-btn:disabled { opacity: .5; cursor: default; box-shadow: none; }
+.g-btn.outline:hover { background: var(--glass); border-color: var(--text); transform: translateY(-1px); }
+.g-btn:disabled { opacity: .5; cursor: default; }
 
-/* --- Landing page ----------------------------------------------------------- */
+/* --- Landing: editorial-technical, flat, hairline-ruled --------------------- */
 .lp { position: relative; z-index: 1; }
 .lp-wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
-.lp-nav {
+
+/* Full-width bar, hairline underline, no floating pill, no glass. */
+.lp-nav, .lp-nav.glass {
   display: flex; align-items: center; justify-content: space-between;
-  margin: 22px auto; max-width: 1120px; padding: 11px 18px;
-  position: sticky; top: 14px; z-index: 30;
+  margin: 0; max-width: none; padding: 16px 28px;
+  position: sticky; top: 0; z-index: 30;
   background: var(--nav-tint);
+  border: 0; border-bottom: 1px solid var(--border); border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: saturate(140%) blur(8px); -webkit-backdrop-filter: saturate(140%) blur(8px);
 }
-@media (max-width: 1180px) { .lp-nav { margin-left: 28px; margin-right: 28px; } }
 .lp-brand { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: -.2px; color: var(--text); font-size: 15px; }
-/* The real Qwen mark — every brand lockup on the site pulls from this one rule. */
-.lp-logo { width: 24px; height: 24px; flex: none; background: url("/qwen.svg") center / contain no-repeat; }
-.lp-links { display: flex; gap: 24px; }
-.lp-links a { color: var(--muted); font-size: 14px; }
+.lp-logo { width: 22px; height: 22px; flex: none; background: url("/qwen.svg") center / contain no-repeat; }
+.lp-links { display: flex; gap: 26px; }
+.lp-links a { color: var(--muted); font-size: 13.5px; letter-spacing: .1px; }
 .lp-links a:hover { color: var(--text); text-decoration: none; }
 .lp-navcta { display: flex; gap: 10px; align-items: center; }
 .lp-navcta .ghost { color: var(--muted); font-size: 14px; padding: 8px 14px; cursor: pointer; }
 .lp-navcta .ghost:hover { color: var(--text); text-decoration: none; }
 @media (max-width: 720px) { .lp-links { display: none; } }
+/* The wrap that used to sit under a floating nav now needs its own top space. */
+.lp-nav + .lp-wrap { padding-top: 8px; }
 
 .lp-hero { text-align: left; padding: 72px 0 30px; max-width: 760px; }
 .lp-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2);
@@ -994,11 +989,14 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
   margin: 96px 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
 }
 .lp-sechead .lp-eyebrow { margin: 0; }
+/* The headline now lives inside the ruled header row, so it carries no margin
+   of its own — the row's padding-bottom is the gap above the rule. */
+.lp-sechead .lp-h2 { margin: 0; }
 .lp-seclink { color: var(--muted); font-size: 13px; white-space: nowrap; }
 .lp-seclink:hover { color: var(--text); text-decoration: none; }
-.lp-eyebrow { text-align: left; color: var(--faint); font-size: 11.5px; letter-spacing: 1.6px; text-transform: uppercase;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 80px 0 14px; }
-.lp-h2 { text-align: left; font-size: 30px; font-weight: 600; letter-spacing: -1px; margin: 0 0 8px; color: var(--text); }
+.lp-eyebrow { text-align: left; color: var(--accent); font-size: 11px; letter-spacing: 1.8px; text-transform: uppercase;
+  font-family: var(--font-mono), ui-monospace, Menlo, monospace; margin: 80px 0 14px; font-weight: 500; }
+.lp-h2 { text-align: left; font-size: 34px; font-weight: 640; letter-spacing: -1.4px; margin: 0 0 8px; color: var(--text); }
 
 /* model grid */
 .lp-models { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
@@ -1010,10 +1008,10 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 @media (max-width: 760px) { .lp-usegrid { grid-template-columns: 1fr; } }
 .lp-usecard {
   position: relative; display: flex; flex-direction: column; gap: 12px;
-  padding: 22px; border-radius: var(--r-lg); overflow: hidden;
+  padding: 22px; border-radius: var(--r-sm); overflow: hidden;
   transition: transform var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
 }
-.lp-usecard:hover { transform: translateY(-2px); background: var(--glass-strong); border-color: var(--border-strong); }
+.lp-usecard:hover { background: var(--glass-strong); border-color: var(--accent); }
 .lp-userank {
   position: absolute; top: 16px; right: 18px;
   font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--accent);
@@ -1023,17 +1021,10 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 .lp-usenum { display: flex; align-items: baseline; gap: 8px; margin-top: auto; }
 .lp-usenum b { font-size: 34px; font-weight: 720; letter-spacing: -1px; color: var(--text); font-variant-numeric: tabular-nums; }
 .lp-usenum span { font-size: 13px; color: var(--muted); }
-.lp-mcard { position: relative; display: flex; flex-direction: column; padding: 18px; border-radius: 14px; overflow: hidden;
+.lp-mcard { position: relative; display: flex; flex-direction: column; padding: 18px; border-radius: var(--r-sm); overflow: hidden;
   transition: transform .16s ease, border-color .16s ease, background .16s ease; }
 /* A hairline of accent light along the top edge, revealed on hover. */
-.lp-mcard::before {
-  content: ""; position: absolute; left: 18px; right: 18px; top: 0; height: 1px; opacity: 0;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  transition: opacity .16s ease;
-}
-.lp-mcard:hover { transform: translateY(-2px); background: var(--glass-strong);
-  border-color: color-mix(in oklab, var(--accent) 40%, var(--glass-brd)); }
-.lp-mcard:hover::before { opacity: 1; }
+.lp-mcard:hover { background: var(--glass-strong); border-color: var(--accent); }
 .lp-mcard .mt { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14.5px; color: var(--text); }
 .lp-mcard .chip { width: 22px; height: 22px; border-radius: 6px; flex: none;
   background: color-mix(in oklab, var(--accent) 22%, transparent); }
@@ -1043,13 +1034,13 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
   font-size: 11.5px; color: var(--faint); }
 .lp-mcard .lp-tags { margin-top: auto; padding-top: 14px; }
 .lp-tags { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
-.lp-tag { font-size: 11px; color: var(--text-2); padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,.05); border: 1px solid var(--glass-brd); }
+.lp-tag { font-size: 11px; color: var(--muted); padding: 2px 8px; border-radius: 3px; background: var(--bg-2); border: 1px solid var(--border); }
 
 /* features */
 .lp-feats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 @media (max-width: 780px) { .lp-feats { grid-template-columns: 1fr; } }
-.lp-feat { padding: 22px; border-radius: 16px; }
-.lp-feat .fi { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent-2); letter-spacing: 1px; }
+.lp-feat { padding: 22px; border-radius: var(--r-sm); }
+.lp-feat .fi { font-family: var(--font-mono), ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent); letter-spacing: 1px; }
 .lp-feat h3 { margin: 13px 0 6px; font-size: 15px; font-weight: 600; color: var(--text); }
 .lp-feat p { color: var(--muted); font-size: 13.5px; line-height: 1.6; margin: 0; }
 
@@ -1068,8 +1059,7 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 
 /* CTA + footer */
 .lp-cta { padding: 40px; border-radius: 20px; margin: 8px 0; overflow: hidden; position: relative; }
-.lp-cta::before { content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(90% 130% at 50% -10%, color-mix(in oklab, var(--accent) 16%, transparent), transparent 60%); }
+.lp-cta::before { content: none; }
 .lp-cta .g-btn { position: relative; }
 .lp-cta h2 { position: relative; font-size: 28px; font-weight: 680; letter-spacing: -.6px; margin: 0 0 8px; color: var(--text); }
 .lp-cta p { position: relative; color: var(--muted); margin: 0 0 22px; }
@@ -1486,8 +1476,8 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 .themesw-pill.i2 { transform: translate3d(200%, 0, 0); }
 
 /* Squircle-ish corner scale, applied to the surfaces that read as panels. */
-.lp-mcard, .lp-feat, .lp-stat { border-radius: var(--r-lg); }
-.lp-cta { border-radius: var(--r-xl); }
+.lp-mcard, .lp-feat, .lp-stat { border-radius: var(--r-sm); }
+.lp-cta { border-radius: var(--r-md); }
 
 /* Card lift: transform + shadow only. */
 .lp-mcard {
