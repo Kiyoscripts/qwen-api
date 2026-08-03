@@ -15,7 +15,7 @@ import { authenticate } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const TTS_HELPER_MODEL = process.env.QWEN_TTS_MODEL || "qwen3.8-max-preview";
+const TTS_HELPER_MODEL = process.env.QWEN_TTS_MODEL || "qwen3.8-max";
 
 function err(message: string, status: number, type = "invalid_request_error") {
   return NextResponse.json({ error: { message, type } }, { status });
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
         chatId = await createChat(token, TTS_HELPER_MODEL, "t2t");
         const prompt = `Repeat the following text back exactly as written, with no extra words, no quotes and no commentary:\n\n${input}`;
         // Thinking stays on: reasoning adds nothing to repeating a string back,
-        // but the default helper (qwen3.8-max-preview) rejects a request with it
+        // but the default helper (qwen3.8-max) rejects a request with it
         // disabled — upstream answers "invalid_input" and generates nothing.
         const messages = [buildMessage([{ role: "user", content: prompt }], { model: TTS_HELPER_MODEL, chatType: "t2t", thinking: true })];
         const res = await openCompletion(token, chatId, { model: TTS_HELPER_MODEL, messages, stream: true });

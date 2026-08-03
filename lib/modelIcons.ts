@@ -20,7 +20,7 @@ export const MAKER_ICONS: Record<string, string> = {
   xai: "/grok.svg",
 };
 
-/** Fallback for bare (non-namespaced) Qwen ids like `qwen3.8-max-preview`. */
+/** Fallback for bare (non-namespaced) Qwen ids like `qwen3.8-max`. */
 export const DEFAULT_MODEL_ICON = "/qwen.svg";
 
 export function modelIcon(id: string | undefined | null): string {

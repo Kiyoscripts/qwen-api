@@ -12,7 +12,7 @@ const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono", disp
 
 export const metadata: Metadata = {
   title: "Qwen3.8 API",
-  description: "OpenAI-compatible API for qwen3.8-max-preview, with vision, image, video and speech.",
+  description: "OpenAI-compatible API for qwen3.8-max, with vision, image, video and speech.",
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

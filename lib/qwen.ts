@@ -4,7 +4,7 @@
 //
 // Reverse-engineered facts:
 //  - The "Version" header is required or completions fail with Internal error.
-//  - qwen3.8-max-preview requires feature_config.thinking_enabled = true.
+//  - qwen3.8-max requires feature_config.thinking_enabled = true.
 //  - Completions accept exactly ONE message; we collapse history into one.
 //  - Images are uploaded to OSS and referenced in message.files.
 //  - Image gen (chat_type t2i, stream): the image URL arrives as delta.content

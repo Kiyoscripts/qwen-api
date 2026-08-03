@@ -160,12 +160,12 @@ export default function DocsPage() {
               </p>
               <Params
                 rows={[
-                  ["model", "string", "e.g. qwen3.8-max-preview. See /v1/models for the full list."],
+                  ["model", "string", "e.g. qwen3.8-max. See /v1/models for the full list."],
                   ["messages", "array", "Standard roles: system, user, assistant, tool."],
                   ["stream", "boolean", "Server-sent events when true. Default false."],
                   ["tools", "array", "OpenAI function schemas. See Tool calling."],
                   ["tool_choice", '"auto" | "none" | object', 'Allow, forbid, or force a call. "none" disables tools entirely.'],
-                  ["enable_thinking", "boolean", "Skip reasoning on models that allow it. Ignored by qwen3.8-max-preview, which always reasons."],
+                  ["enable_thinking", "boolean", "Skip reasoning on models that allow it. Ignored by qwen3.8-max, which always reasons."],
                   ["size", "string", "Aspect ratio for image and video models: 1:1, 16:9, 9:16, 4:3, 3:4."],
                   ["watermark", "boolean | string", 'Image watermark. false removes it; a string replaces the default.'],
                 ]}
@@ -202,7 +202,7 @@ export default function DocsPage() {
               <Code lang="json">{`{"choices":[{"delta":{"reasoning_content":"The user wants…"},"finish_reason":null}]}
 {"choices":[{"delta":{"content":"Closures are…"},"finish_reason":null}]}`}</Code>
               <p className="docs-fine">
-                On <code>qwen3.8-max-preview</code> reasoning cannot be turned off, and it dominates the
+                On <code>qwen3.8-max</code> reasoning cannot be turned off, and it dominates the
                 wall clock — a typical reply spends most of its time thinking and only a few seconds
                 writing. Budget your timeouts accordingly. Models that support it accept{" "}
                 <code>enable_thinking: false</code> for a faster, shallower answer.
@@ -290,7 +290,7 @@ export default function DocsPage() {
               <Params
                 head="Model"
                 rows={[
-                  ["qwen3.8-max-preview", "chat", "Flagship. Always reasons, accepts images, supports tools."],
+                  ["qwen3.8-max", "chat", "Flagship. Always reasons, accepts images, supports tools."],
                   ["qwen-image-3.0 / 2.0", "image", "Text-to-image, and editing when given references."],
                   ["qwen-wan", "video", "Text-to-video and image-to-video, roughly 5s clips."],
                 ]}

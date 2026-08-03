@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 /**
  * How long the model spent deciding versus writing.
  *
- * The split is the useful part on a reasoning model: `qwen3.8-max-preview`
+ * The split is the useful part on a reasoning model: `qwen3.8-max`
  * always reasons and cannot be told not to, so a reply that looks frozen is
  * usually mid-deliberation rather than stalled. Separating the two makes the
  * difference between "thinking hard" and "something is wrong" visible, and it

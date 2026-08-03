@@ -10,7 +10,7 @@ export const quickstart = [
   -H "Authorization: Bearer $QWEN_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "qwen3.8-max-preview",
+    "model": "qwen3.8-max",
     "messages": [{ "role": "user", "content": "Explain closures in one sentence." }]
   }'`,
   },
@@ -25,7 +25,7 @@ client = OpenAI(
 )
 
 r = client.chat.completions.create(
-    model="qwen3.8-max-preview",
+    model="qwen3.8-max",
     messages=[{"role": "user", "content": "Explain closures in one sentence."}],
 )
 print(r.choices[0].message.content)`,
@@ -41,7 +41,7 @@ const client = new OpenAI({
 });
 
 const r = await client.chat.completions.create({
-  model: "qwen3.8-max-preview",
+  model: "qwen3.8-max",
   messages: [{ role: "user", content: "Explain closures in one sentence." }],
 });
 console.log(r.choices[0].message.content);`,
@@ -65,7 +65,7 @@ func main() {
     client := openai.NewClientWithConfig(cfg)
 
     resp, err := client.CreateChatCompletion(context.Background(), openai.ChatCompletionRequest{
-        Model:    "qwen3.8-max-preview",
+        Model:    "qwen3.8-max",
         Messages: []openai.ChatCompletionMessage{{Role: "user", Content: "Explain closures in one sentence."}},
     })
     if err != nil {
@@ -85,7 +85,7 @@ client = OpenAI::Client.new(
 )
 
 response = client.chat(parameters: {
-  model: "qwen3.8-max-preview",
+  model: "qwen3.8-max",
   messages: [{ role: "user", content: "Explain closures in one sentence." }]
 })
 puts response.dig("choices", 0, "message", "content")`,
@@ -102,7 +102,7 @@ $client = OpenAI::factory()
     ->make();
 
 $result = $client->chat()->create([
-    'model' => 'qwen3.8-max-preview',
+    'model' => 'qwen3.8-max',
     'messages' => [['role' => 'user', 'content' => 'Explain closures in one sentence.']],
 ]);
 
@@ -115,7 +115,7 @@ import java.net.URI;
 import java.net.http.*;
 
 var body = """
-    {"model":"qwen3.8-max-preview",
+    {"model":"qwen3.8-max",
      "messages":[{"role":"user","content":"Explain closures in one sentence."}]}
     """;
 
@@ -138,7 +138,7 @@ using System.ClientModel;
 
 var options = new OpenAIClientOptions { Endpoint = new Uri("${BASE}/v1") };
 var key = new ApiKeyCredential(Environment.GetEnvironmentVariable("QWEN_API_KEY")!);
-var client = new ChatClient("qwen3.8-max-preview", key, options);
+var client = new ChatClient("qwen3.8-max", key, options);
 
 ChatCompletion completion = client.CompleteChat("Explain closures in one sentence.");
 Console.WriteLine(completion.Content[0].Text);`,
@@ -152,7 +152,7 @@ export const streaming = [
   -H "Authorization: Bearer $QWEN_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "qwen3.8-max-preview",
+    "model": "qwen3.8-max",
     "stream": true,
     "messages": [{ "role": "user", "content": "Count to five." }]
   }'
@@ -168,7 +168,7 @@ export const streaming = [
   {
     lang: "Python",
     code: `stream = client.chat.completions.create(
-    model="qwen3.8-max-preview",
+    model="qwen3.8-max",
     messages=[{"role": "user", "content": "Count to five."}],
     stream=True,
 )
@@ -187,7 +187,7 @@ for chunk in stream:
   {
     lang: "TypeScript",
     code: `const stream = await client.chat.completions.create({
-  model: "qwen3.8-max-preview",
+  model: "qwen3.8-max",
   messages: [{ role: "user", content: "Count to five." }],
   stream: true,
 });
@@ -213,7 +213,7 @@ export const vision = [
   -H "Authorization: Bearer $QWEN_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "qwen3.8-max-preview",
+    "model": "qwen3.8-max",
     "messages": [{
       "role": "user",
       "content": [
@@ -231,7 +231,7 @@ with open("cat.jpg", "rb") as f:
     b64 = base64.b64encode(f.read()).decode()
 
 r = client.chat.completions.create(
-    model="qwen3.8-max-preview",
+    model="qwen3.8-max",
     messages=[{
         "role": "user",
         "content": [
@@ -250,7 +250,7 @@ print(r.choices[0].message.content)`,
 const b64 = readFileSync("cat.jpg").toString("base64");
 
 const r = await client.chat.completions.create({
-  model: "qwen3.8-max-preview",
+  model: "qwen3.8-max",
   messages: [{
     role: "user",
     content: [
@@ -283,7 +283,7 @@ export const tools = [
 
 messages = [{"role": "user", "content": "Weather in Paris?"}]
 r = client.chat.completions.create(
-    model="qwen3.8-max-preview", messages=messages, tools=tools, tool_choice="auto"
+    model="qwen3.8-max", messages=messages, tools=tools, tool_choice="auto"
 )
 
 call = r.choices[0].message.tool_calls[0]
@@ -296,7 +296,7 @@ messages.append({
 })
 
 final = client.chat.completions.create(
-    model="qwen3.8-max-preview", messages=messages, tools=tools
+    model="qwen3.8-max", messages=messages, tools=tools
 )
 print(final.choices[0].message.content)`,
   },
@@ -317,7 +317,7 @@ print(final.choices[0].message.content)`,
 
 const messages: any[] = [{ role: "user", content: "Weather in Paris?" }];
 const r = await client.chat.completions.create({
-  model: "qwen3.8-max-preview", messages, tools, tool_choice: "auto",
+  model: "qwen3.8-max", messages, tools, tool_choice: "auto",
 });
 
 const call = r.choices[0].message.tool_calls![0];
@@ -330,7 +330,7 @@ messages.push({
 });
 
 const final = await client.chat.completions.create({
-  model: "qwen3.8-max-preview", messages, tools,
+  model: "qwen3.8-max", messages, tools,
 });`,
   },
   {
@@ -339,7 +339,7 @@ const final = await client.chat.completions.create({
   -H "Authorization: Bearer $QWEN_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "qwen3.8-max-preview",
+    "model": "qwen3.8-max",
     "messages": [{ "role": "user", "content": "Weather in Paris?" }],
     "tools": [{
       "type": "function",
@@ -490,8 +490,8 @@ export const anthropic = [
 # Claude Code appends /v1/messages itself.
 export ANTHROPIC_BASE_URL="${BASE}"
 export ANTHROPIC_API_KEY="qwen_sk_..."
-export ANTHROPIC_MODEL="qwen3.8-max-preview"
-export ANTHROPIC_SMALL_FAST_MODEL="qwen3.8-max-preview"
+export ANTHROPIC_MODEL="qwen3.8-max"
+export ANTHROPIC_SMALL_FAST_MODEL="qwen3.8-max"
 
 # ANTHROPIC_AUTH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN take precedence over
 # ANTHROPIC_API_KEY, so unset them or your key is ignored:
@@ -508,7 +508,7 @@ client = Anthropic(
 )
 
 msg = client.messages.create(
-    model="qwen3.8-max-preview",
+    model="qwen3.8-max",
     max_tokens=1024,
     messages=[{"role": "user", "content": "Explain closures in one sentence."}],
 )
@@ -521,7 +521,7 @@ print(msg.content[0].text)`,
   -H "anthropic-version: 2023-06-01" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "qwen3.8-max-preview",
+    "model": "qwen3.8-max",
     "max_tokens": 1024,
     "messages": [{ "role": "user", "content": "Explain closures in one sentence." }]
   }'
@@ -531,7 +531,7 @@ print(msg.content[0].text)`,
 curl ${BASE}/v1/messages/count_tokens \\
   -H "x-api-key: $QWEN_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{ "model": "qwen3.8-max-preview",
+  -d '{ "model": "qwen3.8-max",
         "messages": [{ "role": "user", "content": "hi" }] }'`,
   },
 ];
@@ -541,7 +541,7 @@ export const continuation = [
     lang: "Python",
     code: `def ask(messages):
     return client.chat.completions.create(
-        model="qwen3.8-max-preview", messages=messages
+        model="qwen3.8-max", messages=messages
     )
 
 messages = [{"role": "user", "content": "Write a long essay about TCP."}]

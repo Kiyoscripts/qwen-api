@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 const BASE = "https://qwen38-api-production.up.railway.app";
 
 const MODELS = [
-  { name: "Qwen3.8 Max Preview", id: "qwen3.8-max-preview", icon: "/qwen.svg", desc: "Flagship reasoning and vision. Streaming, tool calls, 300s ceiling.", tags: ["reasoning", "vision", "tools"] },
+  { name: "Qwen3.8-Max", id: "qwen3.8-max", icon: "/qwen.svg", desc: "Flagship reasoning and vision. Streaming, tool calls, 300s ceiling.", tags: ["reasoning", "vision", "tools"] },
   { name: "Qwen Image 3.0 / 2.0", id: "qwen-image-3.0", icon: "/qwen.svg", desc: "Text-to-image and editing. Any aspect ratio, reference images.", tags: ["image", "edit"] },
   { name: "Qwen Wan", id: "qwen-wan", icon: "/qwen.svg", desc: "Text- and image-to-video with live progress. Roughly 5s clips.", tags: ["video"] },
   { name: "GPT 5.4 Mini", id: "openai/gpt-5.4-mini", icon: "/openai.svg", desc: "Fast general chat and coding, served from the OneCompiler pool.", tags: ["chat", "code"] },
@@ -39,7 +39,7 @@ const client = new OpenAI({
 });
 
 const r = await client.chat.completions.create({
-  model: "qwen3.8-max-preview",
+  model: "qwen3.8-max",
   messages: [{ role: "user", content: "Hello!" }],
   stream: true,
 });`;

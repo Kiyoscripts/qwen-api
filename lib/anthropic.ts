@@ -4,7 +4,7 @@
 // Anthropic SDKs default to claude-* model names; map those (and unknowns) to our
 // flagship so it works out of the box. Real Qwen ids pass through.
 export function mapModel(model?: string): string {
-  if (!model || /^claude/i.test(model)) return "qwen3.8-max-preview";
+  if (!model || /^claude/i.test(model)) return "qwen3.8-max";
   return model;
 }
 

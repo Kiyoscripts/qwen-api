@@ -37,7 +37,7 @@ import { randomUUID } from "node:crypto";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const DEFAULT_MODEL = "qwen3.8-max-preview";
+const DEFAULT_MODEL = "qwen3.8-max";
 
 /**
  * Prompt ceiling, in characters of assembled message text.
@@ -51,6 +51,10 @@ const PROMPT_CHAR_LIMIT = 110_000;
 
 // These models require feature_config.thinking_enabled = true — they can't run in
 // "Fast" (non-thinking) mode, so `enable_thinking: false` is ignored for them.
+//
+// The released qwen3.8-max is deliberately NOT here: unlike the preview it
+// offers both Fast and Think, so honouring enable_thinking is what the caller
+// asked for. Listing it would silently force reasoning on every request.
 const REQUIRE_THINKING = new Set(["qwen3.8-max-preview"]);
 
 /**

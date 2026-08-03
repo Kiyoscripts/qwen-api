@@ -92,7 +92,7 @@ export default function Playground() {
   const [keyDraft, setKeyDraft] = useState("");
   const [editingKey, setEditingKey] = useState(false);
   const [models, setModels] = useState<ModelOpt[]>([]);
-  const [model, setModel] = useState("qwen3.8-max-preview");
+  const [model, setModel] = useState("qwen3.8-max");
   const [voices, setVoices] = useState<VoiceOpt[]>([]);
   const [voice, setVoice] = useState("");
   const [mode, setMode] = useState<Mode>("chat");

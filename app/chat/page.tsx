@@ -80,12 +80,12 @@ function describeModel(m: ModelOpt): string {
 
 const STORE = "qwen_chat_conversations";
 const KEY_STORE = "qwen_api_key";
-const DEFAULT_MODEL = "qwen3.8-max-preview";
+const DEFAULT_MODEL = "qwen3.8-max";
 
 // Shown at the top level of the picker, in this order. Everything else is
 // tucked behind "Other models".
 const PRIMARY_IDS = [
-  "qwen3.8-max-preview",
+  "qwen3.8-max",
   "qwen-image-3.0",
   "qwen-image-2.0",
   "qwen-wan",
