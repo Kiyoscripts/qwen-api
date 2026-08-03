@@ -12,16 +12,29 @@
 //    documented quotas and no terms of service. Treat it as best-effort: it is
 //    never a default, and every failure path below degrades instead of throwing
 //    the caller's request away.
-//  - Two hosts circulate under this name and behave differently, so the base URL
-//    is configurable rather than hardcoded to whichever one was reachable first.
+//  - Two hosts circulate under this name. api.tokenrouter.com is the one that
+//    authenticates and serves the model; tokenrouter.me answers the same routes
+//    but rejects the key with INVALID_API_KEY. The base URL stays configurable,
+//    but the default is the host verified to work.
 //  - Unconfigured means absent, not broken: with no key the model is not
 //    advertised and not routable, so the site runs exactly as it did before.
 
 import type { OpenAIMessage } from "./qwen";
 
-export const TOKENROUTER_BASE = (process.env.TOKENROUTER_BASE || "https://tokenrouter.me/v1").replace(/\/+$/, "");
+export const TOKENROUTER_BASE = (process.env.TOKENROUTER_BASE || "https://api.tokenrouter.com/v1").replace(/\/+$/, "");
 
 const TOKENROUTER_API_KEY = process.env.TOKENROUTER_API_KEY || "";
+
+/**
+ * How long to wait for the upstream to START responding.
+ *
+ * Measured: /models answers instantly with a valid key, while
+ * /chat/completions returned zero bytes for over 120s on both the streaming and
+ * buffered paths. Without a bound, one saturated free-tier request occupies the
+ * route for its full 300s ceiling and the caller learns nothing until it dies.
+ * Fail fast with a status that names the problem instead.
+ */
+const TOKENROUTER_TIMEOUT_MS = Number(process.env.TOKENROUTER_TIMEOUT_MS || 60_000);
 
 export class TokenRouterError extends Error {
   status: number;
@@ -42,7 +55,7 @@ export interface TokenRouterModel {
  * through to the Qwen path rather than being blindly forwarded upstream.
  */
 export const TOKENROUTER_MODELS: TokenRouterModel[] = [
-  { id: "moonshotai/kimi-k3-free", name: "Kimi K3 (free)" },
+  { id: "moonshotai/kimi-k3-free", name: "Kimi K3" },
 ];
 
 /** Whether the provider has credentials. Nothing is advertised without them. */
@@ -71,10 +84,16 @@ export async function openCompletion(opts: TokenRouterCompletionOpts): Promise<R
     throw new TokenRouterError("TokenRouter is not configured. Set TOKENROUTER_API_KEY.", 402);
   }
 
+  // Bounds time-to-first-byte only. Once the stream is flowing the caller reads
+  // at its own pace, so this cannot sever a long but healthy reply.
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), TOKENROUTER_TIMEOUT_MS);
+
   let res: Response;
   try {
     res = await fetch(`${TOKENROUTER_BASE}/chat/completions`, {
       method: "POST",
+      signal: ac.signal,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${TOKENROUTER_API_KEY}`,
@@ -89,7 +108,15 @@ export async function openCompletion(opts: TokenRouterCompletionOpts): Promise<R
       }),
     });
   } catch (e: any) {
+    if (e?.name === "AbortError") {
+      throw new TokenRouterError(
+        `TokenRouter did not respond within ${Math.round(TOKENROUTER_TIMEOUT_MS / 1000)}s. The free tier is likely saturated; try again or use another model.`,
+        504
+      );
+    }
     throw new TokenRouterError(`Could not reach ${TOKENROUTER_BASE}: ${e.message}`, 502);
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!res.ok || (opts.stream && !res.body)) {
