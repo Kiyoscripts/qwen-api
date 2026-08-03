@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "node scripts/supervise.mjs start",
     "test:tools": "tsx tests/tools.test.mts && tsx tests/tools.stream.test.mts",
-    "test": "tsx tests/tools.test.mts && tsx tests/tools.stream.test.mts && tsx tests/aurora.flash.test.mts && tsx tests/truncation.test.mts && tsx tests/movednotice.test.mts && tsx tests/origin.test.mts && tsx tests/readaloud.test.mts && tsx tests/onecompiler.stream.test.mts && tsx tests/i18n.test.mts && tsx tests/toolhistory.test.mts && tsx tests/conversation.test.mts && tsx tests/refusal.test.mts && tsx tests/publicurl.test.mts",
+    "test": "tsx tests/tools.test.mts && tsx tests/tools.stream.test.mts && tsx tests/aurora.flash.test.mts && tsx tests/truncation.test.mts && tsx tests/movednotice.test.mts && tsx tests/origin.test.mts && tsx tests/readaloud.test.mts && tsx tests/onecompiler.stream.test.mts && tsx tests/i18n.test.mts && tsx tests/toolhistory.test.mts && tsx tests/conversation.test.mts && tsx tests/refusal.test.mts && tsx tests/publicurl.test.mts && tsx tests/tokenrouter.stream.test.mts",
     "env:railway": "node scripts/env-railway.mjs",
     "dev:web": "next dev",
     "start:web": "next start"

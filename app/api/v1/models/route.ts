@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getModels } from "@/lib/qwen";
 import { ONECOMPILER_MODELS } from "@/lib/onecompiler";
+import { TOKENROUTER_MODELS, tokenRouterConfigured } from "@/lib/tokenrouter";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 import { withTokenFailover } from "@/lib/tokens";
@@ -44,6 +45,19 @@ const oneCompilerEntries = ONECOMPILER_MODELS.map((m) => ({
   capabilities: { vision: false, thinking: false, chat_types: ["t2t"] },
 }));
 
+// TokenRouter's free tier. Advertised only when a key is configured, so an
+// unconfigured deploy does not offer a model that cannot answer.
+const tokenRouterEntries = tokenRouterConfigured()
+  ? TOKENROUTER_MODELS.map((m) => ({
+      id: m.id,
+      object: "model" as const,
+      created: 0,
+      owned_by: "tokenrouter",
+      display_name: m.name,
+      capabilities: { vision: false, thinking: false, chat_types: ["t2t"] },
+    }))
+  : [];
+
 export async function GET(req: NextRequest) {
   if (!(await authenticate(req))) {
     return NextResponse.json({ error: { message: "Invalid or missing API key.", type: "invalid_request_error" } }, { status: 401 });
@@ -65,7 +79,7 @@ export async function GET(req: NextRequest) {
     } catch {
       /* Qwen pool unavailable -> still return the static entries */
     }
-    return NextResponse.json({ object: "list", data: [...customEntries, ...mediaEntries, ...oneCompilerEntries, ...qwenEntries] });
+    return NextResponse.json({ object: "list", data: [...customEntries, ...mediaEntries, ...oneCompilerEntries, ...tokenRouterEntries, ...qwenEntries] });
   } catch (e: any) {
     return NextResponse.json({ error: { message: e.message, type: "upstream_error" } }, { status: 503 });
   }

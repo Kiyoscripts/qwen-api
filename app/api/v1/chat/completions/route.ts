@@ -29,6 +29,14 @@ import {
   OneCompilerError,
 } from "@/lib/onecompiler";
 import { withOneCompilerFailover } from "@/lib/onecompilerTokens";
+import {
+  isTokenRouterModel,
+  resolveTokenRouterModel,
+  openCompletion as openTokenRouterCompletion,
+  tokenRouterDeltas,
+  tokenRouterText,
+  TokenRouterError,
+} from "@/lib/tokenrouter";
 import { logUsage } from "@/lib/supabase";
 import { authenticate } from "@/lib/apiAuth";
 import { publicOrigin } from "@/lib/canonicalHost";
@@ -141,6 +149,12 @@ export async function POST(req: NextRequest) {
   // the Qwen path below.
   if (isOneCompilerModel(modelId)) {
     return handleOneCompiler({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
+  }
+
+  // TokenRouter's free Kimi K3. Gated on configuration inside isTokenRouterModel,
+  // so with no key set the id is simply unknown and falls through as before.
+  if (isTokenRouterModel(modelId)) {
+    return handleTokenRouter({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
   }
 
   // Image / video generation models: generate a result and return it as markdown
@@ -608,6 +622,165 @@ async function handleMedia(args: {
     created,
     model: vm.id,
     choices: [{ index: 0, message: { role: "assistant", content: markdown }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  });
+}
+
+/**
+ * TokenRouter (Kimi K3, free tier).
+ *
+ * The upstream is OpenAI-compatible, so roles survive intact and there is no
+ * conversation to flatten. Tool calling still goes through the same emulated
+ * path as every other provider: uniform behaviour matters more here than using
+ * whatever native support this gateway may or may not have, and it means a
+ * client cannot tell which backend answered.
+ *
+ * There is no account pool to fail over to — one key, best-effort capacity — so
+ * upstream failures are surfaced with their own status. A 429 in particular is
+ * passed through rather than flattened to 502, because that is the expected
+ * steady state on a free tier and a caller that can back off should be told.
+ */
+async function handleTokenRouter(args: {
+  messages: OpenAIMessage[];
+  modelId: string;
+  wantStream: boolean;
+  hadImage: boolean;
+  recordId: string;
+  body: any;
+}) {
+  const { messages, modelId, wantStream, hadImage, recordId, body } = args;
+
+  const model = resolveTokenRouterModel(modelId);
+  if (!model) {
+    logUsage(recordId, modelId, hadImage, wantStream, 404);
+    return err(`Model '${modelId}' is not available.`, 404, "model_not_found");
+  }
+
+  // Text only: there is no attachment path here, so say so rather than dropping
+  // the image silently and answering about nothing.
+  if (hadImage) {
+    logUsage(recordId, modelId, hadImage, wantStream, 400);
+    return err(`Model '${modelId}' does not accept image input.`, 400);
+  }
+
+  const toolsOn = hasTools(body);
+  const effMessages: OpenAIMessage[] = toolsOn
+    ? (preprocessToolMessages(messages, body.tools, body.tool_choice) as OpenAIMessage[])
+    : messages;
+
+  let trRes: Response;
+  try {
+    trRes = await openTokenRouterCompletion({
+      model: modelId,
+      messages: effMessages,
+      stream: wantStream,
+      temperature: typeof body.temperature === "number" ? body.temperature : undefined,
+      max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : undefined,
+    });
+  } catch (e: any) {
+    const status = e instanceof TokenRouterError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, wantStream, status);
+    return err(e.message || "Upstream error", status, "upstream_error");
+  }
+
+  const id = "chatcmpl-" + randomUUID();
+  const created = Math.floor(Date.now() / 1000);
+
+  if (wantStream) {
+    const encoder = new TextEncoder();
+    let hb: ReturnType<typeof keepAlive> | null = null;
+    const registry = toolsOn ? buildRegistry(body.tools) : null;
+    const stream = new ReadableStream({
+      async start(controller) {
+        hb = keepAlive(controller, encoder);
+        const send = (delta: any, finish: string | null = null) => {
+          hb!.touch();
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
+            )
+          );
+        };
+        try {
+          send({ role: "assistant" });
+
+          const parser = registry ? new ToolStream(registry) : null;
+          let toolCalls: OAIToolCall[] = [];
+
+          try {
+            for await (const { text } of tokenRouterDeltas(trRes)) {
+              if (parser) {
+                const out = parser.push(text);
+                if (out) send({ content: out });
+              } else {
+                send({ content: text });
+              }
+            }
+            if (parser) {
+              const fin = parser.end();
+              if (fin.text) send({ content: fin.text });
+              toolCalls = applyToolPolicy(fin.toolCalls, body, registry!);
+            }
+          } catch (e: any) {
+            // Salvage whatever the parser resolved before the stream broke.
+            if (parser) {
+              try { toolCalls = applyToolPolicy(parser.end().toolCalls, body, registry!); } catch { /* nothing to salvage */ }
+            }
+            send({ content: `\n[error: ${e.message}]` });
+          }
+
+          hb.stop();
+          if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
+          send({}, toolCalls.length ? "tool_calls" : "stop");
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          logUsage(recordId, modelId, hadImage, true, 200);
+        } catch {
+          logUsage(recordId, modelId, hadImage, true, 499);
+        } finally {
+          hb.stop();
+          await trRes.body?.cancel().catch(() => {});
+        }
+      },
+      async cancel() {
+        hb?.stop();
+        await trRes.body?.cancel().catch(() => {});
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  }
+
+  // Buffered: the upstream already answers in OpenAI shape, so the reply is read
+  // straight out of it rather than being reassembled from deltas.
+  let content = "";
+  try {
+    const json: any = await trRes.json();
+    if (json?.error) throw new TokenRouterError(json.error.message || "Upstream error", 502);
+    content = tokenRouterText(json);
+  } catch (e: any) {
+    const status = e instanceof TokenRouterError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, false, status);
+    return err(e.message || "Upstream error", status, "upstream_error");
+  }
+  logUsage(recordId, modelId, hadImage, false, 200);
+
+  const { content: toolContent, toolCalls: parsed } = toolsOn
+    ? extractToolCalls(content, body.tools)
+    : { content, toolCalls: [] as OAIToolCall[] };
+  const toolCalls = toolsOn ? applyToolPolicy(parsed, body, buildRegistry(body.tools)) : [];
+
+  return NextResponse.json({
+    id,
+    object: "chat.completion",
+    created,
+    model: modelId,
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content: toolCalls.length ? null : toolContent, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) },
+        finish_reason: toolCalls.length ? "tool_calls" : "stop",
+      },
+    ],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
 }
