@@ -4,11 +4,13 @@
 import { createHmac, createHash, randomUUID } from "node:crypto";
 import { qwenFetch } from "./proxy";
 
+export type UploadKind = "image" | "video" | "audio" | "file";
+
 export interface QwenFileEntry {
-  type: "image";
+  type: UploadKind;
   file_type: string;
-  showType: "image";
-  file_class: "vision";
+  showType: UploadKind;
+  file_class: "vision" | "document" | "audio" | "video";
   id: string;
   url: string;
   name: string;
@@ -128,17 +130,44 @@ async function ossPut(sts: StsToken, bytes: Buffer, contentType: string): Promis
   }
 }
 
-export async function uploadImage(
+/**
+ * How an upload is described to Qwen, derived from its MIME type.
+ *
+ * Upstream's getstsToken accepts any `filetype` string without validating it and
+ * reports no classification back, so these values are the only thing that tells
+ * the model what it was given. The image row is the one verified against a live
+ * completion; the others follow the same shape by kind, which is why the mapping
+ * lives here as one table rather than being scattered across call sites.
+ */
+export function classifyUpload(mime: string): {
+  filetype: UploadKind;
+  type: UploadKind;
+  showType: UploadKind;
+  file_class: QwenFileEntry["file_class"];
+} {
+  const m = (mime || "").toLowerCase();
+  if (m.startsWith("image/")) return { filetype: "image", type: "image", showType: "image", file_class: "vision" };
+  if (m.startsWith("video/")) return { filetype: "video", type: "video", showType: "video", file_class: "video" };
+  if (m.startsWith("audio/")) return { filetype: "audio", type: "audio", showType: "audio", file_class: "audio" };
+  // Everything else is an ordinary document: PDFs, text, office formats.
+  return { filetype: "file", type: "file", showType: "file", file_class: "document" };
+}
+
+/** Upload any supported file. Images keep the exact shape they always had. */
+export async function uploadFile(
   headers: (extra?: Record<string, string>) => Record<string, string>,
   base: string,
   bytes: Buffer,
-  mime: string
+  mime: string,
+  originalName?: string
 ): Promise<QwenFileEntry> {
-  const filename = `image-${randomUUID().slice(0, 8)}.${extFromMime(mime)}`;
+  const cls = classifyUpload(mime);
+  const filename = originalName || `${cls.filetype}-${randomUUID().slice(0, 8)}.${extFromMime(mime)}`;
+
   const res = await qwenFetch(`${base}/api/v2/files/getstsToken`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ filename, filesize: bytes.length, filetype: "image" }),
+    body: JSON.stringify({ filename, filesize: bytes.length, filetype: cls.filetype }),
   });
   const j: any = await res.json().catch(() => ({}));
   const sts: StsToken | undefined = j?.data;
@@ -147,10 +176,10 @@ export async function uploadImage(
   await ossPut(sts, bytes, mime);
 
   return {
-    type: "image",
+    type: cls.type,
     file_type: mime,
-    showType: "image",
-    file_class: "vision",
+    showType: cls.showType,
+    file_class: cls.file_class,
     id: sts.file_id,
     url: sts.file_url,
     name: filename,
@@ -161,4 +190,13 @@ export async function uploadImage(
     uploadTaskId: sts.file_id,
     itemId: randomUUID(),
   };
+}
+
+export async function uploadImage(
+  headers: (extra?: Record<string, string>) => Record<string, string>,
+  base: string,
+  bytes: Buffer,
+  mime: string
+): Promise<QwenFileEntry> {
+  return uploadFile(headers, base, bytes, mime);
 }

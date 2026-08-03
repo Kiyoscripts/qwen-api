@@ -59,6 +59,27 @@ interface ModelOpt {
   vision: boolean;
   thinking: boolean;
   chatTypes: string[];
+  /** Inputs the model accepts, as declared upstream. */
+  input: { image: boolean; document: boolean; video: boolean; audio: boolean };
+}
+
+/**
+ * The file picker's accept list for a model.
+ *
+ * Built from what the model actually declares rather than a fixed list, so a
+ * model that takes audio offers audio and one that does not never shows it. An
+ * empty string means the model takes no files at all, and the control is
+ * disabled instead.
+ */
+function acceptFor(m: ModelOpt | undefined): string {
+  if (!m) return "";
+  const parts: string[] = [];
+  if (m.input.image) parts.push("image/*");
+  if (m.input.audio) parts.push("audio/*");
+  if (m.input.video) parts.push("video/*");
+  // Documents have no single wildcard, so the common readable formats are named.
+  if (m.input.document) parts.push(".pdf,.txt,.md,.csv,.json,.docx,.xlsx,.pptx");
+  return parts.join(",");
 }
 
 // Short capability line under each model name, ChatGPT-style.
@@ -158,7 +179,10 @@ export default function Chat() {
   // text-only model added later is handled without touching this file. The
   // server rejects images for these models too — this just stops the UI from
   // inviting an attachment that can only come back as an error.
-  const canAttach = Boolean(activeModel?.vision);
+  // Any declared input enables the picker, not just vision — a model that reads
+  // documents but not images could not attach anything before.
+  const accept = acceptFor(activeModel);
+  const canAttach = accept.length > 0;
   const isImageModel = (active?.model || "").startsWith("qwen-image");
   const isVideoModel = active?.model === "qwen-wan";
   const isMediaModel = isImageModel || isVideoModel;
@@ -209,6 +233,12 @@ export default function Chat() {
           vision: Boolean(m.capabilities?.vision),
           thinking: Boolean(m.capabilities?.thinking),
           chatTypes: m.capabilities?.chat_types || [],
+          input: {
+            image: Boolean(m.capabilities?.input?.image ?? m.capabilities?.vision),
+            document: Boolean(m.capabilities?.input?.document),
+            video: Boolean(m.capabilities?.input?.video),
+            audio: Boolean(m.capabilities?.input?.audio),
+          },
         }))
       );
     } catch {
@@ -720,7 +750,7 @@ export default function Chat() {
             aria-disabled={!canAttach}
           >
             <Paperclip size={19} />
-            <input type="file" accept="image/*" hidden onChange={onImage} disabled={!authed || !canAttach} />
+            <input type="file" accept={accept} hidden onChange={onImage} disabled={!authed || !canAttach} />
           </label>
           {canPickThink && (
             <div className="c-seg" role="group" aria-label="Reasoning">

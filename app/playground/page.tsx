@@ -47,6 +47,22 @@ interface ModelOpt {
   name: string;
   chatTypes: string[];
   thinking: boolean;
+  /** Inputs the model accepts, as declared upstream. */
+  input: { image: boolean; document: boolean; video: boolean; audio: boolean };
+}
+
+/**
+ * The file picker's accept list for a model, built from what it declares rather
+ * than a fixed list. Empty means the model takes no files.
+ */
+function acceptFor(m: ModelOpt | undefined): string {
+  if (!m) return "";
+  const parts: string[] = [];
+  if (m.input.image) parts.push("image/*");
+  if (m.input.audio) parts.push("audio/*");
+  if (m.input.video) parts.push("video/*");
+  if (m.input.document) parts.push(".pdf,.txt,.md,.csv,.json,.docx,.xlsx,.pptx");
+  return parts.join(",");
 }
 interface VoiceOpt {
   speaker: string;
@@ -145,6 +161,12 @@ export default function Playground() {
         name: m.display_name || m.id,
         chatTypes: m.capabilities?.chat_types || ["t2t"],
         thinking: Boolean(m.capabilities?.thinking),
+        input: {
+          image: Boolean(m.capabilities?.input?.image ?? m.capabilities?.vision),
+          document: Boolean(m.capabilities?.input?.document),
+          video: Boolean(m.capabilities?.input?.video),
+          audio: Boolean(m.capabilities?.input?.audio),
+        },
       }));
       setModels(opts);
       const chats = opts.filter((o) => !o.id.startsWith("qwen-image") && o.id !== "qwen-wan");
@@ -1025,7 +1047,7 @@ export default function Playground() {
                   <Paperclip size={17} />
                   <input
                     type="file"
-                    accept="image/*"
+                    accept={mode === "chat" ? acceptFor(chatModels.find((m) => m.id === model)) || "image/*" : "image/*"}
                     multiple={maxAttach > 1}
                     hidden
                     onChange={onImage}
