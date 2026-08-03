@@ -1694,3 +1694,16 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 .langsel-native { font-weight: 600; }
 .langsel-en { color: var(--faint); font-size: 11.5px; margin-inline-start: auto; }
 .langsel-opt.on .langsel-en { margin-inline-start: 0; }
+
+/* --- Model card: which inputs the model accepts ---------------------------- */
+/* Declared by upstream per model, so two near-identical models can differ:
+   qwen3.8-max takes audio and qwen3.8-max-preview does not. */
+.mdl-inputs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.mdl-inputs .lbl {
+  font-family: var(--font-mono), ui-monospace, Menlo, monospace;
+  font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--faint);
+}
+.mdl-input {
+  font-size: 11px; color: var(--text-2); padding: 2px 7px; border-radius: 3px;
+  background: var(--bg-2); border: 1px solid var(--border);
+}

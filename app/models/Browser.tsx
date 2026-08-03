@@ -17,6 +17,7 @@ export interface ModelRow {
   name: string;
   icon: string;
   tags: string[];
+  inputs: string[];
   makerKey: string;
   makerLabel: string;
   makerIcon: string;
@@ -135,6 +136,12 @@ export default function Browser({ rows }: { rows: ModelRow[] }) {
                     {m.name}
                   </div>
                   <div className="md"><code>{m.id}</code></div>
+                  {m.inputs.length > 0 && (
+                    <div className="mdl-inputs">
+                      <span className="lbl">{t("models_inputs")}</span>
+                      {m.inputs.map((i) => <span key={i} className="mdl-input">{t(`models_input_${i}` as any)}</span>)}
+                    </div>
+                  )}
                   <div className="lp-tags">{m.tags.map((tag) => <span key={tag} className="lp-tag">{tag}</span>)}</div>
                 </div>
               ))}

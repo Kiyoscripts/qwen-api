@@ -32,6 +32,8 @@ interface Row {
   owner: string;
   icon: string;
   tags: string[];
+  /** Inputs the model accepts, as declared upstream. Text is a given. */
+  inputs: string[];
 }
 
 function tagsFor(chatTypes: string[], thinking: boolean, vision: boolean): string[] {
@@ -57,10 +59,16 @@ async function loadModels(): Promise<Catalogue> {
   let degraded = false;
 
   // Custom persona slugs
-  for (const m of CUSTOM_MODELS) rows.push({ id: m.id, name: m.name, owner: "custom", icon: "✨", tags: ["persona"] });
+  for (const m of CUSTOM_MODELS) rows.push({ id: m.id, name: m.name, owner: "custom", icon: "✨", tags: ["persona"], inputs: [] });
   // Image / video virtual models
   for (const m of VIRTUAL_MODELS)
-    rows.push({ id: m.id, name: m.name, owner: "qwen", icon: "/qwen.svg", tags: m.kind === "image" ? ["image", "edit"] : ["video"] });
+    rows.push({
+      id: m.id, name: m.name, owner: "qwen", icon: "/qwen.svg",
+      tags: m.kind === "image" ? ["image", "edit"] : ["video"],
+      // Image models take a reference image for editing; the video ones are
+      // prompt-only, matching what /v1/models advertises for each.
+      inputs: m.kind === "image" ? ["image"] : [],
+    });
   // OneCompiler free tier — text-only, so every row tags as "text".
   for (const m of ONECOMPILER_MODELS)
     rows.push({
@@ -69,12 +77,22 @@ async function loadModels(): Promise<Catalogue> {
       owner: "onecompiler",
       icon: oneCompilerIcon(m.id) ?? "⌘",
       tags: tagsFor(["t2t"], false, false),
+      inputs: [],
     });
   // Live Qwen models
   try {
     const { result } = await withTokenFailover((t) => getModels(t));
     for (const m of result)
-      rows.push({ id: m.id, name: m.name, owner: "qwen", icon: "/qwen.svg", tags: tagsFor(m.chatTypes, m.thinking, m.vision) });
+      rows.push({
+        id: m.id, name: m.name, owner: "qwen", icon: "/qwen.svg",
+        tags: tagsFor(m.chatTypes, m.thinking, m.vision),
+        inputs: [
+          ...(m.vision ? ["image"] : []),
+          ...(m.document ? ["file"] : []),
+          ...(m.video ? ["video"] : []),
+          ...(m.audio ? ["audio"] : []),
+        ],
+      });
   } catch (e: any) {
     // Never silent: a catalogue quietly missing every chat model looks like a
     // deliberately short list rather than a failure.
@@ -91,7 +109,7 @@ export default async function ModelsPage() {
   // stays a pure renderer over data it is given.
   const rows: ModelRow[] = models.map((m) => {
     const maker = modelMaker(m.id, m.owner);
-    return { id: m.id, name: m.name, icon: m.icon, tags: m.tags,
+    return { id: m.id, name: m.name, icon: m.icon, tags: m.tags, inputs: m.inputs,
              makerKey: maker.key, makerLabel: maker.label, makerIcon: maker.icon };
   });
   return (

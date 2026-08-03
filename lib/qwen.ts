@@ -63,7 +63,19 @@ export interface ModelInfo {
   name: string;
   chatTypes: string[];
   thinking: boolean;
+  /** Accepts images. */
   vision: boolean;
+  /** Accepts documents — PDFs and other ordinary files. */
+  document: boolean;
+  /** Accepts video. */
+  video: boolean;
+  /**
+   * Accepts audio. The one capability that actually separates the flagships:
+   * qwen3.8-max takes audio, qwen3.8-max-preview does not.
+   */
+  audio: boolean;
+  /** Context window in tokens, when upstream declares one. */
+  contextLength?: number;
 }
 
 // --- headers ---------------------------------------------------------------
@@ -103,7 +115,14 @@ export async function getModels(token: string): Promise<ModelInfo[]> {
       name: m.name || m.id,
       chatTypes: Array.isArray(meta.chat_type) ? meta.chat_type : ["t2t"],
       thinking: Boolean(caps.thinking),
+      // Input modalities come straight from meta.capabilities rather than being
+      // inferred from traffic: upstream states them per model, and they differ
+      // between otherwise-identical models.
       vision: Boolean(caps.vision),
+      document: Boolean(caps.document),
+      video: Boolean(caps.video),
+      audio: Boolean(caps.audio),
+      contextLength: typeof meta.max_context_length === "number" ? meta.max_context_length : undefined,
     };
   });
   if (models.length) modelCache = { models, at: Date.now() };

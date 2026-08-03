@@ -42,7 +42,7 @@ const oneCompilerEntries = ONECOMPILER_MODELS.map((m) => ({
   created: 0,
   owned_by: "onecompiler",
   display_name: m.name,
-  capabilities: { vision: false, thinking: false, chat_types: ["t2t"] },
+  capabilities: { vision: false, thinking: false, chat_types: ["t2t"], input: { text: true, image: false, document: false, video: false, audio: false } },
 }));
 
 // TokenRouter's free tier. Advertised only when a key is configured, so an
@@ -54,7 +54,7 @@ const tokenRouterEntries = tokenRouterConfigured()
       created: 0,
       owned_by: "tokenrouter",
       display_name: m.name,
-      capabilities: { vision: false, thinking: false, chat_types: ["t2t"] },
+      capabilities: { vision: false, thinking: false, chat_types: ["t2t"], input: { text: true, image: false, document: false, video: false, audio: false } },
     }))
   : [];
 
@@ -74,7 +74,20 @@ export async function GET(req: NextRequest) {
         owned_by: "qwen",
         // extra, non-standard hints:
         display_name: m.name,
-        capabilities: { vision: m.vision, thinking: m.thinking, chat_types: m.chatTypes },
+        capabilities: {
+          vision: m.vision,
+          thinking: m.thinking,
+          chat_types: m.chatTypes,
+          // Which inputs the model accepts, as declared by upstream per model.
+          input: {
+            text: true,
+            image: m.vision,
+            document: m.document,
+            video: m.video,
+            audio: m.audio,
+          },
+          ...(m.contextLength ? { context_length: m.contextLength } : {}),
+        },
       }));
     } catch {
       /* Qwen pool unavailable -> still return the static entries */
