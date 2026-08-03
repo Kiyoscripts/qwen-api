@@ -193,7 +193,7 @@ export async function POST(req: NextRequest) {
   // rate-limited or expired, transparently retry on a different pooled account.
   let token: string;
   let chatId: string | undefined;
-  let qwenRes: Response;
+  let qwenRes: Awaited<ReturnType<typeof openCompletion>>;
   try {
     const { token: usedToken, result } = await withTokenFailover(async (candidate) => {
       const model = await resolveModel(candidate, backendModel);

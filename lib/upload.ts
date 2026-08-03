@@ -2,6 +2,7 @@
 // No external OSS SDK needed.
 
 import { createHmac, createHash, randomUUID } from "node:crypto";
+import { qwenFetch } from "./proxy";
 
 export interface QwenFileEntry {
   type: "image";
@@ -134,7 +135,7 @@ export async function uploadImage(
   mime: string
 ): Promise<QwenFileEntry> {
   const filename = `image-${randomUUID().slice(0, 8)}.${extFromMime(mime)}`;
-  const res = await fetch(`${base}/api/v2/files/getstsToken`, {
+  const res = await qwenFetch(`${base}/api/v2/files/getstsToken`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({ filename, filesize: bytes.length, filetype: "image" }),

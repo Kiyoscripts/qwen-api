@@ -13,6 +13,7 @@
 //   5. The PCM is 16-bit mono @ 24 kHz; we wrap it in a WAV header.
 
 import { QWEN_BASE, qwenHeaders, QwenError } from "./qwen";
+import { qwenFetch } from "./proxy";
 
 // Qwen's TTS PCM is 24 kHz mono 16-bit — every audio player class in their
 // frontend defaults to sampleRate 24e3. (Do not confuse this with the 16 kHz in
@@ -35,7 +36,7 @@ export async function getVoices(token: string): Promise<Voice[]> {
   if (voiceCache && Date.now() - voiceCache.at < VOICE_TTL) return voiceCache.voices;
   const url =
     `${QWEN_BASE}/api/v2/tts/config?omni_speakers=v1&audio_tts_speakers=v1&omni_language=v1&audio_tts_language=v1`;
-  const res = await fetch(url, { headers: qwenHeaders(token, { "Accept-Language": "en-US,en;q=0.9" }) });
+  const res = await qwenFetch(url, { headers: qwenHeaders(token, { "Accept-Language": "en-US,en;q=0.9" }) });
   const j: any = await res.json().catch(() => ({}));
   const d = j?.data || {};
   const map = (arr: any[], kind: "audio" | "omni"): Voice[] =>
@@ -59,7 +60,7 @@ export async function getVoices(token: string): Promise<Voice[]> {
 // Set the account's TTS voice. NOTE: this is a global setting on the Qwen
 // account, so concurrent requests using the same pooled token can race.
 export async function setVoice(token: string, speaker: string): Promise<void> {
-  await fetch(`${QWEN_BASE}/api/v2/users/user/settings/update`, {
+  await qwenFetch(`${QWEN_BASE}/api/v2/users/user/settings/update`, {
     method: "POST",
     headers: qwenHeaders(token),
     body: JSON.stringify({ tts_speaker_v2: { speaker } }),
@@ -68,7 +69,7 @@ export async function setVoice(token: string, speaker: string): Promise<void> {
 
 // Read a chat message aloud. Returns raw 16-bit mono PCM @16kHz.
 export async function synthesize(token: string, chatId: string, messageId: string): Promise<Buffer> {
-  const res = await fetch(`${QWEN_BASE}/api/v2/tts/completions?chat_id=${encodeURIComponent(chatId)}`, {
+  const res = await qwenFetch(`${QWEN_BASE}/api/v2/tts/completions?chat_id=${encodeURIComponent(chatId)}`, {
     method: "POST",
     headers: qwenHeaders(token, { Accept: "*/*" }),
     body: JSON.stringify({
