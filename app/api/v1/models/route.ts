@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
     // The static entries are always available; Qwen models depend on the account pool.
     let qwenEntries: any[] = [];
     try {
-      const { result: models } = await withTokenFailover((token) => getModels(token));
+      const { result: models } = await withTokenFailover((token) => getModels(token), 24, false);
       qwenEntries = models.map((m) => ({
         id: m.id,
         object: "model",

@@ -218,7 +218,17 @@ export async function withTokenFailover<T>(
   // An exhausted account rejects immediately without generating anything, so
   // trying many is cheap. Cap high enough that a pool of challenged accounts
   // still gets a fair scan of the healthy ones.
-  maxAttempts = 24
+  maxAttempts = 24,
+  /**
+   * Whether a live challenge should short-circuit this call.
+   *
+   * Only true for the endpoint that actually gets challenged. Measured:
+   * /api/models keeps answering normally while /api/v2/chat/completions is being
+   * punished, so gating metadata on a completions challenge just blanks the
+   * model list on a site that is otherwise working — which is exactly what it
+   * did in production.
+   */
+  gateOnChallenge = true
 ): Promise<{ token: string; entryId: string | null; result: T }> {
   const pool = await loadPool();
   if (pool.length === 0) throw new Error("No Qwen tokens configured (add one in the admin dashboard or set QWEN_TOKEN).");
@@ -227,7 +237,7 @@ export async function withTokenFailover<T>(
 
   // Still inside a challenge window: every account would meet the same wall, so
   // say so now instead of spending the pool to rediscover it.
-  if (challengeActive(now)) {
+  if (gateOnChallenge && challengeActive(now)) {
     const err: any = new Error(
       `Qwen is serving an anti-bot challenge to this deployment. Waiting ${challengeCooldownRemaining(now)}s before retrying — this is not an account problem, so switching accounts will not help.`
     );

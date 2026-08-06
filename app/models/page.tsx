@@ -81,7 +81,7 @@ async function loadModels(): Promise<Catalogue> {
     });
   // Live Qwen models
   try {
-    const { result } = await withTokenFailover((t) => getModels(t));
+    const { result } = await withTokenFailover((t) => getModels(t), 24, false);
     for (const m of result)
       rows.push({
         id: m.id, name: m.name, owner: "qwen", icon: "/qwen.svg",
