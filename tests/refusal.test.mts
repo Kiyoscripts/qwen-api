@@ -7,7 +7,7 @@
 // the wording was the cause.
 
 import { classifyRefusal, QwenError } from "../lib/qwen.ts";
-import { isTokenFailure } from "../lib/tokens.ts";
+import { isTokenFailure, parkMsForFailure } from "../lib/tokens.ts";
 
 let passed = 0;
 let failed = 0;
@@ -95,6 +95,24 @@ const rotates = (e: QwenError) => e.retryable === true || isTokenFailure(e.messa
   check("401 keeps its status", classifyRefusal(401, "{}")?.status === 401);
   check("429 keeps its status", classifyRefusal(429, "{}")?.status === 429);
   check("challenge reports 503", classifyRefusal(200, "captcha")?.status === 503);
+}
+
+// 7. Refusal codes drive park duration so challenged accounts stop being
+//    re-selected immediately (the user-facing failure mode when a few accounts
+//    trip baxia and the rest of the pool is fine).
+{
+  const challenge = classifyRefusal(200, "captcha");
+  const expired = classifyRefusal(401, "{}");
+  const forbidden = classifyRefusal(403, "{}");
+  const limited = classifyRefusal(429, "{}");
+  check("challenge has code", challenge?.code === "challenge");
+  check("expired has code", expired?.code === "expired");
+  check("forbidden has code", forbidden?.code === "forbidden");
+  check("rate_limit has code", limited?.code === "rate_limit");
+  check("challenge parks ≥ 10 min", parkMsForFailure(challenge!) >= 10 * 60_000);
+  check("expired parks ≥ 1 hour", parkMsForFailure(expired!) >= 60 * 60_000);
+  check("rate_limit parks briefly", parkMsForFailure(limited!) > 0 && parkMsForFailure(limited!) <= 5 * 60_000);
+  check("unknown message with no failure shape does not park", parkMsForFailure({ message: "model not found" }) === 0);
 }
 
 console.log(`${passed} passed, ${failed} failed`);

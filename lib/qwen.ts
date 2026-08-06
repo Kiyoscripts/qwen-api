@@ -26,6 +26,9 @@ export function showReasoning(): boolean {
   return SHOW_REASONING;
 }
 
+/** Why the pool should abandon this account (drives cooldown / deactivation). */
+export type QwenRefusalCode = "challenge" | "expired" | "forbidden" | "rate_limit";
+
 export class QwenError extends Error {
   status: number;
   /**
@@ -34,10 +37,13 @@ export class QwenError extends Error {
    * pool then moves to another account instead of failing the request.
    */
   retryable: boolean;
-  constructor(message: string, status = 502, retryable = false) {
+  /** Present when classifyRefusal named a known account-level refusal. */
+  code?: QwenRefusalCode;
+  constructor(message: string, status = 502, retryable = false, code?: QwenRefusalCode) {
     super(message);
     this.status = status;
     this.retryable = retryable;
+    this.code = code;
   }
 }
 
@@ -238,20 +244,21 @@ export function classifyRefusal(
   headers?: { get(name: string): string | null }
 ): QwenError | null {
   if (CHALLENGE_MARKERS.test(body)) {
-    return new QwenError("Qwen served an anti-bot challenge to this account.", 503, true);
+    return new QwenError("Qwen served an anti-bot challenge to this account.", 503, true, "challenge");
   }
   if (status === 401) {
-    return new QwenError("Qwen token is expired or no longer valid on this account.", 401, true);
+    return new QwenError("Qwen token is expired or no longer valid on this account.", 401, true, "expired");
   }
   if (status === 403) {
-    return new QwenError("Qwen refused this account (forbidden — banned or restricted).", 403, true);
+    return new QwenError("Qwen refused this account (forbidden — banned or restricted).", 403, true, "forbidden");
   }
   if (status === 429) {
     const retryAfter = headers?.get("retry-after");
     return new QwenError(
       `Qwen rate limited this account (429${retryAfter ? `, retry-after ${retryAfter}s` : ""}).`,
       429,
-      true
+      true,
+      "rate_limit"
     );
   }
   return null;
