@@ -15,8 +15,6 @@
 import { randomUUID } from "node:crypto";
 import { uploadImage, fetchImageBytes, type QwenFileEntry } from "./upload";
 import { collapseConversation, type CollapseTurn } from "./conversation";
-import { qwenFetch } from "./proxy";
-import type { Response as UndiciResponse } from "undici";
 
 export const QWEN_BASE = "https://chat.qwen.ai";
 
@@ -105,7 +103,7 @@ const MODEL_TTL = 5 * 60_000;
 
 export async function getModels(token: string): Promise<ModelInfo[]> {
   if (modelCache && Date.now() - modelCache.at < MODEL_TTL) return modelCache.models;
-  const res = await qwenFetch(`${QWEN_BASE}/api/models`, { headers: qwenHeaders(token) });
+  const res = await fetch(`${QWEN_BASE}/api/models`, { headers: qwenHeaders(token) });
   const j: any = await res.json().catch(() => ({}));
   const models: ModelInfo[] = (j?.data || []).map((m: any) => {
     const meta = m.info?.meta || {};
@@ -260,7 +258,7 @@ export function classifyRefusal(
 }
 
 export async function createChat(token: string, model: string, chatType: ChatType): Promise<string> {
-  const res = await qwenFetch(`${QWEN_BASE}/api/v2/chats/new`, {
+  const res = await fetch(`${QWEN_BASE}/api/v2/chats/new`, {
     method: "POST",
     headers: qwenHeaders(token),
     body: JSON.stringify({ title: "New Chat", models: [model], chat_mode: "normal", chat_type: chatType, timestamp: Date.now() }),
@@ -284,7 +282,7 @@ export async function createChat(token: string, model: string, chatType: ChatTyp
 export async function deleteChat(token: string, chatId: string | undefined): Promise<void> {
   if (!chatId) return;
   try {
-    await qwenFetch(`${QWEN_BASE}/api/v2/chats/${encodeURIComponent(chatId)}`, { method: "DELETE", headers: qwenHeaders(token) });
+    await fetch(`${QWEN_BASE}/api/v2/chats/${encodeURIComponent(chatId)}`, { method: "DELETE", headers: qwenHeaders(token) });
   } catch {
     /* best effort */
   }
@@ -293,7 +291,7 @@ export async function deleteChat(token: string, chatId: string | undefined): Pro
 export async function forgetAllMemories(token: string): Promise<void> {
   if (!QWEN_FORGET_MEMORIES) return;
   try {
-    await qwenFetch(`${QWEN_BASE}/api/v2/memories/delete`, { method: "POST", headers: qwenHeaders(token), body: JSON.stringify({ forget_all: true }) });
+    await fetch(`${QWEN_BASE}/api/v2/memories/delete`, { method: "POST", headers: qwenHeaders(token), body: JSON.stringify({ forget_all: true }) });
   } catch {
     /* best effort */
   }
@@ -314,7 +312,7 @@ export async function openCompletion(
   token: string,
   chatId: string,
   opts: { model: string; messages: unknown[]; stream: boolean; size?: string }
-): Promise<UndiciResponse> {
+): Promise<Response> {
   const now = Math.floor(Date.now() / 1000);
   const payload: Record<string, unknown> = {
     stream: opts.stream,
@@ -328,7 +326,7 @@ export async function openCompletion(
     timestamp: now,
     ...(opts.size ? { size: opts.size } : {}),
   };
-  const res = await qwenFetch(`${QWEN_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}`, {
+  const res = await fetch(`${QWEN_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}`, {
     method: "POST",
     headers: qwenHeaders(token, { Accept: opts.stream ? "text/event-stream" : "application/json" }),
     body: JSON.stringify(payload),
@@ -371,12 +369,7 @@ export interface StreamStatus {
 
 // Async generator over SSE deltas. Yields {phase, text}. Throws on stream errors.
 // Pass `status` to learn whether the stream actually finished.
-// The body is structurally typed (only getReader() is used) so the generator
-// works with both undici's Response and the platform ReadableStream.
-export async function* qwenDeltas(
-  res: { body: { getReader(): ReadableStreamDefaultReader<Uint8Array> } | null },
-  status?: StreamStatus
-): AsyncGenerator<QwenDelta> {
+export async function* qwenDeltas(res: Response, status?: StreamStatus): AsyncGenerator<QwenDelta> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -443,7 +436,7 @@ export async function checkTask(token: string, taskId: string): Promise<TaskStat
   try {
     // Qwen moved task status from v2 -> v1. The v1 body is flat:
     // { chat_type, task_status: "running"|"success"|"failed", content: <url when done> }.
-    const res = await qwenFetch(`${QWEN_BASE}/api/v1/tasks/status/${encodeURIComponent(taskId)}`, {
+    const res = await fetch(`${QWEN_BASE}/api/v1/tasks/status/${encodeURIComponent(taskId)}`, {
       headers: qwenHeaders(token),
     });
     json = await res.json();
@@ -479,7 +472,7 @@ export async function pollTask(token: string, taskId: string, timeoutMs = 240_00
     await new Promise((r) => setTimeout(r, 5000));
     let json: any;
     try {
-      const res = await qwenFetch(`${QWEN_BASE}/api/v1/tasks/status/${encodeURIComponent(taskId)}`, { headers: qwenHeaders(token) });
+      const res = await fetch(`${QWEN_BASE}/api/v1/tasks/status/${encodeURIComponent(taskId)}`, { headers: qwenHeaders(token) });
       json = await res.json();
     } catch {
       continue;

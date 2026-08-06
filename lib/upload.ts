@@ -2,7 +2,6 @@
 // No external OSS SDK needed.
 
 import { createHmac, createHash, randomUUID } from "node:crypto";
-import { qwenFetch } from "./proxy";
 
 export type UploadKind = "image" | "video" | "audio" | "file";
 
@@ -164,7 +163,7 @@ export async function uploadFile(
   const cls = classifyUpload(mime);
   const filename = originalName || `${cls.filetype}-${randomUUID().slice(0, 8)}.${extFromMime(mime)}`;
 
-  const res = await qwenFetch(`${base}/api/v2/files/getstsToken`, {
+  const res = await fetch(`${base}/api/v2/files/getstsToken`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({ filename, filesize: bytes.length, filetype: cls.filetype }),
