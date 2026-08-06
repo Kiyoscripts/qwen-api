@@ -116,6 +116,47 @@ export async function pickToken(): Promise<PoolEntry> {
   return entry;
 }
 
+/**
+ * When the anti-bot challenge is in force, and for how long after.
+ *
+ * A challenge is not an account failure. Measured: createChat succeeds on the
+ * same token and egress IP that then gets FAIL_SYS_USER_VALIDATE / RGV587 on
+ * completions, and swapping accounts does not clear it — the WAF keys on the
+ * caller, not the credential.
+ *
+ * That matters because the failover loop treated it like a spent account and
+ * walked the pool, so ONE challenge fired up to maxAttempts full requests into
+ * a WAF that was already saying "slow down" — and a bigger pool made it worse,
+ * not better. Upstream asks for a retry later, so wait: park the pool globally
+ * and fail fast until the window passes.
+ */
+let challengedUntil = 0;
+const CHALLENGE_COOLDOWN_MS = Number(process.env.QWEN_CHALLENGE_COOLDOWN_MS || 90_000);
+
+/** True when a challenge was seen recently enough that retrying is pointless. */
+export function challengeActive(now = Date.now()): boolean {
+  return now < challengedUntil;
+}
+
+/** Seconds until the pool is worth using again. */
+export function challengeCooldownRemaining(now = Date.now()): number {
+  return Math.max(0, Math.ceil((challengedUntil - now) / 1000));
+}
+
+export function noteChallenge(now = Date.now()) {
+  challengedUntil = now + CHALLENGE_COOLDOWN_MS;
+}
+
+/** Test seam. */
+export function resetChallengeCooldown() {
+  challengedUntil = 0;
+}
+
+/** Whether an error is the anti-bot challenge rather than a bad account. */
+export function isChallenge(e: any): boolean {
+  return e?.code === "challenge" || /anti-bot challenge/i.test(e?.message || "");
+}
+
 // Errors that mean "this account is no good right now" — try a different one.
 // (daily quota, rate limiting, expired/invalid token, anti-bot challenge)
 export function isTokenFailure(message: string): boolean {
@@ -183,6 +224,17 @@ export async function withTokenFailover<T>(
   if (pool.length === 0) throw new Error("No Qwen tokens configured (add one in the admin dashboard or set QWEN_TOKEN).");
 
   const now = Date.now();
+
+  // Still inside a challenge window: every account would meet the same wall, so
+  // say so now instead of spending the pool to rediscover it.
+  if (challengeActive(now)) {
+    const err: any = new Error(
+      `Qwen is serving an anti-bot challenge to this deployment. Waiting ${challengeCooldownRemaining(now)}s before retrying — this is not an account problem, so switching accounts will not help.`
+    );
+    err.status = 503;
+    throw err;
+  }
+
   const free = pool.filter((e) => !isParked(e, now));
   // Prefer unparked accounts; if everything is parked, try the full pool anyway
   // rather than hard-fail before any network call.
@@ -201,6 +253,16 @@ export async function withTokenFailover<T>(
       // `retryable` covers account failures whose wording isn't quota-shaped —
       // e.g. an account that streams a completion but generates no text.
       if (!e?.retryable && !isTokenFailure(e?.message || "")) throw e; // a real error, not a bad account
+
+      // A challenge is about the caller, not the credential. Stop immediately:
+      // walking the pool would issue another full request per account into a WAF
+      // that is already punishing, which is what deepens and extends the block.
+      if (isChallenge(e)) {
+        noteChallenge();
+        console.warn(`[pool] anti-bot challenge — pausing all accounts for ${challengeCooldownRemaining()}s`);
+        throw e;
+      }
+
       handleAccountFailure(entry, e);
     }
   }
