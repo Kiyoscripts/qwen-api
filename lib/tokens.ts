@@ -117,42 +117,42 @@ export async function pickToken(): Promise<PoolEntry> {
 }
 
 /**
- * When the anti-bot challenge is in force, and for how long after.
+ * When a Qwen session token stops being valid, read from the JWT itself.
  *
- * A challenge is not an account failure. Measured: createChat succeeds on the
- * same token and egress IP that then gets FAIL_SYS_USER_VALIDATE / RGV587 on
- * completions, and swapping accounts does not clear it — the WAF keys on the
- * caller, not the credential.
- *
- * That matters because the failover loop treated it like a spent account and
- * walked the pool, so ONE challenge fired up to maxAttempts full requests into
- * a WAF that was already saying "slow down" — and a bigger pool made it worse,
- * not better. Upstream asks for a retry later, so wait: park the pool globally
- * and fail fast until the window passes.
+ * Qwen tokens are JWTs carrying {id, last_password_change, exp}. Returns null
+ * for anything that is not a readable JWT, which means "cannot tell" rather
+ * than "expired" — an unreadable token still gets its chance upstream.
  */
-let challengedUntil = 0;
-const CHALLENGE_COOLDOWN_MS = Number(process.env.QWEN_CHALLENGE_COOLDOWN_MS || 90_000);
-
-/** True when a challenge was seen recently enough that retrying is pointless. */
-export function challengeActive(now = Date.now()): boolean {
-  return now < challengedUntil;
+export function tokenExpiry(token: string): number | null {
+  const parts = (token || "").split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+    return typeof payload?.exp === "number" ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
 }
 
-/** Seconds until the pool is worth using again. */
-export function challengeCooldownRemaining(now = Date.now()): number {
-  return Math.max(0, Math.ceil((challengedUntil - now) / 1000));
+/** True only when the token demonstrably expired. Unknown is not expired. */
+export function isTokenExpired(token: string, now = Date.now()): boolean {
+  const exp = tokenExpiry(token);
+  return exp !== null && exp <= now;
 }
 
-export function noteChallenge(now = Date.now()) {
-  challengedUntil = now + CHALLENGE_COOLDOWN_MS;
-}
-
-/** Test seam. */
-export function resetChallengeCooldown() {
-  challengedUntil = 0;
-}
-
-/** Whether an error is the anti-bot challenge rather than a bad account. */
+/**
+ * Whether an error is the anti-bot challenge.
+ *
+ * Worth knowing what this does NOT mean. Measured against the live endpoint: a
+ * tampered signature, a back-dated exp and the literal string "not-a-token" all
+ * come back as HTTP 200 carrying FAIL_SYS_USER_VALIDATE / RGV587. Qwen answers
+ * any credential it will not honour with the anti-bot page, so this body is
+ * evidence that ONE account was refused — not that the deployment is blocked.
+ *
+ * Which is why it stays an account-level failure and rolls onto the next
+ * account. Reading it as a deployment-wide block turned a few bad sessions into
+ * an apparent ban, and would let one dead account stall the entire pool.
+ */
 export function isChallenge(e: any): boolean {
   return e?.code === "challenge" || /anti-bot challenge/i.test(e?.message || "");
 }
@@ -218,33 +218,12 @@ export async function withTokenFailover<T>(
   // An exhausted account rejects immediately without generating anything, so
   // trying many is cheap. Cap high enough that a pool of challenged accounts
   // still gets a fair scan of the healthy ones.
-  maxAttempts = 24,
-  /**
-   * Whether a live challenge should short-circuit this call.
-   *
-   * Only true for the endpoint that actually gets challenged. Measured:
-   * /api/models keeps answering normally while /api/v2/chat/completions is being
-   * punished, so gating metadata on a completions challenge just blanks the
-   * model list on a site that is otherwise working — which is exactly what it
-   * did in production.
-   */
-  gateOnChallenge = true
+  maxAttempts = 24
 ): Promise<{ token: string; entryId: string | null; result: T }> {
   const pool = await loadPool();
   if (pool.length === 0) throw new Error("No Qwen tokens configured (add one in the admin dashboard or set QWEN_TOKEN).");
 
   const now = Date.now();
-
-  // Still inside a challenge window: every account would meet the same wall, so
-  // say so now instead of spending the pool to rediscover it.
-  if (gateOnChallenge && challengeActive(now)) {
-    const err: any = new Error(
-      `Qwen is serving an anti-bot challenge to this deployment. Waiting ${challengeCooldownRemaining(now)}s before retrying — this is not an account problem, so switching accounts will not help.`
-    );
-    err.status = 503;
-    throw err;
-  }
-
   const free = pool.filter((e) => !isParked(e, now));
   // Prefer unparked accounts; if everything is parked, try the full pool anyway
   // rather than hard-fail before any network call.
@@ -253,6 +232,13 @@ export async function withTokenFailover<T>(
   let lastError: unknown = new Error("No Qwen tokens available.");
 
   for (const entry of shuffled) {
+    // Expiry is readable locally, so a dead session costs no request at all —
+    // and cannot arrive as an "anti-bot challenge" that looks like a ban.
+    if (isTokenExpired(entry.token)) {
+      lastError = new Error("Qwen token is expired or no longer valid on this account.");
+      deactivateAccount(entry, "token expired (exp in the past)");
+      continue;
+    }
     try {
       const result = await attempt(entry.token);
       markUsed(entry);
@@ -263,16 +249,6 @@ export async function withTokenFailover<T>(
       // `retryable` covers account failures whose wording isn't quota-shaped —
       // e.g. an account that streams a completion but generates no text.
       if (!e?.retryable && !isTokenFailure(e?.message || "")) throw e; // a real error, not a bad account
-
-      // A challenge is about the caller, not the credential. Stop immediately:
-      // walking the pool would issue another full request per account into a WAF
-      // that is already punishing, which is what deepens and extends the block.
-      if (isChallenge(e)) {
-        noteChallenge();
-        console.warn(`[pool] anti-bot challenge — pausing all accounts for ${challengeCooldownRemaining()}s`);
-        throw e;
-      }
-
       handleAccountFailure(entry, e);
     }
   }
