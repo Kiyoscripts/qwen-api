@@ -11,16 +11,32 @@
 //    in phase "image_gen".
 //  - Video gen (chat_type t2v, stream:false): returns extra.wanx.task_id; poll
 //    GET /api/v2/tasks/status/{task_id} until the video URL is ready.
+//
+// Anti-bot (ported from angyedz/QwenFreeApi):
+//  - Alibaba WAF/baxia expects browser-like headers + SSXMOD fingerprint cookies
+//    (ssxmod_itna / ssxmod_itna2). Without them, replies are often captcha HTML
+//    or FAIL_SYS_USER_VALIDATE instead of SSE.
+//  - Request bodies must match the live SPA envelope (version "2.1", full
+//    message wrapper with feature_config / extra.meta.subChatType).
 
 import { randomUUID } from "node:crypto";
 import { uploadImage, fetchImageBytes, type QwenFileEntry } from "./upload";
 import { collapseConversation, type CollapseTurn } from "./conversation";
+import { buildQwenCookieHeader, rotateSsxmod } from "./ssxmod";
 
 export const QWEN_BASE = "https://chat.qwen.ai";
 
-const QWEN_CLIENT_VERSION = process.env.QWEN_CLIENT_VERSION || "0.2.76";
+// SPA build id — must match the live chat.qwen.ai frontend (DevTools → Network
+// → any chat request → "version" header). Bump when WAF starts rejecting.
+const QWEN_CLIENT_VERSION = process.env.QWEN_CLIENT_VERSION || "0.2.83";
 const SHOW_REASONING = !/^(0|false|no)$/i.test(process.env.QWEN_SHOW_REASONING || "");
 const QWEN_FORGET_MEMORIES = !/^(0|false|no)$/i.test(process.env.QWEN_FORGET_MEMORIES || "");
+
+// Align UA + Client Hints with QwenFreeApi (Chrome 149 on Windows). The
+// fingerprint cookies are also minted as win64 so they don't contradict.
+const QWEN_USER_AGENT =
+  process.env.QWEN_USER_AGENT ||
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
 
 export function showReasoning(): boolean {
   return SHOW_REASONING;
@@ -84,20 +100,45 @@ export interface ModelInfo {
 
 // --- headers ---------------------------------------------------------------
 
-export function qwenHeaders(token: string, extra: Record<string, string> = {}): Record<string, string> {
+/**
+ * Browser-shaped headers + SSXMOD cookies for chat.qwen.ai.
+ *
+ * `refererPath` should look like a real SPA route (`/c/new-chat`, `/c/<id>`)
+ * so same-origin fetch metadata lines up with what the web client sends.
+ */
+export function qwenHeaders(
+  token: string,
+  extra: Record<string, string> = {},
+  opts: { refererPath?: string } = {}
+): Record<string, string> {
+  const refererPath = opts.refererPath || "/";
+  // ASCII-only timezone (non-ASCII parentheticals break some HTTP stacks).
+  const timezone = new Date()
+    .toString()
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
   return {
     "Content-Type": "application/json",
     Accept: "application/json",
     Authorization: `Bearer ${token}`,
     Origin: QWEN_BASE,
-    Referer: `${QWEN_BASE}/`,
-    "User-Agent":
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    Referer: `${QWEN_BASE}${refererPath.startsWith("/") ? refererPath : `/${refererPath}`}`,
+    "User-Agent": QWEN_USER_AGENT,
     "X-Request-Id": randomUUID(),
     Version: QWEN_CLIENT_VERSION,
     source: "web",
-    Timezone: new Date().toString().replace(/\s*\(.+\)$/, ""),
+    Timezone: timezone,
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "sec-ch-ua": '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-origin",
+    // Token + ssxmod_itna / ssxmod_itna2 (device fingerprint). Critical for WAF.
+    Cookie: buildQwenCookieHeader(token),
     ...extra,
   };
 }
@@ -188,6 +229,8 @@ export function buildMessage(
   }
   const content = collapseConversation(turns);
 
+  // SPA (0.2.83+) always sends feature_config + extra.meta.subChatType. A
+  // minimal body is a common WAF trigger (FAIL_SYS_USER_VALIDATE / captcha).
   return {
     id: null,
     fid: randomUUID(),
@@ -201,19 +244,28 @@ export function buildMessage(
     models: [opts.model],
     model: "",
     chat_type: opts.chatType,
-    feature_config: { thinking_enabled: opts.thinking, output_schema: "phase", research_mode: "normal" },
+    feature_config: {
+      thinking_enabled: opts.thinking,
+      output_schema: "phase",
+      research_mode: "normal",
+      auto_thinking: true,
+      thinking_mode: "Auto",
+      thinking_format: "summary",
+      auto_search: false,
+    },
     // Image generation/editing carries size + image-model version in extra.meta,
-    // exactly like the web client. Text/video keep extra empty.
-    extra:
-      opts.chatType === "t2i" || opts.chatType === "image_edit"
-        ? {
-            meta: {
-              subChatType: opts.chatType,
+    // exactly like the web client. Text/video still need subChatType.
+    extra: {
+      meta: {
+        subChatType: opts.chatType,
+        ...(opts.chatType === "t2i" || opts.chatType === "image_edit"
+          ? {
               ...(opts.size ? { size: opts.size } : {}),
               ...(opts.imageModelId ? { model: opts.imageModelId } : {}),
-            },
-          }
-        : {},
+            }
+          : {}),
+      },
+    },
     sub_chat_type: opts.chatType,
     parent_id: null,
     ...(opts.size ? { size: opts.size } : {}),
@@ -223,7 +275,15 @@ export function buildMessage(
 // --- API calls (all take a token) ------------------------------------------
 
 // Markers Qwen's anti-bot layer puts in a body when it actually challenges.
-const CHALLENGE_MARKERS = /access verification|verify that you are|captcha|please complete the operation|punish|rgv587|baxia/i;
+const CHALLENGE_MARKERS =
+  /access verification|verify that you are|captcha|please complete the operation|punish|rgv587|baxia|aliyun_waf|fail_sys_user_validate|x5sec/i;
+
+/** True when the response looks like Aliyun WAF HTML / challenge rather than JSON/SSE. */
+export function isWafResponse(status: number, contentType: string | null, body: string): boolean {
+  if (status === 504) return true;
+  if (contentType && contentType.includes("text/html")) return true;
+  return CHALLENGE_MARKERS.test(body || "");
+}
 
 /**
  * Say what upstream actually refused, rather than lumping every rejection
@@ -243,7 +303,11 @@ export function classifyRefusal(
   body: string,
   headers?: { get(name: string): string | null }
 ): QwenError | null {
-  if (CHALLENGE_MARKERS.test(body)) {
+  const ct = headers?.get("content-type") || null;
+  if (isWafResponse(status, ct, body) || CHALLENGE_MARKERS.test(body)) {
+    // Mint a fresh fingerprint so the next account attempt isn't stuck on the
+    // same challenged ssxmod pair.
+    rotateSsxmod();
     return new QwenError("Qwen served an anti-bot challenge to this account.", 503, true, "challenge");
   }
   if (status === 401) {
@@ -265,10 +329,19 @@ export function classifyRefusal(
 }
 
 export async function createChat(token: string, model: string, chatType: ChatType): Promise<string> {
+  // Body shape matches the live SPA / QwenFreeApi client (not the older
+  // "title: New Chat" form).
   const res = await fetch(`${QWEN_BASE}/api/v2/chats/new`, {
     method: "POST",
-    headers: qwenHeaders(token),
-    body: JSON.stringify({ title: "New Chat", models: [model], chat_mode: "normal", chat_type: chatType, timestamp: Date.now() }),
+    headers: qwenHeaders(token, {}, { refererPath: "/c/new-chat" }),
+    body: JSON.stringify({
+      chatId: "",
+      models: [model],
+      project_id: "",
+      timestamp: Date.now(),
+      chat_type: chatType,
+      chat_mode: "normal",
+    }),
   });
   const text = await res.text();
   {
@@ -320,22 +393,32 @@ export async function openCompletion(
   chatId: string,
   opts: { model: string; messages: unknown[]; stream: boolean; size?: string }
 ): Promise<Response> {
-  const now = Math.floor(Date.now() / 1000);
+  // Live SPA sends both camelCase + snake_case ids. Matching that form avoids
+  // WAF rejections that fire on "minimal" JSON bodies.
   const payload: Record<string, unknown> = {
     stream: opts.stream,
     version: "2.1",
     incremental_output: opts.stream,
+    chatId,
+    parentId: "",
     chat_id: chatId,
     chat_mode: "normal",
     model: opts.model,
     parent_id: null,
     messages: opts.messages,
-    timestamp: now,
+    timestamp: Date.now(),
     ...(opts.size ? { size: opts.size } : {}),
   };
   const res = await fetch(`${QWEN_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}`, {
     method: "POST",
-    headers: qwenHeaders(token, { Accept: opts.stream ? "text/event-stream" : "application/json" }),
+    headers: qwenHeaders(
+      token,
+      {
+        Accept: opts.stream ? "text/event-stream" : "application/json",
+        "x-accel-buffering": "no",
+      },
+      { refererPath: `/c/${chatId}` }
+    ),
     body: JSON.stringify(payload),
   });
   if (opts.stream) {
@@ -350,6 +433,15 @@ export async function openCompletion(
         detail = j?.data?.details || j?.error?.details || j?.data?.code || detail;
       } catch {}
       throw new QwenError(`Qwen completion failed (${res.status}): ${detail}`);
+    }
+  } else {
+    // Non-stream path: still refuse WAF HTML early so callers get a named error.
+    const ct = res.headers.get("content-type") || "";
+    if (!res.ok || ct.includes("text/html")) {
+      const text = await res.text().catch(() => "");
+      const refusal = classifyRefusal(res.status, text, res.headers);
+      if (refusal) throw refusal;
+      throw new QwenError(`Qwen completion failed (${res.status}): ${text.slice(0, 200)}`);
     }
   }
   return res;

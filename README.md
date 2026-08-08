@@ -164,7 +164,9 @@ Copy `.env.example` → `.env.local` and fill in (already done locally):
 | `SUPABASE_ANON_KEY` / `SUPABASE_PUBLISHABLE_KEY` | Public keys (kept for reference). |
 | `ADMIN_SECRET` | Secret for the `/api/admin/keys` endpoint. |
 | `QWEN_TOKEN` | Bearer token from chat.qwen.ai `localStorage["token"]`. |
-| `QWEN_CLIENT_VERSION` | `Version` header (bump if Qwen updates their site). |
+| `QWEN_CLIENT_VERSION` | `Version` header (must match live chat.qwen.ai SPA; default `0.2.83`). |
+| `QWEN_USER_AGENT` | Optional UA override (default Chrome 149 / Windows, matches SSXMOD fingerprint). |
+| `QWEN_EXTRA_COOKIES` | Optional extra browser cookies (`a=b; c=d`). `token` / `ssxmod_*` are auto-generated. |
 | `QWEN_THINKING` | `false` = final answer only; `true` = include reasoning. |
 | `QWEN_FORGET_MEMORIES` | `true` = wipe Qwen's saved memories after each request. |
 
@@ -304,7 +306,10 @@ Two honest caveats about how Qwen's TTS works:
 - If completions start failing with `Internal error`, Qwen probably updated their
   frontend: set `QWEN_CLIENT_VERSION` to the new `Version` header value from
   DevTools → Network on chat.qwen.ai. If you see `unauthorized`, refresh
-  `QWEN_TOKEN`.
+  `QWEN_TOKEN`. Anti-bot (WAF / `FAIL_SYS_USER_VALIDATE` / captcha HTML) is
+  handled by auto-generated SSXMOD fingerprint cookies + browser-shaped headers
+  (ported from [angyedz/QwenFreeApi](https://github.com/angyedz/QwenFreeApi));
+  when WAF still trips, bump `QWEN_CLIENT_VERSION` and re-login a fresh token.
 
 ## Security
 
