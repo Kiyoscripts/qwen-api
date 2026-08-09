@@ -8,6 +8,8 @@ import { ModelPicker, acceptFor, toPickModel, type PickModel } from "./ModelPick
 interface Msg {
   role: "user" | "assistant";
   content: string;
+  /** Seconds spent reasoning, so a finished turn can say how long it thought. */
+  thoughtFor?: number;
   /** The separate thinking channel, kept so it can be folded away rather than dropped. */
   reasoning?: string;
   /** Data URL of an attachment, kept with the turn so it survives a reload. */
@@ -125,6 +127,8 @@ export function ChatApp() {
       const reader = r.body!.getReader();
       const dec = new TextDecoder();
       let buf = "", acc = "", think = "";
+      const startedAt = Date.now();
+      let thoughtFor: number | undefined;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -145,9 +149,11 @@ export function ChatApp() {
                 return { ...x, messages: m }; });
             }
             if (typeof d?.content === "string" && d.content) {
+              // First visible token ends the thinking phase.
+              if (think && thoughtFor === undefined) thoughtFor = Math.round((Date.now() - startedAt) / 1000);
               acc += d.content;
               update(id!, (x) => { const m = [...x.messages];
-                m[m.length - 1] = { role: "assistant", content: acc, reasoning: think || undefined };
+                m[m.length - 1] = { role: "assistant", content: acc, reasoning: think || undefined, thoughtFor };
                 return { ...x, messages: m }; });
             }
           } catch { /* skip a bad frame */ }
@@ -260,18 +266,39 @@ export function ChatApp() {
                         <div>
                           {m.reasoning && (
                             <div className="mb-2">
+                              {streaming && i === active.messages.length - 1 && !m.content ? (
+                                /* Nothing has been written yet, so the reasoning is
+                                   the only sign of life. Shown live rather than
+                                   folded away, because a silent pause reads as a
+                                   stalled request. */
+                                <div>
+                                  <p className="flex items-center gap-1.5 font-mono text-[11px] text-signal">
+                                    <Spinner size={11} weight="bold" className="animate-spin" />
+                                    {t("chat_reasoning")}
+                                  </p>
+                                  <p className="mt-1.5 max-h-24 overflow-hidden border-l border-rule pl-3
+                                                whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink-3">
+                                    {m.reasoning.slice(-400)}
+                                  </p>
+                                </div>
+                              ) : (
+                              <>
                               <button onClick={() => setOpenReasoning(openReasoning === i ? null : i)}
                                 className="flex items-center gap-1.5 font-mono text-[11px] text-ink-3
                                            transition-colors duration-200 hover:text-ink">
                                 <CaretRight size={11} weight="bold"
                                   className={`transition-transform duration-200 ${openReasoning === i ? "rotate-90" : ""}`} />
-                                {t("chat_reasoning")}
+                                {m.thoughtFor !== undefined
+                                  ? t("chat_thought_for", { seconds: m.thoughtFor })
+                                  : t("chat_reasoning")}
                               </button>
                               {openReasoning === i && (
                                 <p className="mt-1.5 border-l border-rule pl-3 whitespace-pre-wrap
                                               text-[12.5px] leading-relaxed text-ink-3">
                                   {m.reasoning}
                                 </p>
+                              )}
+                              </>
                               )}
                             </div>
                           )}

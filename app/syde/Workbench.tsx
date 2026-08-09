@@ -307,7 +307,13 @@ export function Workbench() {
           <div className="border border-rule" style={{ borderRadius: "var(--r-sm)" }}>
             {reasoning && (
               <div className="border-b border-rule px-4 py-3">
-                <p className="font-mono text-[11.5px] text-ink-3">{t("chat_reasoning")}</p>
+                <p className={`flex items-center gap-1.5 font-mono text-[11.5px] ${
+                  state === "running" && !answer ? "text-signal" : "text-ink-3"}`}>
+                  {state === "running" && !answer && (
+                    <span className="inline-block size-2 animate-pulse bg-signal" aria-hidden />
+                  )}
+                  {t("chat_reasoning")}
+                </p>
                 <p className="mt-1.5 whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-ink-3">{reasoning}</p>
               </div>
             )}
