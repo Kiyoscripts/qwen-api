@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Sun, Moon, List, X, Translate, Check } from "@phosphor-icons/react";
+import { usePathname, useRouter } from "next/navigation";
+import { Sun, Moon, List, X, Translate, Check, DiscordLogo } from "@phosphor-icons/react";
 import { useT } from "../I18n";
-import { LOCALES } from "@/lib/i18n";
+import { LOCALES, LOCALE_COOKIE, LOCALE_STORE, dirFor, type LocaleCode } from "@/lib/i18n";
+import { DISCORD_INVITE } from "@/lib/links";
 import { avatarUrl, type Me } from "../Account";
 
 /**
@@ -46,10 +47,13 @@ function Mark() {
 export function Nav() {
   const t = useT();
   const path = usePathname();
+  const router = useRouter();
   const [dark, setDark] = useState(false);
   const [menu, setMenu] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [me, setMe] = useState<Me | null | undefined>(undefined);
+  // Which language is pinned, so the list can mark it.
+  const [locale, setLocale_] = useState<LocaleCode | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("theme");
@@ -71,6 +75,12 @@ export function Nav() {
   }, []);
 
   useEffect(() => {
+    const m = document.cookie.match(/(?:^|; )qwen_locale=([^;]+)/);
+    if (m) setLocale_(m[1] as LocaleCode);
+    else setLocale_(document.documentElement.lang as LocaleCode);
+  }, []);
+
+  useEffect(() => {
     setMenu(false);
     setLangOpen(false);
   }, [path]);
@@ -82,9 +92,29 @@ export function Nav() {
     localStorage.setItem("theme", next ? "dark" : "light");
   };
 
-  const setLocale = (code: string) => {
-    document.cookie = `locale=${code}; path=/; max-age=31536000; samesite=lax`;
-    window.location.reload();
+  /**
+   * Pin a language.
+   *
+   * The cookie name has to be the one the server reads. This wrote `locale`
+   * while getLocale() reads LOCALE_COOKIE (`qwen_locale`), so every choice was
+   * discarded on the next request and the picker appeared to do nothing.
+   */
+  const setLocale = (code: LocaleCode) => {
+    setLangOpen(false);
+    if (code === locale) return;
+
+    // A year, site-wide, Lax: a display preference, not a credential.
+    document.cookie = `${LOCALE_COOKIE}=${code}; path=/; max-age=31536000; samesite=lax`;
+    try {
+      localStorage.setItem(LOCALE_STORE, code);
+    } catch {
+      /* private mode: the cookie still carries the choice */
+    }
+    // Flip direction immediately so RTL does not wait for the round trip.
+    document.documentElement.lang = code;
+    document.documentElement.dir = dirFor(code);
+    setLocale_(code);
+    router.refresh();
   };
 
   return (
@@ -129,18 +159,35 @@ export function Nav() {
                   {LOCALES.map((l) => (
                     <button
                       key={l.code}
-                      onClick={() => setLocale(l.code)}
+                      onClick={() => setLocale(l.code as LocaleCode)}
                       className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left
                                  text-[13px] text-ink transition-colors duration-150
                                  hover:bg-[var(--paper-2)]"
                     >
-                      {l.native}
-                      <span className="font-mono text-[10.5px] text-ink-3">{l.code}</span>
+                      <span className={locale === l.code ? "text-signal" : undefined}>{l.native}</span>
+                      {locale === l.code ? (
+                        <Check size={12} weight="bold" className="text-signal" />
+                      ) : (
+                        <span className="font-mono text-[10.5px] text-ink-3">{l.code}</span>
+                      )}
                     </button>
                   ))}
                 </div>
               )}
             </div>
+
+            <a
+              href={DISCORD_INVITE}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Discord"
+              title="Discord"
+              className="grid size-9 place-items-center border border-rule text-ink-2
+                         transition-colors duration-200 hover:border-ink hover:text-ink"
+              style={{ borderRadius: "var(--r-sm)" }}
+            >
+              <DiscordLogo size={15} weight="bold" />
+            </a>
 
             <button
               type="button"
