@@ -12,9 +12,38 @@
 //   3. SITE_URL             the bot running somewhere the first two do not
 //                           exist, e.g. a dev machine aimed at the real site
 //
-// The canonical host is deliberately not hardcoded here. It already lives in
-// lib/canonicalHost.ts, which this file cannot import (that is TypeScript, and
-// the bot runs as plain ESM), and a second copy would be free to drift.
+// The canonical host was deliberately not hardcoded here, to avoid a second
+// copy of what lib/canonicalHost.ts already owns. That held until the site
+// moved: the bot service still had the old domain in its environment, so every
+// /link reply sent people to a host Railway no longer routes, and no amount of
+// correct code here could tell. Environment wins over code by design, which is
+// the right rule until the value is provably dead.
+//
+// So the copy exists now, used for exactly two things: rewriting a retired host,
+// and standing in when nothing is configured at all. Both are cases where an
+// address is known to be wrong, and a wrong address is worse than a duplicated
+// constant. When the domain changes again, this list is the thing to update.
+
+const CANONICAL = "https://syde.up.railway.app";
+
+/** Hosts that used to serve the site and no longer resolve. */
+const RETIRED = new Set(["qwen38-api-production.up.railway.app"]);
+
+/** Add a scheme if the value is a bare domain. Only RAILWAY_PUBLIC_DOMAIN was
+    normalised before, so a bare host in SITE_URL stayed schemeless and slipped
+    past the retired-host check below. */
+function withScheme(url) {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
+/** The host part of a URL, or "" if it does not parse. */
+function hostOf(url) {
+  try {
+    return new URL(url).host.toLowerCase();
+  } catch {
+    return "";
+  }
+}
 
 /** True for addresses that only resolve on the machine the bot runs on. */
 export function isLoopback(url) {
@@ -39,5 +68,11 @@ export function publicSiteUrl(env = process.env) {
     fallback ||
     "";
 
-  return chosen.replace(/\/+$/, "");
+  const url = chosen ? withScheme(chosen.replace(/\/+$/, "")) : "";
+
+  // Nothing configured, or configured to somewhere that is gone. Either way the
+  // canonical host is the only address that can actually be opened.
+  if (!url) return CANONICAL;
+  if (RETIRED.has(hostOf(url))) return CANONICAL;
+  return url;
 }

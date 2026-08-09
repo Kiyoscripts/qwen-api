@@ -1,11 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Play, Stop, CaretRight, MagnifyingGlass, Paperclip, X } from "@phosphor-icons/react";
+import { Play, Stop, CaretRight, MagnifyingGlass, Paperclip, X, Trash } from "@phosphor-icons/react";
 import { useT } from "../I18n";
 import { ModelPicker, acceptFor, toPickModel, type PickModel } from "./ModelPicker";
 
 type Mode = "chat" | "image" | "video" | "speech";
+
+/**
+ * One exchange in the playground.
+ *
+ * Held in component state only. A playground is for trying things, so the
+ * transcript is deliberately not persisted: reloading gives a clean slate, and
+ * nothing about an experiment survives to confuse the next one.
+ */
+interface Turn { role: "user" | "assistant"; content: string; reasoning?: string; file?: string }
 interface Voice { speaker: string; name: string; gender?: string; description?: string; kind?: string }
 
 /**
@@ -37,6 +46,7 @@ export function Workbench() {
 
   const [reasoning, setReasoning] = useState("");
   const [answer, setAnswer] = useState("");
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [ms, setMs] = useState<number | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -53,6 +63,8 @@ export function Workbench() {
     mode === "image" ? m.chatTypes.includes("t2i")
       : mode === "video" ? m.chatTypes.includes("t2v")
       : m.chatTypes.includes("t2t");
+
+  useEffect(() => { setTurns([]); setAnswer(""); setReasoning(""); }, [mode]);
 
   useEffect(() => {
     if (!models.length) return;
@@ -72,12 +84,22 @@ export function Workbench() {
       model,
       messages: [
         ...(system ? [{ role: "system", content: system }] : []),
-        file
-          ? { role: "user", content: [
-              { type: "text", text: prompt },
-              { type: "image_url", image_url: { url: file.url } },
-            ] }
-          : { role: "user", content: prompt },
+        ...turns.map((x) =>
+          x.file
+            ? { role: x.role, content: [
+                { type: "text", text: x.content },
+                { type: "image_url", image_url: { url: x.file } },
+              ] }
+            : { role: x.role, content: x.content }
+        ),
+        ...(prompt || file
+          ? [file
+              ? { role: "user", content: [
+                  { type: "text", text: prompt },
+                  { type: "image_url", image_url: { url: file.url } },
+                ] }
+              : { role: "user", content: prompt }]
+          : []),
       ],
       stream: true, temperature, max_tokens: maxTokens,
       ...(canThink && !thinking ? { enable_thinking: false } : {}),
@@ -85,7 +107,7 @@ export function Workbench() {
         description: "Current conditions for a place.",
         parameters: { type: "object", properties: { location: { type: "string" } }, required: ["location"] } } }] } : {}),
     };
-  }, [mode, model, prompt, system, size, temperature, maxTokens, thinking, canThink, tools, voice, file]);
+  }, [mode, model, prompt, system, size, temperature, maxTokens, thinking, canThink, tools, voice, file, turns]);
 
   const run = async () => {
     if (!prompt.trim() || state === "running") return;
@@ -109,13 +131,27 @@ export function Workbench() {
         return;
       }
 
+      // The exchange so far, plus this prompt. Recorded before the request so
+      // the transcript shows the question while the answer is still arriving.
+      const sent: Turn[] = [
+        ...turns,
+        { role: "user", content: prompt, ...(file ? { file: file.url } : {}) },
+      ];
+      if (mode === "chat") {
+        setTurns([...sent, { role: "assistant", content: "" }]);
+        setPrompt("");
+        setFile(null);
+      }
+
       const r = await fetch("/v1/chat/completions", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(mode === "chat" ? body : { ...body, stream: false }),
         signal: ctrl.signal,
       });
       if (!r.ok) {
-        setAnswer(r.status === 401 ? t("pg_get_key") : `${t("error")} (${r.status})`);
+        const msg = r.status === 401 ? t("pg_get_key") : `${t("error")} (${r.status})`;
+        if (mode === "chat") setTurns([...sent, { role: "assistant", content: msg }]);
+        else setAnswer(msg);
         setState("error");
         return;
       }
@@ -129,7 +165,7 @@ export function Workbench() {
 
       const reader = r.body!.getReader();
       const dec = new TextDecoder();
-      let buf = "";
+      let buf = "", acc = "", think = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -139,12 +175,13 @@ export function Workbench() {
           const line = buf.slice(0, i).trim();
           buf = buf.slice(i + 1);
           if (!line.startsWith("data:")) continue;
-          const p = line.slice(5).trim();
-          if (!p || p === "[DONE]") continue;
+          const pl = line.slice(5).trim();
+          if (!pl || pl === "[DONE]") continue;
           try {
-            const d = JSON.parse(p)?.choices?.[0]?.delta;
-            if (typeof d?.reasoning_content === "string") setReasoning((x) => x + d.reasoning_content);
-            if (typeof d?.content === "string") setAnswer((x) => x + d.content);
+            const d = JSON.parse(pl)?.choices?.[0]?.delta;
+            if (typeof d?.reasoning_content === "string") think += d.reasoning_content;
+            if (typeof d?.content === "string") acc += d.content;
+            setTurns([...sent, { role: "assistant", content: acc, reasoning: think || undefined }]);
           } catch { /* skip a bad frame */ }
         }
       }
@@ -305,28 +342,64 @@ export function Workbench() {
           </div>
 
           <div className="border border-rule" style={{ borderRadius: "var(--r-sm)" }}>
-            {reasoning && (
-              <div className="border-b border-rule px-4 py-3">
-                <p className={`flex items-center gap-1.5 font-mono text-[11.5px] ${
-                  state === "running" && !answer ? "text-signal" : "text-ink-3"}`}>
-                  {state === "running" && !answer && (
-                    <span className="inline-block size-2 animate-pulse bg-signal" aria-hidden />
-                  )}
-                  {t("chat_reasoning")}
-                </p>
-                <p className="mt-1.5 whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-ink-3">{reasoning}</p>
-              </div>
-            )}
-            <div className="px-4 py-4">
-              {answer ? (
-                <p className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-ink">
-                  {answer}
-                  {state === "running" && <span className="ml-px inline-block h-[1.05em] w-[7px] translate-y-[2px] bg-signal align-baseline animate-pulse" />}
-                </p>
-              ) : (
-                <p className="body text-[13px]">{t("pg_response")}</p>
+            <div className="flex items-center justify-between border-b border-rule px-4 py-2.5">
+              <span className="font-mono text-[11px] tracking-wide text-ink-3 uppercase">
+                {t("pg_response")}
+              </span>
+              {mode === "chat" && turns.length > 0 && (
+                <button
+                  onClick={() => { setTurns([]); setAnswer(""); setReasoning(""); setMs(null); setState("idle"); }}
+                  className="flex items-center gap-1.5 font-mono text-[11.5px] text-ink-3
+                             transition-colors duration-200 hover:text-signal"
+                >
+                  <Trash size={12} weight="bold" />
+                  {t("pg_clear")}
+                </button>
               )}
             </div>
+
+            {mode === "chat" ? (
+              turns.length === 0 ? (
+                <p className="body px-4 py-6 text-[13px]">{t("chat_empty_sub")}</p>
+              ) : (
+                <div className="max-h-[520px] space-y-4 overflow-y-auto px-4 py-4">
+                  {turns.map((turn, i) => (
+                    <div key={i}>
+                      {/* Role is named rather than styled into a bubble: this is a
+                          transcript of a request, not a chat window. */}
+                      <p className="font-mono text-[10.5px] tracking-wide text-ink-3 uppercase">
+                        {turn.role}
+                      </p>
+                      {turn.file && (
+                        <img src={turn.file} alt="" className="mt-1.5 max-h-32 w-auto border border-rule"
+                             style={{ borderRadius: "var(--r-sm)" }} />
+                      )}
+                      {turn.reasoning && (
+                        <p className="mt-1.5 border-l border-rule pl-3 whitespace-pre-wrap font-mono
+                                      text-[12px] leading-relaxed text-ink-3">
+                          {turn.reasoning}
+                        </p>
+                      )}
+                      <p className="mt-1 whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-ink">
+                        {turn.content}
+                        {state === "running" && i === turns.length - 1 && (
+                          <span className="ml-px inline-block h-[1.05em] w-[7px] translate-y-[2px]
+                                           bg-signal align-baseline animate-pulse" />
+                        )}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : (
+              <div className="px-4 py-4">
+                {answer ? (
+                  <p className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-ink">{answer}</p>
+                ) : (
+                  <p className="body text-[13px]">{t("pg_response")}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

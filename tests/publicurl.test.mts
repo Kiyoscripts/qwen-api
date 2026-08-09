@@ -40,7 +40,40 @@ eq("PUBLIC_SITE_URL wins",
 //    neither of the first two, and SITE_URL is then the only sensible answer.
 eq("falls back to SITE_URL", publicSiteUrl({ SITE_URL: "https://syde.up.railway.app" }),
   "https://syde.up.railway.app");
-eq("nothing set yields empty", publicSiteUrl({}), "");
+// Nothing configured now yields the canonical host rather than "". An empty
+// string put a bare "/login" in a Discord message, which opens nothing.
+eq("nothing set yields the canonical host", publicSiteUrl({}), "https://syde.up.railway.app");
+
+// The reason this exists: the site moved and the bot service kept the old
+// domain in its environment, so every link it sent was dead.
+eq(
+  "a retired host is rewritten",
+  publicSiteUrl({ PUBLIC_SITE_URL: "https://qwen38-api-production.up.railway.app" }),
+  "https://syde.up.railway.app"
+);
+eq(
+  "a retired host wins nothing even from RAILWAY_PUBLIC_DOMAIN",
+  publicSiteUrl({ RAILWAY_PUBLIC_DOMAIN: "qwen38-api-production.up.railway.app" }),
+  "https://syde.up.railway.app"
+);
+// A bare host in SITE_URL used to stay schemeless, which both slipped past the
+// retired check and produced a link a browser cannot open.
+eq(
+  "a bare retired host is still rewritten",
+  publicSiteUrl({ SITE_URL: "qwen38-api-production.up.railway.app" }),
+  "https://syde.up.railway.app"
+);
+eq(
+  "a bare live host gains a scheme",
+  publicSiteUrl({ SITE_URL: "api.example.com" }),
+  "https://api.example.com"
+);
+
+eq(
+  "a live custom host is left alone",
+  publicSiteUrl({ PUBLIC_SITE_URL: "https://api.example.com" }),
+  "https://api.example.com"
+);
 
 // 5. Trailing slashes would produce "//login" once a path is appended.
 eq("trailing slash trimmed", publicSiteUrl({ PUBLIC_SITE_URL: "https://example.com/" }), "https://example.com");
