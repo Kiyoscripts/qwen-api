@@ -1,5 +1,5 @@
 // Code samples for the docs, kept out of the page so the page stays readable.
-// Every one is written to run as-is once QWEN_API_KEY is set.
+// Every one is written to run as-is once SYDE_API_KEY is set.
 
 export const BASE = "https://qwen38-api-production.up.railway.app";
 
@@ -7,7 +7,7 @@ export const quickstart = [
   {
     lang: "curl",
     code: `curl ${BASE}/v1/chat/completions \\
-  -H "Authorization: Bearer $QWEN_API_KEY" \\
+  -H "Authorization: Bearer $SYDE_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "qwen3.8-max",
@@ -21,7 +21,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="${BASE}/v1",
-    api_key=os.environ["QWEN_API_KEY"],
+    api_key=os.environ["SYDE_API_KEY"],
 )
 
 r = client.chat.completions.create(
@@ -37,7 +37,7 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   baseURL: "${BASE}/v1",
-  apiKey: process.env.QWEN_API_KEY,
+  apiKey: process.env.SYDE_API_KEY,
 });
 
 const r = await client.chat.completions.create({
@@ -60,7 +60,7 @@ import (
 )
 
 func main() {
-    cfg := openai.DefaultConfig(os.Getenv("QWEN_API_KEY"))
+    cfg := openai.DefaultConfig(os.Getenv("SYDE_API_KEY"))
     cfg.BaseURL = "${BASE}/v1"
     client := openai.NewClientWithConfig(cfg)
 
@@ -80,7 +80,7 @@ func main() {
 require "openai"
 
 client = OpenAI::Client.new(
-  access_token: ENV.fetch("QWEN_API_KEY"),
+  access_token: ENV.fetch("SYDE_API_KEY"),
   uri_base: "${BASE}/v1"
 )
 
@@ -97,7 +97,7 @@ puts response.dig("choices", 0, "message", "content")`,
 require 'vendor/autoload.php';
 
 $client = OpenAI::factory()
-    ->withApiKey(getenv('QWEN_API_KEY'))
+    ->withApiKey(getenv('SYDE_API_KEY'))
     ->withBaseUri('${BASE}/v1')
     ->make();
 
@@ -120,7 +120,7 @@ var body = """
     """;
 
 var request = HttpRequest.newBuilder(URI.create("${BASE}/v1/chat/completions"))
-    .header("Authorization", "Bearer " + System.getenv("QWEN_API_KEY"))
+    .header("Authorization", "Bearer " + System.getenv("SYDE_API_KEY"))
     .header("Content-Type", "application/json")
     .POST(HttpRequest.BodyPublishers.ofString(body))
     .build();
@@ -137,7 +137,7 @@ using OpenAI.Chat;
 using System.ClientModel;
 
 var options = new OpenAIClientOptions { Endpoint = new Uri("${BASE}/v1") };
-var key = new ApiKeyCredential(Environment.GetEnvironmentVariable("QWEN_API_KEY")!);
+var key = new ApiKeyCredential(Environment.GetEnvironmentVariable("SYDE_API_KEY")!);
 var client = new ChatClient("qwen3.8-max", key, options);
 
 ChatCompletion completion = client.CompleteChat("Explain closures in one sentence.");
@@ -149,7 +149,7 @@ export const streaming = [
   {
     lang: "curl",
     code: `curl -N ${BASE}/v1/chat/completions \\
-  -H "Authorization: Bearer $QWEN_API_KEY" \\
+  -H "Authorization: Bearer $SYDE_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "qwen3.8-max",
@@ -210,7 +210,7 @@ export const vision = [
   {
     lang: "curl",
     code: `curl ${BASE}/v1/chat/completions \\
-  -H "Authorization: Bearer $QWEN_API_KEY" \\
+  -H "Authorization: Bearer $SYDE_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "qwen3.8-max",
@@ -336,7 +336,7 @@ const final = await client.chat.completions.create({
   {
     lang: "curl",
     code: `curl ${BASE}/v1/chat/completions \\
-  -H "Authorization: Bearer $QWEN_API_KEY" \\
+  -H "Authorization: Bearer $SYDE_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "qwen3.8-max",
@@ -363,7 +363,7 @@ export const images = [
     lang: "curl",
     code: `# Generate
 curl ${BASE}/v1/images/generations \\
-  -H "Authorization: Bearer $QWEN_API_KEY" \\
+  -H "Authorization: Bearer $SYDE_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "qwen-image-3.0",
@@ -373,7 +373,7 @@ curl ${BASE}/v1/images/generations \\
 
 # Edit — the presence of "image" is what switches generation to editing.
 curl ${BASE}/v1/images/generations \\
-  -H "Authorization: Bearer $QWEN_API_KEY" \\
+  -H "Authorization: Bearer $SYDE_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "qwen-image-3.0",
@@ -388,7 +388,7 @@ curl ${BASE}/v1/images/generations \\
 
 r = requests.post(
     "${BASE}/v1/images/generations",
-    headers={"Authorization": f"Bearer {os.environ['QWEN_API_KEY']}"},
+    headers={"Authorization": f"Bearer {os.environ['SYDE_API_KEY']}"},
     json={
         "model": "qwen-image-3.0",
         "prompt": "a lighthouse in a storm, oil painting",
@@ -407,7 +407,7 @@ export const video = [
     lang: "curl",
     code: `# 1) Start the render. Returns immediately with a ticket.
 curl ${BASE}/v1/videos/generations \\
-  -H "Authorization: Bearer $QWEN_API_KEY" \\
+  -H "Authorization: Bearer $SYDE_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{ "model": "qwen-wan", "prompt": "a paper boat sailing downstream", "size": "16:9" }'
 
@@ -418,7 +418,7 @@ curl ${BASE}/v1/videos/generations \\
 
 # 2) Poll until it is done. The ticket pins polling to the right account.
 curl "${BASE}/v1/videos/status?ticket=TICKET" \\
-  -H "Authorization: Bearer $QWEN_API_KEY"
+  -H "Authorization: Bearer $SYDE_API_KEY"
 
 # -> { "status": "processing", "progress": 42 }
 # -> { "status": "completed", "data": [{ "url": "https://…mp4" }] }`,
@@ -427,7 +427,7 @@ curl "${BASE}/v1/videos/status?ticket=TICKET" \\
     lang: "Python",
     code: `import requests, time, os
 
-H = {"Authorization": f"Bearer {os.environ['QWEN_API_KEY']}"}
+H = {"Authorization": f"Bearer {os.environ['SYDE_API_KEY']}"}
 
 start = requests.post(
     "${BASE}/v1/videos/generations",
@@ -461,11 +461,11 @@ export const speech = [
   {
     lang: "curl",
     code: `# List the ~78 voices
-curl ${BASE}/v1/audio/voices -H "Authorization: Bearer $QWEN_API_KEY"
+curl ${BASE}/v1/audio/voices -H "Authorization: Bearer $SYDE_API_KEY"
 
 # Synthesise. Returns WAV bytes.
 curl ${BASE}/v1/audio/speech \\
-  -H "Authorization: Bearer $QWEN_API_KEY" \\
+  -H "Authorization: Bearer $SYDE_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{ "input": "Hello from Qwen.", "voice": "Cherry" }' \\
   --output speech.wav`,
@@ -476,7 +476,7 @@ curl ${BASE}/v1/audio/speech \\
 
 audio = requests.post(
     "${BASE}/v1/audio/speech",
-    headers={"Authorization": f"Bearer {os.environ['QWEN_API_KEY']}"},
+    headers={"Authorization": f"Bearer {os.environ['SYDE_API_KEY']}"},
     json={"input": "Hello from Qwen.", "voice": "Cherry"},
 )
 open("speech.wav", "wb").write(audio.content)`,
@@ -489,7 +489,7 @@ export const anthropic = [
     code: `# Point Claude Code at this API. Note the base URL is the ROOT —
 # Claude Code appends /v1/messages itself.
 export ANTHROPIC_BASE_URL="${BASE}"
-export ANTHROPIC_API_KEY="qwen_sk_..."
+export ANTHROPIC_API_KEY="syde_sk_..."
 export ANTHROPIC_MODEL="qwen3.8-max"
 export ANTHROPIC_SMALL_FAST_MODEL="qwen3.8-max"
 
@@ -504,7 +504,7 @@ from anthropic import Anthropic
 
 client = Anthropic(
     base_url="${BASE}",      # root, not /v1
-    api_key=os.environ["QWEN_API_KEY"],
+    api_key=os.environ["SYDE_API_KEY"],
 )
 
 msg = client.messages.create(
@@ -517,7 +517,7 @@ print(msg.content[0].text)`,
   {
     lang: "curl",
     code: `curl ${BASE}/v1/messages \\
-  -H "x-api-key: $QWEN_API_KEY" \\
+  -H "x-api-key: $SYDE_API_KEY" \\
   -H "anthropic-version: 2023-06-01" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -529,7 +529,7 @@ print(msg.content[0].text)`,
 # Token counting is supported, which is what Claude Code calls before
 # every message:
 curl ${BASE}/v1/messages/count_tokens \\
-  -H "x-api-key: $QWEN_API_KEY" \\
+  -H "x-api-key: $SYDE_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{ "model": "qwen3.8-max",
         "messages": [{ "role": "user", "content": "hi" }] }'`,
@@ -575,7 +575,7 @@ export const clis = [
 #
 # Note the base URL has NO /v1: Claude Code appends the path itself.
 export ANTHROPIC_BASE_URL="${BASE}"
-export ANTHROPIC_AUTH_TOKEN="$QWEN_API_KEY"
+export ANTHROPIC_AUTH_TOKEN="$SYDE_API_KEY"
 export ANTHROPIC_MODEL="qwen3.8-max"
 
 # Claude Code also reaches for a small, cheap model for background work such as
@@ -598,12 +598,12 @@ model = "qwen3.8-max"
 model_provider = "qwen38"
 
 [model_providers.qwen38]
-name = "Qwen3.8 API"
+name = "Syde"
 base_url = "${BASE}/v1"
-env_key = "QWEN_API_KEY"
+env_key = "SYDE_API_KEY"
 wire_api = "chat"
 
-# Then: export QWEN_API_KEY=... && codex`,
+# Then: export SYDE_API_KEY=... && codex`,
   },
   {
     lang: "OpenCode",
@@ -617,10 +617,10 @@ wire_api = "chat"
   "provider": {
     "qwen38": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Qwen3.8 API",
+      "name": "Syde",
       "options": {
         "baseURL": "${BASE}/v1",
-        "apiKey": "{env:QWEN_API_KEY}"
+        "apiKey": "{env:SYDE_API_KEY}"
       },
       "models": {
         "qwen3.8-max": { "name": "Qwen3.8 Max" },
@@ -636,7 +636,7 @@ wire_api = "chat"
 # and nothing else. Whatever the setting is called, it wants the /v1 root.
 
 export OPENAI_BASE_URL="${BASE}/v1"
-export OPENAI_API_KEY="$QWEN_API_KEY"
+export OPENAI_API_KEY="$SYDE_API_KEY"
 
 # Aider
 aider --model openai/qwen3.8-max

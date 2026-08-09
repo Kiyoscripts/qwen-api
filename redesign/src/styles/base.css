@@ -1,0 +1,187 @@
+@import "tailwindcss";
+@import "@fontsource-variable/ibm-plex-sans";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "./tokens.css";
+
+/* Expose the tokens to Tailwind v4 so utilities and raw CSS agree. */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-paper-3: var(--paper-3);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-signal: var(--signal);
+  --color-signal-wash: var(--signal-wash);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-synthesis-weight: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection { background: var(--signal); color: var(--on-signal); }
+
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+   The measure.
+
+   Content sits on a 12 column field with a fixed gutter. The column rules are
+   drawn once, at page level, and content aligns to them: they organise the
+   layout rather than decorating it, which is why they are visible at all.
+   ========================================================================== */
+
+.field {
+  width: 100%;
+  max-width: 1360px;
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+
+@media (min-width: 768px) { .field { padding-inline: 40px; } }
+
+.rules {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  display: none;
+}
+
+/* Only drawn where there is room for the grid to mean something. */
+@media (min-width: 1024px) {
+  .rules { display: block; }
+  .rules-inner {
+    width: 100%;
+    max-width: 1360px;
+    height: 100%;
+    margin-inline: auto;
+    padding-inline: 40px;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 24px;
+  }
+  .rules-inner span {
+    border-left: 1px solid var(--rule);
+    opacity: 0.5;
+  }
+  .rules-inner span:last-child { border-right: 1px solid var(--rule); }
+}
+
+/* ============================================================================
+   Type scale. Display sizes are clamped so the hero never needs a media query
+   to stay inside the viewport.
+   ========================================================================== */
+
+.display {
+  font-size: clamp(2.5rem, 1.2rem + 4.4vw, 5.25rem);
+  line-height: 0.94;
+  letter-spacing: -0.035em;
+  font-weight: 600;
+  margin: 0;
+}
+
+.h2 {
+  font-size: clamp(1.75rem, 1.1rem + 2vw, 2.85rem);
+  line-height: 1.02;
+  letter-spacing: -0.028em;
+  font-weight: 600;
+  margin: 0;
+}
+
+.h3 {
+  font-size: 1.0625rem;
+  line-height: 1.35;
+  letter-spacing: -0.012em;
+  font-weight: 600;
+  margin: 0;
+}
+
+.lede {
+  font-size: clamp(1rem, 0.95rem + 0.3vw, 1.1875rem);
+  line-height: 1.55;
+  color: var(--ink-2);
+  max-width: 46ch;
+  margin: 0;
+}
+
+.body { font-size: 0.9375rem; line-height: 1.6; color: var(--ink-2); max-width: 62ch; margin: 0; }
+
+/* Mono is structural here: labels, numbers, keys, paths. Not decoration. */
+.tag {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* ============================================================================
+   Controls. Sharp, high contrast, and physical on press.
+   ========================================================================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;          /* a wrapped CTA is a broken CTA */
+  height: 44px;
+  padding-inline: 20px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease),
+              border-color var(--t) var(--ease), transform 90ms var(--ease);
+}
+
+.btn-primary { background: var(--signal); color: var(--on-signal); }
+.btn-primary:hover { background: var(--signal-press); }
+
+.btn-ghost { background: transparent; color: var(--ink); border-color: var(--rule-strong); }
+.btn-ghost:hover { border-color: var(--ink); }
+
+.btn:active { transform: translateY(1px); }
+
+/* ============================================================================
+   Reduced motion. Everything below MOTION_INTENSITY collapses to static.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

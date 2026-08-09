@@ -18,8 +18,8 @@ import {
 } from "./samples";
 
 export const metadata = {
-  title: "Docs · Qwen3.8 API",
-  description: "Full reference for the Qwen3.8 API — chat, streaming, vision, tools, image, video and speech.",
+  title: "Docs · Syde",
+  description: "Full reference for the Syde — chat, streaming, vision, tools, image, video and speech.",
 };
 
 const NAV: { id: string; label: string }[] = [
@@ -93,7 +93,7 @@ export default function DocsPage() {
       <Aurora />
       <div className="lp">
         <nav className="lp-nav glass">
-          <a className="lp-brand" href="/" style={{ textDecoration: "none" }}><span className="lp-logo" /> Qwen3.8&nbsp;API</a>
+          <a className="lp-brand" href="/" style={{ textDecoration: "none" }}><span className="lp-logo" /> Syde</a>
           <div className="lp-links">
             <a href="/models">Models</a>
             <a href="/playground">Playground</a>
@@ -139,8 +139,8 @@ export default function DocsPage() {
               <Params
                 head="Header"
                 rows={[
-                  ["Authorization", "header", "Bearer qwen_sk_… — the OpenAI convention."],
-                  ["x-api-key", "header", "qwen_sk_… — the Anthropic convention. Either header works on any endpoint."],
+                  ["Authorization", "header", "Bearer syde_sk_… — the OpenAI convention."],
+                  ["x-api-key", "header", "syde_sk_… — the Anthropic convention. Either header works on any endpoint."],
                 ]}
               />
               <p className="docs-fine">
@@ -288,7 +288,7 @@ export default function DocsPage() {
                 <code>GET /v1/models</code> returns every model with its capabilities — whether it
                 reasons, accepts images, or generates media. Browse them at <a href="/models">/models</a>.
               </p>
-              <Code>{`curl ${BASE}/v1/models -H "Authorization: Bearer $QWEN_API_KEY"`}</Code>
+              <Code>{`curl ${BASE}/v1/models -H "Authorization: Bearer $SYDE_API_KEY"`}</Code>
               <Params
                 head="Model"
                 rows={[
@@ -388,7 +388,7 @@ export default function DocsPage() {
 
             <footer className="lp-foot" style={{ marginTop: 40 }}>
               <div className="lp-foot-brand">
-                <div className="lp-brand"><span className="lp-logo" /> Qwen3.8&nbsp;API</div>
+                <div className="lp-brand"><span className="lp-logo" /> Syde</div>
                 <p>Unofficial. Not affiliated with Alibaba Cloud, Qwen or OneCompiler.</p>
               </div>
               <div className="lp-foot-cols">

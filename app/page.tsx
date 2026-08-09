@@ -35,7 +35,7 @@ const SNIPPET = `import OpenAI from "openai";
 
 const client = new OpenAI({
   baseURL: "${BASE}/v1",
-  apiKey: process.env.QWEN_API_KEY,
+  apiKey: process.env.SYDE_API_KEY,
 });
 
 const r = await client.chat.completions.create({
@@ -67,7 +67,7 @@ export default async function Home() {
       <Aurora />
       <div className="lp">
         <nav className="lp-nav glass">
-          <div className="lp-brand"><span className="lp-logo" /> Qwen3.8&nbsp;API</div>
+          <div className="lp-brand"><span className="lp-logo" /> Syde</div>
           <div className="lp-links">
             <a href="/models">{t("nav_models")}</a>
             <a href="/playground">{t("nav_playground")}</a>
@@ -160,7 +160,7 @@ export default async function Home() {
 
           <footer className="lp-foot">
             <div className="lp-foot-brand">
-              <div className="lp-brand"><span className="lp-logo" /> Qwen3.8&nbsp;API</div>
+              <div className="lp-brand"><span className="lp-logo" /> Syde</div>
               <p>{t("home_foot_tagline")}</p>
             </div>
             <div className="lp-foot-cols">

@@ -2,7 +2,7 @@
 // the deployed web service (Railway has only this repo). Keep in sync with the
 // source bot; runtime env: DISCORD_TOKEN, SITE_URL, LINK_BOT_SECRET, WHITELIST_CHANNEL.
 //
-// Qwen3.8 API — Discord link bot.
+// Syde — Discord link bot.
 //
 //  /link           -> asks the site for a one-time code, shows it to the user.
 //  DM delivery     -> the bot POLLS the site for login-key DMs to send.
@@ -46,7 +46,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 // The call is idempotent: `set` replaces the list with exactly this array.
 // ---------------------------------------------------------------------------
 const COMMANDS = [
-  { name: "link", description: "Get a one-time code to link your Discord to Qwen3.8 API" },
+  { name: "link", description: "Get a one-time code to link your Discord to Syde" },
 ];
 
 async function registerCommands() {

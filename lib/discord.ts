@@ -83,7 +83,7 @@ export async function latestDMStatus(discordId: string): Promise<string | null> 
 
 const LOGIN_MSG = (key: string) =>
   [
-    "**Your Qwen3.8 API login key** 🔑",
+    "**Your Syde login key** 🔑",
     "",
     "Use this on the site to log in. Treat it like a password — anyone with it can access your account.",
     "```",

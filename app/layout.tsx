@@ -11,7 +11,7 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-sans", display: "swa
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Qwen3.8 API",
+  title: "Syde",
   description: "OpenAI-compatible API for qwen3.8-max, with vision, image, video and speech.",
 };
 

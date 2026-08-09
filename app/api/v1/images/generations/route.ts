@@ -45,7 +45,7 @@ function collectImages(body: any): string[] {
 // POST /v1/images/generations
 //   { "prompt": "...", "model"?: "qwen-image-3.0", "size"?: "1:1",
 //     "image"?: <ref image(s) for editing>, "response_format"?: "url"|"b64_json",
-//     "watermark"?: false | "My Brand" }  // default "Qwen3.8 API"; false removes it
+//     "watermark"?: false | "My Brand" }  // default "Syde"; false removes it
 export async function POST(req: NextRequest) {
   const record = await authenticate(req);
   if (!record) return err("Missing or invalid API key.", 401);
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
   const imageModelId = resolveImageModel(typeof body.model === "string" ? body.model : undefined);
   const size = typeof body.size === "string" ? body.size : undefined;
   const wantB64 = body.response_format === "b64_json";
-  // Default watermark "Qwen3.8 API"; pass watermark:false to remove or a string to customize.
+  // Default watermark "Syde"; pass watermark:false to remove or a string to customize.
   const watermark = resolveWatermark(body.watermark);
 
   let url = "";

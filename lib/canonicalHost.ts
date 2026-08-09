@@ -46,7 +46,7 @@ export function movedPage(pathname: string): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Qwen3.8 API has moved</title>
+<title>Syde has moved</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -71,7 +71,7 @@ export function movedPage(pathname: string): string {
 </head><body>
   <main class="card">
     <span class="logo"></span>
-    <h1>Qwen3.8&nbsp;API has moved</h1>
+    <h1>Syde has moved</h1>
     <p>This address has been retired. The API, your keys and your account all live at the new URL.</p>
     <a class="btn" href="${target}">Go to ${CANONICAL_HOST}</a>
     <p class="fine">Calling it from code? Point <code>baseURL</code> at <code>${CANONICAL_URL}/v1</code>.

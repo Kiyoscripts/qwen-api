@@ -2,7 +2,7 @@
 // by default; API callers can override the text or turn it off entirely via the
 // `watermark` request field:
 //
-//   watermark omitted              -> default "Qwen3.8 API"
+//   watermark omitted              -> default "Syde"
 //   watermark: false | "" | "none" -> no watermark
 //   watermark: "My Brand"          -> that text
 //
@@ -19,7 +19,7 @@ import { createCipheriv, createDecipheriv, randomBytes, createHash } from "node:
 import sharp from "sharp";
 import * as opentype from "opentype.js";
 
-export const DEFAULT_WATERMARK = "Qwen3.8 API";
+export const DEFAULT_WATERMARK = "Syde";
 const MAX_LEN = 64;
 
 // --- encrypted media tokens -------------------------------------------------

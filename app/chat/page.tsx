@@ -1060,7 +1060,7 @@ export default function Chat() {
               id="apikey"
               className="c-field"
               type="password"
-              placeholder="qwen_sk_…"
+              placeholder="syde_sk_…"
               value={keyDraft}
               onChange={(e) => setKeyDraft(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && saveKey()}

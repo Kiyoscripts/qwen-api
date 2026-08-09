@@ -87,7 +87,7 @@ export default function KeysDashboard() {
       <Aurora />
       <div className="dash">
         <nav className="lp-nav glass">
-          <a className="lp-brand" href="/" style={{ textDecoration: "none" }}><span className="lp-logo" /> Qwen3.8&nbsp;API</a>
+          <a className="lp-brand" href="/" style={{ textDecoration: "none" }}><span className="lp-logo" /> Syde</a>
           <div className="lp-navcta">
             {me && (
               <div className="dash-me">

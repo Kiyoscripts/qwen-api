@@ -117,7 +117,7 @@ export default async function ModelsPage() {
       <Aurora />
       <div className="lp">
         <nav className="lp-nav glass">
-          <a className="lp-brand" href="/" style={{ textDecoration: "none" }}><span className="lp-logo" /> Qwen3.8&nbsp;API</a>
+          <a className="lp-brand" href="/" style={{ textDecoration: "none" }}><span className="lp-logo" /> Syde</a>
           <div className="lp-links">
             <a href="/models">{t("nav_models")}</a>
             <a href="/playground">{t("nav_playground")}</a>

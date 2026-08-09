@@ -82,7 +82,7 @@ export default function LoginPage() {
     <>
       <Aurora />
       <div className="auth-wrap">
-        <a className="auth-brand" href="/"><span className="lp-logo" /> Qwen3.8&nbsp;API</a>
+        <a className="auth-brand" href="/"><span className="lp-logo" /> Syde</a>
         <div className="auth-card glass">
           <div className="auth-tabs">
             <button className={tab === "login" ? "on" : ""} onClick={() => setTab("login")}>{t("login_title")}</button>

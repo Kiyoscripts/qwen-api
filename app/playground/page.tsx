@@ -594,7 +594,7 @@ export default function Playground() {
     const lines = (endpoint: string, o: unknown, extra = "") =>
       [
         `curl ${url}${endpoint}${extra} \\`,
-        `  -H "Authorization: Bearer $QWEN_API_KEY" \\`,
+        `  -H "Authorization: Bearer $SYDE_API_KEY" \\`,
         `  -H "Content-Type: application/json" \\`,
         `  -d ${body(o)}`,
       ].join("\n");
@@ -675,7 +675,7 @@ export default function Playground() {
       {/* ---------------- left rail: the request ---------------- */}
       <aside className="pgx-side">
         <a className="pgx-brand" href="/">
-          <span className="lp-logo" /> Qwen3.8&nbsp;API
+          <span className="lp-logo" /> Syde
         </a>
 
         <div className="pgx-side-scroll">
@@ -844,7 +844,7 @@ export default function Playground() {
               <input
                 className="pgx-input"
                 type="password"
-                placeholder="qwen_sk_…"
+                placeholder="syde_sk_…"
                 value={keyDraft}
                 onChange={(e) => setKeyDraft(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && saveKey()}

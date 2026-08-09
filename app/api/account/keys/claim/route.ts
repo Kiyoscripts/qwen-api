@@ -12,7 +12,11 @@ export async function POST(req: NextRequest) {
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON." }, { status: 400 }); }
   const key = String(body.key || "").trim();
-  if (!/^qwen_sk_/.test(key)) return NextResponse.json({ error: "That doesn't look like a qwen_sk_ key." }, { status: 400 });
+  // Keys are looked up by hash, so the prefix is only a label. Both are accepted
+  // because every key issued before the rename still starts with qwen_sk_, and
+  // rejecting those here would strand working keys.
+  if (!/^(syde|qwen)_sk_/.test(key))
+    return NextResponse.json({ error: "That doesn't look like a syde_sk_ key." }, { status: 400 });
 
   const r = await claimKey(user.id, key);
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });

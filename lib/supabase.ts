@@ -70,7 +70,7 @@ export async function createApiKey(
   ip?: string | null,
   userId?: string | null
 ): Promise<{ id: string; key: string; key_prefix: string }> {
-  const key = "qwen_sk_" + randomBytes(24).toString("hex");
+  const key = "syde_sk_" + randomBytes(24).toString("hex");
   const key_hash = hashKey(key);
   const key_prefix = key.slice(0, 16) + "…";
   // Only reference user_id when we actually have a user, so anonymous key creation

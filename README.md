@@ -1,4 +1,4 @@
-# Qwen3.8 API
+# Syde
 
 An **OpenAI-compatible** hosted API for `qwen3.8-max-preview` (with **vision**),
 built on **Next.js + Vercel**, with API keys managed in **Supabase**. It proxies
@@ -35,13 +35,13 @@ Qwen3 is trained for function calling so it's reliable for normal agent use.
 
 ### Image watermark
 
-Generated images are stamped with a **`Qwen3.8 API`** watermark (bottom-right) by
+Generated images are stamped with a **`Syde`** watermark (bottom-right) by
 default. Callers control it per request with the `watermark` field — on both
 `POST /v1/images/generations` and `POST /v1/chat/completions` (image models):
 
 | `watermark` value | Result |
 | --- | --- |
-| *omitted* | default `Qwen3.8 API` |
+| *omitted* | default `Syde` |
 | `false` (or `""`, `"none"`) | no watermark |
 | `"your text"` | custom text (up to 64 chars) |
 
