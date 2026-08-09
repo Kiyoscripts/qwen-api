@@ -77,6 +77,8 @@
   --r-sm: 2px;
 
   --syde-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  color-scheme: light;
 }
 
 /* Dark is a real second mode, not an inversion. Driven by the same
@@ -96,6 +98,8 @@
 
   --rule: #232833;
   --rule-strong: #333a49;
+
+  color-scheme: dark;
 }
 
 /* Expose the tokens to Tailwind so utilities and raw CSS agree. */
@@ -117,6 +121,18 @@
    ========================================================================== */
 
 @layer base {
+  /* The document itself.
+   *
+   * Preflight is not imported and globals.css is gone, so nothing was zeroing
+   * the browser default `body { margin: 8px }` any more. That inset the app by
+   * 8px and let the default canvas show through as a white frame around every
+   * page.
+   *
+   * The background goes on html as well as .syde so overscroll and the area
+   * behind a short page match the theme instead of flashing white, and
+   * color-scheme makes the scrollbars and native controls follow it. */
+  html, body { margin: 0; padding: 0; }
+  html { background: var(--paper); }
   /* Unlayered CSS beats layered CSS whatever the specificity, so these live in
      a layer. Left unlayered they overrode every Tailwind utility inside the
      app: buttons lost their padding and borders, and inputs fell back to the
