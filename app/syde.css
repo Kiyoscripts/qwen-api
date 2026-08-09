@@ -17,7 +17,26 @@
    moves up to <body>.
    ========================================================================== */
 
+/* The full layer order, including legacy, declared here as well as in
+   legacy.css.
+ *
+ * A layer that is never named in an order declaration is appended last, which
+ * makes it the HIGHEST priority. In the production build the chunks load in a
+ * different order than locally, and the declaration that survived did not name
+ * `legacy` — so the old stylesheet outranked every new rule and repainted the
+ * deployed site while localhost looked correct.
+ *
+ * Both files now declare the same full order, so whichever the browser sees
+ * first establishes the same result. */
+/* Layer order. The old stylesheet is gone entirely rather than demoted: it
+   defined `.grid` as a three-column component with a 48px bottom margin, which
+   is also the name of a Tailwind utility. Layers only settle conflicts, and no
+   utility sets margin, so that margin applied unopposed to every `grid` element
+   in the new UI. The nav mark inherited 48px of it, which is what pushed the
+   wordmark onto a second line. Deleting the sheet removes that whole class of
+   collision. */
 @layer theme, base, components, utilities;
+
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 

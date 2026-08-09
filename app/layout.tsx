@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "highlight.js/styles/github-dark.css";
-import "./legacy.css";
 import "./syde.css";
 import { I18nProvider } from "./I18n";
 import { getLocale } from "@/lib/i18nServer";
@@ -31,13 +30,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{var t=localStorage.getItem('qwen_theme');" +
-              "if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}" +
-              // Cursor preference, same reasoning: `cursor:none` is gated behind
-              // this attribute, so setting it after hydration would show the
-              // system cursor for a beat on every load. Absent key = on.
-              "try{var c=localStorage.getItem('qwen_cursor');" +
-              "document.documentElement.setAttribute('data-cursor',c==='off'?'off':'on');}catch(e){}",
+              // Reads the same key the nav writes. It read `qwen_theme` while
+              // the nav stored `theme`, so a chosen theme never survived a
+              // reload until hydration repainted it.
+              "try{var t=localStorage.getItem('theme')||" +
+              "(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');" +
+              "document.documentElement.setAttribute('data-theme',t);}catch(e){}",
           }}
         />
       </head>
