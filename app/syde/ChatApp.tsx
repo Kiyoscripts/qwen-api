@@ -1,11 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Trash, ArrowUp, Stop, ChatText, SpeakerHigh, Wrench, Spinner } from "@phosphor-icons/react";
+import { Plus, Trash, ArrowUp, Stop, ChatText, SpeakerHigh, Wrench, Spinner, Paperclip, X } from "@phosphor-icons/react";
 import { useT } from "../I18n";
-import { ModelPicker, type PickModel } from "./ModelPicker";
+import { ModelPicker, acceptFor, toPickModel, type PickModel } from "./ModelPicker";
 
-interface Msg { role: "user" | "assistant"; content: string }
+interface Msg {
+  role: "user" | "assistant";
+  content: string;
+  /** Data URL of an attachment, kept with the turn so it survives a reload. */
+  file?: string;
+  fileName?: string;
+}
 interface Thread { id: string; title: string; messages: Msg[]; at: number }
 
 const STORE = "syde_threads";
@@ -26,6 +32,8 @@ export function ChatApp() {
   const [streaming, setStreaming] = useState(false);
   const [tools, setTools] = useState(false);
   const [speaking, setSpeaking] = useState<number | null>(null);
+  const [file, setFile] = useState<{ url: string; name: string } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -34,16 +42,12 @@ export function ChatApp() {
     setThreads(stored);
     setActiveId(stored[0]?.id ?? null);
     fetch("/v1/models").then((r) => (r.ok ? r.json() : { data: [] })).then((j) =>
-      setModels((j.data ?? []).map((m: any) => ({
-        id: m.id, name: m.display_name || m.id,
-        maker: (m.owned_by === "qwen" ? "qwen" : m.id.split("/")[0]) || "qwen",
-        chatTypes: m.capabilities?.chat_types ?? ["t2t"],
-        thinking: Boolean(m.capabilities?.thinking),
-      }))));
+      setModels((j.data ?? []).map(toPickModel)));
     return () => abort.current?.abort();
   }, []);
 
   const active = threads.find((x) => x.id === activeId) ?? null;
+  const accept = acceptFor(models.find((m) => m.id === model));
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
@@ -65,9 +69,13 @@ export function ChatApp() {
       setActiveId(id);
     }
 
-    const withUser: Msg[] = [...thread.messages, { role: "user", content: text }];
+    const withUser: Msg[] = [
+      ...thread.messages,
+      { role: "user", content: text, ...(file ? { file: file.url, fileName: file.name } : {}) },
+    ];
     update(id!, (x) => ({ ...x, messages: [...withUser, { role: "assistant", content: "" }], at: Date.now() }));
     setDraft("");
+    setFile(null);
     setStreaming(true);
 
     const ctrl = new AbortController();
@@ -82,7 +90,18 @@ export function ChatApp() {
       const r = await fetch("/v1/chat/completions", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model, messages: withUser, stream: !isMedia,
+          model,
+          // Multi-part content only where there is an attachment, so an ordinary
+          // turn keeps the plain string form every client expects.
+          messages: withUser.map((m) =>
+            m.file
+              ? { role: m.role, content: [
+                  { type: "text", text: m.content },
+                  { type: "image_url", image_url: { url: m.file } },
+                ] }
+              : { role: m.role, content: m.content }
+          ),
+          stream: !isMedia,
           ...(tools ? { tools: TOOL } : {}),
         }),
         signal: ctrl.signal,
@@ -189,8 +208,15 @@ export function ChatApp() {
                   {active.messages.map((m, i) => (
                     <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
                       {m.role === "user" ? (
-                        <p className="max-w-[85%] bg-ink px-3.5 py-2.5 text-[13.5px] leading-relaxed text-[var(--paper)]"
-                           style={{ borderRadius: "var(--r-sm)" }}>{m.content}</p>
+                        <div className="max-w-[85%]">
+                          {m.file && (
+                            <img src={m.file} alt={m.fileName ?? ""}
+                                 className="mb-1.5 max-h-48 w-auto border border-rule"
+                                 style={{ borderRadius: "var(--r-sm)" }} />
+                          )}
+                          <p className="bg-ink px-3.5 py-2.5 text-[13.5px] leading-relaxed text-[var(--paper)]"
+                             style={{ borderRadius: "var(--r-sm)" }}>{m.content}</p>
+                        </div>
                       ) : (
                         <div>
                           <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink">
@@ -216,8 +242,37 @@ export function ChatApp() {
               )}
             </div>
 
+            {file && (
+              <div className="flex items-center gap-2 border-t border-rule px-3 py-2">
+                <img src={file.url} alt="" className="size-9 border border-rule object-cover"
+                     style={{ borderRadius: "var(--r-sm)" }} />
+                <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-ink-3">{file.name}</span>
+                <button onClick={() => setFile(null)} aria-label={t("chat_remove_image")}
+                        className="text-ink-3 transition-colors duration-200 hover:text-signal">
+                  <X size={13} weight="bold" />
+                </button>
+              </div>
+            )}
+
             <form onSubmit={(e) => { e.preventDefault(); send(); }}
                   className="flex items-end gap-2 border-t border-rule px-3 py-2.5">
+              <input ref={fileInput} type="file" hidden accept={accept}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  const r = new FileReader();
+                  r.onload = () => setFile({ url: String(r.result), name: f.name });
+                  r.readAsDataURL(f);
+                  e.target.value = "";
+                }} />
+              <button type="button" onClick={() => fileInput.current?.click()} disabled={!accept}
+                aria-label={accept ? t("chat_attach") : t("chat_attach_unsupported", { model })}
+                title={accept ? t("chat_attach") : t("chat_attach_unsupported", { model })}
+                className="grid size-9 shrink-0 place-items-center border border-rule text-ink-3
+                           transition-colors duration-200 hover:border-ink hover:text-ink
+                           disabled:opacity-30">
+                <Paperclip size={14} weight="bold" />
+              </button>
               <label htmlFor="draft" className="sr-only">{t("chat_send_message")}</label>
               <textarea id="draft" value={draft} rows={1} onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}

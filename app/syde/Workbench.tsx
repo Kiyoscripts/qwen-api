@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Play, Stop, CaretRight, MagnifyingGlass } from "@phosphor-icons/react";
+import { Play, Stop, CaretRight, MagnifyingGlass, Paperclip, X } from "@phosphor-icons/react";
 import { useT } from "../I18n";
-import { ModelPicker, type PickModel } from "./ModelPicker";
+import { ModelPicker, acceptFor, toPickModel, type PickModel } from "./ModelPicker";
 
 type Mode = "chat" | "image" | "video" | "speech";
 interface Voice { speaker: string; name: string; gender?: string; description?: string; kind?: string }
@@ -32,6 +32,8 @@ export function Workbench() {
   const [voice, setVoice] = useState("Cherry");
   const [vq, setVq] = useState("");
   const [showBody, setShowBody] = useState(false);
+  const [file, setFile] = useState<{ url: string; name: string } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const [reasoning, setReasoning] = useState("");
   const [answer, setAnswer] = useState("");
@@ -41,12 +43,7 @@ export function Workbench() {
 
   useEffect(() => {
     fetch("/v1/models").then((r) => (r.ok ? r.json() : { data: [] })).then((j) => {
-      setModels((j.data ?? []).map((m: any) => ({
-        id: m.id, name: m.display_name || m.id,
-        maker: (m.owned_by === "qwen" ? "qwen" : m.id.split("/")[0]) || "qwen",
-        chatTypes: m.capabilities?.chat_types ?? ["t2t"],
-        thinking: Boolean(m.capabilities?.thinking),
-      })));
+      setModels((j.data ?? []).map(toPickModel));
     });
     fetch("/v1/audio/voices").then((r) => (r.ok ? r.json() : { data: [] })).then((j) => setVoices(j.data ?? []));
     return () => abort.current?.abort();
@@ -66,20 +63,29 @@ export function Workbench() {
   }, [mode, models]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canThink = models.find((m) => m.id === model)?.thinking ?? false;
+  const accept = acceptFor(models.find((m) => m.id === model));
 
   const body = useMemo(() => {
     if (mode === "image" || mode === "video") return { model, messages: [{ role: "user", content: prompt }], size };
     if (mode === "speech") return { model: "qwen-tts", input: prompt, voice };
     return {
       model,
-      messages: [...(system ? [{ role: "system", content: system }] : []), { role: "user", content: prompt }],
+      messages: [
+        ...(system ? [{ role: "system", content: system }] : []),
+        file
+          ? { role: "user", content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: file.url } },
+            ] }
+          : { role: "user", content: prompt },
+      ],
       stream: true, temperature, max_tokens: maxTokens,
       ...(canThink && !thinking ? { enable_thinking: false } : {}),
       ...(tools ? { tools: [{ type: "function", function: { name: "get_weather",
         description: "Current conditions for a place.",
         parameters: { type: "object", properties: { location: { type: "string" } }, required: ["location"] } } }] } : {}),
     };
-  }, [mode, model, prompt, system, size, temperature, maxTokens, thinking, canThink, tools, voice]);
+  }, [mode, model, prompt, system, size, temperature, maxTokens, thinking, canThink, tools, voice, file]);
 
   const run = async () => {
     if (!prompt.trim() || state === "running") return;
@@ -249,11 +255,35 @@ export function Workbench() {
               className="w-full resize-y bg-transparent px-4 py-3 font-mono text-[13px] leading-relaxed
                          text-ink outline-none placeholder:text-ink-3" />
             <div className="flex items-center justify-between gap-3 border-t border-rule px-3 py-2.5">
+              <div className="flex items-center gap-3">
+              <input ref={fileInput} type="file" hidden accept={accept}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  const r = new FileReader();
+                  r.onload = () => setFile({ url: String(r.result), name: f.name });
+                  r.readAsDataURL(f);
+                  e.target.value = "";
+                }} />
+              <button type="button" onClick={() => fileInput.current?.click()} disabled={!accept}
+                aria-label={t("chat_attach")} title={accept || t("chat_attach_unsupported", { model })}
+                className="flex items-center gap-1.5 font-mono text-[11.5px] text-ink-3
+                           transition-colors duration-200 hover:text-ink disabled:opacity-30">
+                <Paperclip size={12} weight="bold" />
+                {file ? file.name.slice(0, 18) : t("chat_attach")}
+              </button>
+              {file && (
+                <button onClick={() => setFile(null)} aria-label={t("chat_remove_image")}
+                        className="text-ink-3 transition-colors duration-200 hover:text-signal">
+                  <X size={12} weight="bold" />
+                </button>
+              )}
               <button onClick={() => setShowBody((v) => !v)}
                 className="flex items-center gap-1.5 font-mono text-[11.5px] text-ink-3 transition-colors duration-200 hover:text-ink">
                 <CaretRight size={12} weight="bold" className={`transition-transform duration-200 ${showBody ? "rotate-90" : ""}`} />
                 {t("pg_request")}
               </button>
+              </div>
               <div className="flex items-center gap-2">
                 {ms !== null && <span className="num text-[11.5px] text-ink-3">{ms} ms</span>}
                 {state === "running" ? (

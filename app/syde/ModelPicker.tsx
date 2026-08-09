@@ -4,7 +4,47 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CaretDown, MagnifyingGlass, Check } from "@phosphor-icons/react";
 import { Logo } from "./Logo";
 
-export interface PickModel { id: string; name: string; maker: string; chatTypes: string[]; thinking: boolean }
+export interface ModelInputs { image: boolean; document: boolean; video: boolean; audio: boolean }
+
+export interface PickModel {
+  id: string; name: string; maker: string; chatTypes: string[]; thinking: boolean;
+  input: ModelInputs;
+}
+
+/**
+ * What the file picker should accept for a model.
+ *
+ * Built from what the model declares rather than a fixed list, so a model that
+ * takes audio offers audio and one that does not never shows it. An empty
+ * string means it takes no files, and the control is disabled.
+ */
+export function acceptFor(m: PickModel | undefined): string {
+  if (!m) return "";
+  const parts: string[] = [];
+  if (m.input.image) parts.push("image/*");
+  if (m.input.audio) parts.push("audio/*");
+  if (m.input.video) parts.push("video/*");
+  if (m.input.document) parts.push(".pdf,.txt,.md,.csv,.json,.docx,.xlsx,.pptx");
+  return parts.join(",");
+}
+
+/** Reads the capability block the API returns for each model. */
+export function toPickModel(m: any): PickModel {
+  const i = m.capabilities?.input ?? {};
+  return {
+    id: m.id,
+    name: m.display_name || m.id,
+    maker: (m.owned_by === "qwen" ? "qwen" : String(m.id).split("/")[0]) || "qwen",
+    chatTypes: m.capabilities?.chat_types ?? ["t2t"],
+    thinking: Boolean(m.capabilities?.thinking),
+    input: {
+      image: Boolean(i.image ?? m.capabilities?.vision),
+      document: Boolean(i.document),
+      video: Boolean(i.video),
+      audio: Boolean(i.audio),
+    },
+  };
+}
 
 /** Thirty-odd ids is too many for a select, so this is a searchable list
     grouped by maker. One control does not justify a headless library. */
@@ -74,6 +114,14 @@ export function ModelPicker({
                     <span className="min-w-0">
                       <span className="block truncate text-[13px]">{m.name}</span>
                       <span className="block truncate font-mono text-[11px] text-ink-3">{m.id}</span>
+                      {(["image", "document", "video", "audio"] as const).some((k) => m.input[k]) && (
+                        <span className="mt-0.5 block font-mono text-[10px] text-signal">
+                          {(["image", "document", "video", "audio"] as const)
+                            .filter((k) => m.input[k])
+                            .map((k) => (k === "document" ? "file" : k))
+                            .join(" · ")}
+                        </span>
+                      )}
                     </span>
                   </span>
                   {m.id === value && <Check size={13} weight="bold" className="shrink-0" />}
