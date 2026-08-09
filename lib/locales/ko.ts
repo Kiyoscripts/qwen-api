@@ -249,4 +249,10 @@ export const ko: Partial<Dict> = {
   footer_disclaimer: "Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI, Google과 제휴 관계가 없습니다.",
   login_dms_closed: "DM이 닫혀 있어 키를 보내지 못했습니다. 서버 DM을 허용한 뒤 다시 보내세요.",
   login_dm_failed: "키를 보내지 못했습니다. 다시 시도하세요.",
+  da_title: "문서 도우미",
+  da_hint: "설정, 엔드포인트, 클라이언트에 대해 물어보세요. 답변은 이 문서를 근거로 합니다.",
+  da_placeholder: "문서에 대해 질문하기",
+  da_q1: "어떤 기본 URL을 쓰나요?",
+  da_q2: "Claude Code는 어떻게 설정하나요?",
+  da_q3: "오디오를 받는 모델은?",
 };

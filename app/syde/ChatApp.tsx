@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, Trash, ArrowUp, Stop, ChatText, SpeakerHigh, Wrench, Spinner, Paperclip, X, CaretRight } from "@phosphor-icons/react";
 import { useT } from "../I18n";
 import { ModelPicker, acceptFor, toPickModel, type PickModel } from "./ModelPicker";
+import { MediaAnswer } from "./MediaAnswer";
 
 interface Msg {
   role: "user" | "assistant";
@@ -302,12 +303,20 @@ export function ChatApp() {
                               )}
                             </div>
                           )}
-                          <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink">
-                            {m.content}
-                            {streaming && i === active.messages.length - 1 && (
-                              <span className="ml-px inline-block h-[1.05em] w-[7px] translate-y-[2px] bg-signal align-baseline animate-pulse" />
-                            )}
-                          </p>
+                          {/* A media model replies with markdown, so the same
+                              renderer handles both cases: text stays text, and
+                              an image or video becomes one. */}
+                          {m.content.includes("![") ? (
+                            <MediaAnswer text={m.content}
+                              className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink" />
+                          ) : (
+                            <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink">
+                              {m.content}
+                              {streaming && i === active.messages.length - 1 && (
+                                <span className="ml-px inline-block h-[1.05em] w-[7px] translate-y-[2px] bg-signal align-baseline animate-pulse" />
+                              )}
+                            </p>
+                          )}
                           {m.content && !(streaming && i === active.messages.length - 1) && (
                             <button onClick={() => readAloud(i, m.content)} disabled={speaking !== null}
                               className="mt-2 flex items-center gap-1.5 font-mono text-[11px] text-ink-3

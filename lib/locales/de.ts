@@ -249,4 +249,10 @@ export const de: Partial<Dict> = {
   footer_disclaimer: "Nicht verbunden mit Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI oder Google.",
   login_dms_closed: "Deine DMs sind geschlossen, der Schlüssel konnte nicht zugestellt werden. Öffne DMs für den Server und sende ihn erneut.",
   login_dm_failed: "Der Schlüssel konnte nicht gesendet werden. Versuche es erneut.",
+  da_title: "Doku-Assistent",
+  da_hint: "Frag nach Einrichtung, Endpunkten oder einem Client. Antworten stammen aus dieser Doku.",
+  da_placeholder: "Frag zur Doku",
+  da_q1: "Welche Basis-URL nehme ich?",
+  da_q2: "Wie richte ich Claude Code ein?",
+  da_q3: "Welche Modelle nehmen Audio?",
 };

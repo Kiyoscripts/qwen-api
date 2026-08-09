@@ -323,4 +323,10 @@ export const en = {
   footer_disclaimer: "Not affiliated with Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI or Google.",
   login_dms_closed: "Your DMs are closed, so the key could not be delivered. Open DMs for the server, then send it again.",
   login_dm_failed: "The key could not be sent. Try again.",
+  da_title: "Docs assistant",
+  da_hint: "Ask about setup, endpoints or a client. Answers come from these docs.",
+  da_placeholder: "Ask about the docs",
+  da_q1: "Which base URL do I use?",
+  da_q2: "How do I set up Claude Code?",
+  da_q3: "Which models take audio?",
 } as const;

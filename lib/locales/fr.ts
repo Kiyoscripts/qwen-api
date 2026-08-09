@@ -249,4 +249,10 @@ export const fr: Partial<Dict> = {
   footer_disclaimer: "Sans affiliation avec Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI ou Google.",
   login_dms_closed: "Vos MP sont fermés, la clé n'a pas pu être remise. Ouvrez-les pour le serveur, puis renvoyez-la.",
   login_dm_failed: "La clé n'a pas pu être envoyée. Réessayez.",
+  da_title: "Assistant de documentation",
+  da_hint: "Posez une question sur la configuration, les points d'accès ou un client. Les réponses viennent de cette documentation.",
+  da_placeholder: "Poser une question",
+  da_q1: "Quelle URL de base utiliser ?",
+  da_q2: "Comment configurer Claude Code ?",
+  da_q3: "Quels modèles acceptent l'audio ?",
 };

@@ -249,4 +249,10 @@ export const ja: Partial<Dict> = {
   footer_disclaimer: "Alibaba、OpenAI、Moonshot AI、DeepSeek、xAI、Google とは無関係です。",
   login_dms_closed: "DM が閉じているため鍵を送れませんでした。サーバーからの DM を許可して、もう一度送信してください。",
   login_dm_failed: "鍵を送信できませんでした。もう一度お試しください。",
+  da_title: "ドキュメント アシスタント",
+  da_hint: "設定、エンドポイント、クライアントについて質問できます。回答はこのドキュメントに基づきます。",
+  da_placeholder: "ドキュメントについて質問",
+  da_q1: "どのベース URL を使いますか？",
+  da_q2: "Claude Code の設定方法は？",
+  da_q3: "音声を受け取れるモデルは？",
 };

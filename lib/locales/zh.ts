@@ -248,4 +248,10 @@ export const zh: Partial<Dict> = {
   footer_disclaimer: "与 Alibaba、OpenAI、Moonshot AI、DeepSeek、xAI 及 Google 无隶属关系。",
   login_dms_closed: "你的私信已关闭，密钥无法送达。请对该服务器开启私信后重新发送。",
   login_dm_failed: "密钥发送失败，请重试。",
+  da_title: "文档助手",
+  da_hint: "询问配置、接口或客户端的问题，回答均来自本文档。",
+  da_placeholder: "询问文档",
+  da_q1: "该用哪个基础 URL？",
+  da_q2: "如何配置 Claude Code？",
+  da_q3: "哪些模型支持音频？",
 };

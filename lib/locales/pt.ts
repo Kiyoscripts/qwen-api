@@ -249,4 +249,10 @@ export const pt: Partial<Dict> = {
   footer_disclaimer: "Sem afiliação com Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI ou Google.",
   login_dms_closed: "As tuas MD estão fechadas, por isso a chave não pôde ser entregue. Abre-as para o servidor e envia outra vez.",
   login_dm_failed: "Não foi possível enviar a chave. Tenta de novo.",
+  da_title: "Assistente da documentação",
+  da_hint: "Pergunta sobre configuração, endpoints ou um cliente. As respostas vêm desta documentação.",
+  da_placeholder: "Pergunta sobre a documentação",
+  da_q1: "Que URL base devo usar?",
+  da_q2: "Como configuro o Claude Code?",
+  da_q3: "Que modelos aceitam áudio?",
 };

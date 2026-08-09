@@ -249,4 +249,10 @@ export const tr: Partial<Dict> = {
   footer_disclaimer: "Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI veya Google ile bağlantılı değildir.",
   login_dms_closed: "DM'lerin kapalı olduğu için anahtar iletilemedi. Sunucu için DM'leri aç ve yeniden gönder.",
   login_dm_failed: "Anahtar gönderilemedi. Tekrar dene.",
+  da_title: "Doküman asistanı",
+  da_hint: "Kurulum, uç noktalar ya da bir istemci hakkında sor. Yanıtlar bu dokümandan gelir.",
+  da_placeholder: "Doküman hakkında sor",
+  da_q1: "Hangi temel URL'yi kullanmalıyım?",
+  da_q2: "Claude Code'u nasıl kurarım?",
+  da_q3: "Hangi modeller ses kabul eder?",
 };

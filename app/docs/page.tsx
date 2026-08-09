@@ -1,5 +1,6 @@
 import { Shell } from "../syde/Shell";
 import { DocsBody } from "../syde/DocsBody";
+import { DocsAssistant } from "../syde/DocsAssistant";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,7 @@ export default function DocsPage() {
   return (
     <Shell footer={false}>
       <DocsBody />
+      <DocsAssistant />
     </Shell>
   );
 }

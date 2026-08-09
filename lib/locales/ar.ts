@@ -250,4 +250,10 @@ export const ar: Partial<Dict> = {
   footer_disclaimer: "لا صلة لنا بشركات Alibaba أو OpenAI أو Moonshot AI أو DeepSeek أو xAI أو Google.",
   login_dms_closed: "رسائلك الخاصة مغلقة، لذا تعذّر تسليم المفتاح. افتحها لهذا الخادم ثم أعد الإرسال.",
   login_dm_failed: "تعذّر إرسال المفتاح. حاول مرة أخرى.",
+  da_title: "مساعد التوثيق",
+  da_hint: "اسأل عن الإعداد أو نقاط الوصول أو أحد العملاء. الإجابات مستندة إلى هذا التوثيق.",
+  da_placeholder: "اسأل عن التوثيق",
+  da_q1: "أي عنوان أساسي أستخدم؟",
+  da_q2: "كيف أُعِدّ Claude Code؟",
+  da_q3: "أي النماذج تقبل الصوت؟",
 };

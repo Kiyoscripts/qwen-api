@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Play, Stop, CaretRight, MagnifyingGlass, Paperclip, X, Trash } from "@phosphor-icons/react";
 import { useT } from "../I18n";
 import { ModelPicker, acceptFor, toPickModel, type PickModel } from "./ModelPicker";
+import { MediaAnswer } from "./MediaAnswer";
 
 type Mode = "chat" | "image" | "video" | "speech";
 
@@ -394,7 +395,8 @@ export function Workbench() {
             ) : (
               <div className="px-4 py-4">
                 {answer ? (
-                  <p className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-ink">{answer}</p>
+                  <MediaAnswer text={answer}
+                    className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-ink" />
                 ) : (
                   <p className="body text-[13px]">{t("pg_response")}</p>
                 )}
