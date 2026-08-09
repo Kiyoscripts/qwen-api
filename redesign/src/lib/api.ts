@@ -286,8 +286,17 @@ export const LATENCY_SAMPLE = [
 export interface Me {
   id: string;
   username: string;
+  /** Discord avatar hash, or a full URL. Null when the account has none. */
   avatar: string | null;
+  discord_id: string | null;
   role: "owner" | "admin" | "member";
+}
+
+/** Half the avatar URL is the discord id, so both fields are needed. */
+export function avatarUrl(me: Me): string | null {
+  if (!me.avatar) return null;
+  if (me.avatar.startsWith("http")) return me.avatar;
+  return `https://cdn.discordapp.com/avatars/${me.discord_id}/${me.avatar}.png`;
 }
 
 export interface Key {
@@ -342,7 +351,7 @@ export async function verifyCode(code: string): Promise<{ me: Me; relay: string 
   // read off a screen cannot be mistyped into a different valid code.
   if (!/^QW-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(code.trim().toUpperCase()))
     throw new Error("That is not a link code. Run /link in Discord to get one.");
-  const user: Me = { id: "512", username: "weirdmm", avatar: null, role: "owner" };
+  const user: Me = { id: "512", username: "weirdmm", avatar: null, discord_id: "512", role: "owner" };
   localStorage.setItem(SESSION, JSON.stringify(user));
   return { me: user, relay: "relay-mock" };
 }
@@ -369,7 +378,7 @@ export async function loginWithKey(key: string): Promise<Me> {
   }
   await wait(600);
   if (!/^(syde|qwen)_sk_/.test(key.trim())) throw new Error("A login key starts with syde_sk_.");
-  const user: Me = { id: "512", username: "weirdmm", avatar: null, role: "owner" };
+  const user: Me = { id: "512", username: "weirdmm", avatar: null, discord_id: "512", role: "owner" };
   localStorage.setItem(SESSION, JSON.stringify(user));
   return user;
 }

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Sun, Moon, List, X, Translate, Check } from "@phosphor-icons/react";
 import { useT } from "../I18n";
 import { LOCALES } from "@/lib/i18n";
+import { avatarUrl, type Me } from "../Account";
 
 /**
  * The shell nav.
@@ -18,11 +19,6 @@ import { LOCALES } from "@/lib/i18n";
  * short enough that adding one more would be the thing to reconsider, not the
  * height.
  */
-
-interface Me {
-  username: string;
-  role?: string;
-}
 
 const ROUTES = [
   { href: "/models", key: "nav_models" },
@@ -166,16 +162,9 @@ export function Nav() {
                            transition-colors duration-200 hover:border-ink"
                 style={{ borderRadius: "var(--r-sm)" }}
               >
-                <span
-                  className="grid size-6 shrink-0 place-items-center bg-signal font-mono
-                             text-[11px] text-[var(--on-signal)]"
-                  style={{ borderRadius: "var(--r-sm)" }}
-                  aria-hidden
-                >
-                  {me.username.slice(0, 1).toUpperCase()}
-                </span>
+                <Avatar me={me} />
                 <span className="hidden font-mono text-[12px] text-ink sm:inline">
-                  {me.username}
+                  {me.username ?? "account"}
                 </span>
               </Link>
             ) : (
@@ -219,6 +208,43 @@ export function Nav() {
         </div>
       )}
     </header>
+  );
+}
+
+/**
+ * The Discord picture, with the initial as the fallback.
+ *
+ * Two ways to end up without an image: the account has no avatar set, and the
+ * CDN request fails. Both land on the same initial, so a broken image never
+ * shows as the browser's placeholder glyph.
+ */
+function Avatar({ me }: { me: Me }) {
+  const src = avatarUrl(me);
+  const [failed, setFailed] = useState(false);
+  const initial = (me.username ?? "?").slice(0, 1).toUpperCase();
+
+  if (!src || failed)
+    return (
+      <span
+        className="grid size-6 shrink-0 place-items-center bg-signal font-mono text-[11px]
+                   text-[var(--on-signal)]"
+        style={{ borderRadius: "var(--r-sm)" }}
+        aria-hidden
+      >
+        {initial}
+      </span>
+    );
+
+  return (
+    <img
+      src={`${src}?size=64`}
+      alt=""
+      width={24}
+      height={24}
+      onError={() => setFailed(true)}
+      className="size-6 shrink-0 object-cover"
+      style={{ borderRadius: "var(--r-sm)" }}
+    />
   );
 }
 
