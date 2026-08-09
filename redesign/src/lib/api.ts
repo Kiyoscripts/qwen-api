@@ -338,7 +338,10 @@ export async function verifyCode(code: string): Promise<{ me: Me; relay: string 
     return { me: j.discord, relay: j.relay };
   }
   await wait(700);
-  if (!/^[0-9]{6}$/.test(code.trim())) throw new Error("Codes are six digits. Run /link in Discord to get one.");
+  // QW- followed by six characters from an alphabet with no 0/O/1/I, so a code
+  // read off a screen cannot be mistyped into a different valid code.
+  if (!/^QW-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(code.trim().toUpperCase()))
+    throw new Error("That is not a link code. Run /link in Discord to get one.");
   const user: Me = { id: "512", username: "weirdmm", avatar: null, role: "owner" };
   localStorage.setItem(SESSION, JSON.stringify(user));
   return { me: user, relay: "relay-mock" };

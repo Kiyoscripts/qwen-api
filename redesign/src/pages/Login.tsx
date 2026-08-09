@@ -5,12 +5,31 @@ import { useRoute } from "../lib/router";
 
 type Tab = "link" | "key";
 
+/** QW- plus six characters. The alphabet omits 0, O, 1 and I so a code read off
+    a screen cannot be typed into a different valid one. */
+const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const CODE_RE = new RegExp(`^QW-[${ALPHABET}]{6}$`);
+
+/**
+ * Make what the user typed into what the server expects.
+ *
+ * Forgiving on purpose: people paste with stray spaces, in lower case, and
+ * often without the QW- because it reads as a label rather than part of the
+ * code. All three are recoverable, so recover them instead of rejecting.
+ */
+function normaliseCode(raw: string): string {
+  let v = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (v.startsWith("QW")) v = v.slice(2);
+  v = v.split("").filter((c) => ALPHABET.includes(c)).join("").slice(0, 6);
+  return v ? `QW-${v}` : "";
+}
+
 /**
  * Two ways in, the same as the old site.
  *
- * "Link Discord" is the first-time path: /link in the bot returns a six digit
- * code, the code proves who you are, and the bot then DMs a login key. "Use a
- * key" is the returning path for anyone who already has that key.
+ * "Link Discord" is the first-time path: /link in the bot returns a QW- code,
+ * the code proves who you are, and the bot then DMs a login key. "Use a key" is
+ * the returning path for anyone who already has that key.
  *
  * The DM is the part that can quietly fail, since a closed DM inbox is silent
  * from the bot's side. So the page polls for delivery and says plainly what to
@@ -119,7 +138,8 @@ export function Login() {
                   </li>
                   <li>
                     <span className="num mr-2 text-ink-3">2</span>
-                    Paste the six digit code it replies with.
+                    Paste the code it replies with, which looks like{" "}
+                    <code className="font-mono text-ink">QW-DPKBY2</code>.
                   </li>
                 </ol>
 
@@ -128,11 +148,12 @@ export function Login() {
                 </label>
                 <input
                   id="code"
-                  inputMode="numeric"
+                  autoCapitalize="characters"
                   autoComplete="one-time-code"
+                  spellCheck={false}
                   value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="000000"
+                  onChange={(e) => setCode(normaliseCode(e.target.value))}
+                  placeholder="QW-XXXXXX"
                   className="h-11 w-full border border-rule bg-transparent px-3 font-mono text-[15px]
                              tracking-[0.3em] text-ink outline-none placeholder:tracking-[0.3em]
                              placeholder:text-ink-3 focus:border-signal"
@@ -141,7 +162,7 @@ export function Login() {
                 {error && <ErrorLine>{error}</ErrorLine>}
                 <button
                   type="submit"
-                  disabled={busy || code.length !== 6}
+                  disabled={busy || !CODE_RE.test(code)}
                   className="btn btn-primary mt-4 w-full disabled:opacity-40"
                 >
                   {busy ? "Checking" : "Link account"}
