@@ -211,6 +211,43 @@
 .syde .btn:active { transform: translateY(1px); }
 .syde .btn:disabled { cursor: default; }
 
+/* ============================================================================
+   Entry motion, in CSS rather than JavaScript.
+
+   The rule that matters: content is visible by default and animation is the
+   enhancement, never the other way round. Driving the entry from JS meant the
+   opposite, and anything that stalled the animation left the page blank. A
+   backgrounded tab throttles requestAnimationFrame, so a link opened in a new
+   tab could freeze the hero mid-fade at whatever opacity it had reached.
+
+   These keyframes start from opacity 0 too, but they are CSS: they run without
+   hydration, they finish on their own, and `backwards`/`forwards` fill means
+   the element is never left at an intermediate value. If the stylesheet itself
+   fails, the element simply renders as normal static content.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: no-preference) {
+  .syde .rise {
+    animation: syde-rise 0.7s var(--syde-ease) both;
+    animation-delay: calc(var(--i, 0) * 60ms);
+  }
+
+  /* Scroll reveal where the browser can do it without script. Elsewhere the
+     content is simply already visible, which is the correct fallback. */
+  @supports (animation-timeline: view()) {
+    .syde .reveal {
+      animation: syde-rise 0.6s var(--syde-ease) both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 26%;
+    }
+  }
+}
+
+@keyframes syde-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .syde *, .syde *::before, .syde *::after {
     animation-duration: 0.001ms !important;

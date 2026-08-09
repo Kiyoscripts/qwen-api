@@ -1,18 +1,19 @@
-"use client";
-
-import { motion, useReducedMotion } from "motion/react";
-
 /**
  * Enter-on-scroll.
  *
- * Sections carry a reading order, and a short rise as each arrives marks where
- * the eye should start. Fires once, never loops, so nothing on the page is
- * perpetually moving.
+ * Deliberately not a client component any more. The previous version used
+ * Motion's whileInView, which renders the element at opacity 0 and relies on
+ * JavaScript to bring it back: if hydration stalled, or the tab was in the
+ * background where requestAnimationFrame is throttled, the content stayed
+ * invisible. That is the wrong failure direction for body copy.
+ *
+ * Now the reveal is a CSS scroll-driven animation, applied only where the
+ * browser supports it. Everywhere else the content is simply visible, and no
+ * script is involved either way.
  */
 export function Reveal({
   children,
   delay = 0,
-  y = 18,
   className,
 }: {
   children: React.ReactNode;
@@ -20,16 +21,12 @@ export function Reveal({
   y?: number;
   className?: string;
 }) {
-  const reduce = useReducedMotion();
   return (
-    <motion.div
-      className={className}
-      initial={reduce ? false : { opacity: 0, y }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.25 }}
-      transition={{ duration: 0.62, delay, ease: [0.16, 1, 0.3, 1] }}
+    <div
+      className={`reveal${className ? ` ${className}` : ""}`}
+      style={delay ? { animationDelay: `${delay}s` } : undefined}
     >
       {children}
-    </motion.div>
+    </div>
   );
 }
