@@ -285,17 +285,27 @@ export async function POST(req: NextRequest) {
 
   const id = "chatcmpl-" + randomUUID();
   const created = Math.floor(Date.now() / 1000);
-  // A chat we intend to resume must outlive the request — deleting it is what
-  // would force the next turn to re-send everything.
-  let keepChat = false;
+  /**
+   * The chat is left standing.
+   *
+   * Qwen's copy of the thread IS the history — we keep none of our own — so
+   * deleting the chat destroys the only record and forces the next turn to
+   * re-send the whole transcript, system prompt and all. Nothing here can know
+   * whether a follow-up is coming, and guessing wrong is expensive in one
+   * direction and free in the other: a kept chat that is never resumed costs a
+   * row on the account, while a deleted one that is resumed costs the entire
+   * conversation being sent again.
+   *
+   * Memories are still cleared. Those are Qwen's cross-conversation notes about
+   * the "user", which would otherwise leak between unrelated API callers sharing
+   * a pooled account — the thread is per chat, but memories are per account.
+   */
   const cleanup = async () => {
-    if (keepChat) return void (await forgetAllMemories(token));
-    await Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);
+    await forgetAllMemories(token);
   };
   /** Remember this thread so the next turn can carry just its new message. */
   const remember = (assistantText: string, st: StreamStatus) => {
     if (toolsOn || !st.responseId || !chatId || !entryId) return;
-    keepChat = true;
     saveSession(effMessages, assistantText, backendModel, {
       chatId, responseId: st.responseId, entryId,
     });
