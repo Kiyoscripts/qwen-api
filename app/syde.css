@@ -21,6 +21,19 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 
+/* Where to look for class names.
+ *
+ * Not optional here. Tailwind's automatic detection bounds its scan at the git
+ * root, and the Docker build excludes .git from the context, so in the image it
+ * found no sources and emitted no utilities at all: a 10KB stylesheet holding
+ * only the hand-written rules below, against 28KB locally. The site rendered
+ * with its custom classes intact and every utility missing, which looks like a
+ * broken page rather than a missing stylesheet.
+ *
+ * Declaring the sources removes the dependency on git being present. */
+@source "./**/*.{ts,tsx}";
+@source "../lib/**/*.{ts,tsx}";
+
 :root {
   /* surface */
   --paper: #f6f7f9;
