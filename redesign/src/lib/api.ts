@@ -150,6 +150,8 @@ export interface ChatOptions {
   temperature?: number;
   maxTokens?: number;
   thinking?: boolean;
+  /** Emulated at the proxy: schemas go into the prompt, tool_calls come back. */
+  tools?: boolean;
 }
 
 /** A reply arrives on two channels. Reasoning is separate from the answer so a
@@ -158,6 +160,22 @@ export interface Delta {
   channel: "reasoning" | "answer";
   text: string;
 }
+
+/** A minimal schema set, so turning tools on sends something real. */
+export const DEMO_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "get_weather",
+      description: "Current conditions for a place.",
+      parameters: {
+        type: "object",
+        properties: { location: { type: "string", description: "City name" } },
+        required: ["location"],
+      },
+    },
+  },
+];
 
 const REASONING =
   "The question is about the endpoint rather than the model, so the answer\nshould name the exact route and the field to read. Keeping it short.";
@@ -189,6 +207,7 @@ export async function* streamChat(
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
         ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
         ...(opts.thinking === false ? { enable_thinking: false } : {}),
+        ...(opts.tools ? { tools: DEMO_TOOLS } : {}),
       }),
       signal,
     });
@@ -473,7 +492,8 @@ export async function poolTokens(): Promise<PoolToken[]> {
   }));
 }
 
-export interface Voice { speaker: string; name: string; kind: "audio" | "omni"; }
+export type { Voice } from "./voices";
+import { VOICES } from "./voices";
 
 /**
  * Speech voices, from GET /v1/audio/voices.
@@ -482,23 +502,58 @@ export interface Voice { speaker: string; name: string; kind: "audio" | "omni"; 
  * not a chat model, so offering text models there would be offering something
  * the endpoint cannot use.
  */
-export async function listVoices(): Promise<Voice[]> {
+export async function listVoices(): Promise<import("./voices").Voice[]> {
   if (LIVE) {
     const r = await fetch(`${BASE}/v1/audio/voices`, { headers: authHeaders() });
     if (!r.ok) throw new Error(`voices failed (${r.status})`);
-    return (await r.json()).data as Voice[];
+    return (await r.json()).data;
   }
   await wait(200);
-  return [
-    { speaker: "cherry", name: "Cherry", kind: "audio" },
-    { speaker: "ethan", name: "Ethan", kind: "audio" },
-    { speaker: "nofish", name: "Nofish", kind: "audio" },
-    { speaker: "jennifer", name: "Jennifer", kind: "audio" },
-    { speaker: "ryan", name: "Ryan", kind: "audio" },
-    { speaker: "katerina", name: "Katerina", kind: "audio" },
-    { speaker: "elias", name: "Elias", kind: "omni" },
-    { speaker: "dylan", name: "Dylan", kind: "omni" },
-    { speaker: "sunny", name: "Sunny", kind: "omni" },
-    { speaker: "peter", name: "Peter", kind: "omni" },
-  ];
+  return VOICES;
+}
+
+
+/**
+ * Read a reply aloud.
+ *
+ * Returns an object URL for an <audio> element. The live path asks the API to
+ * synthesise; the placeholder has no audio to give, so it says so rather than
+ * handing back a silent file that looks like a broken player.
+ */
+export async function speak(text: string, voice = "Cherry"): Promise<string> {
+  if (!LIVE) throw new Error("Speech needs the live backend.");
+  const r = await fetch(`${BASE}/v1/audio/speech`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ model: "qwen-tts", input: text, voice }),
+  });
+  if (!r.ok) throw new Error(`speech failed (${r.status})`);
+  return URL.createObjectURL(await r.blob());
+}
+
+/**
+ * Generate an image or a video.
+ *
+ * Media models answer in markdown on the chat route, which is how picking one
+ * in the chat produces a picture rather than a description of a picture.
+ */
+export async function generateMedia(
+  model: string,
+  prompt: string,
+  size = "16:9"
+): Promise<string> {
+  if (LIVE) {
+    const r = await fetch(`${BASE}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }], size }),
+    });
+    if (!r.ok) throw new Error(`generation failed (${r.status})`);
+    const j = await r.json();
+    return j.choices?.[0]?.message?.content ?? "";
+  }
+  await wait(1400);
+  // A labelled stand-in, so the markdown path is exercised without pretending
+  // a picture was generated.
+  return `Media generation needs the live backend. With it on, \`${model}\` returns the asset inline here.`;
 }

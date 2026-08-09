@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Play, Stop, ArrowsClockwise, CaretRight } from "@phosphor-icons/react";
-import { listModels, listVoices, streamChat, LIVE, type Model, type Voice } from "../lib/api";
+import { listModels, listVoices, streamChat, DEMO_TOOLS, LIVE, type Model } from "../lib/api";
+import type { Voice } from "../lib/voices";
 import { ModelPicker } from "../components/ModelPicker";
+import { VoicePicker } from "../components/VoicePicker";
 import { Reveal } from "../components/Reveal";
 
 type Mode = "chat" | "image" | "video" | "speech";
@@ -33,7 +35,8 @@ export function Playground() {
   const [size, setSize] = useState("16:9");
   const [showBody, setShowBody] = useState(false);
   const [voices, setVoices] = useState<Voice[]>([]);
-  const [voice, setVoice] = useState("cherry");
+  const [voice, setVoice] = useState("Cherry");
+  const [tools, setTools] = useState(false);
 
   const [reasoning, setReasoning] = useState("");
   const [answer, setAnswer] = useState("");
@@ -73,8 +76,9 @@ export function Playground() {
       temperature,
       max_tokens: maxTokens,
       ...(canThink && !thinking ? { enable_thinking: false } : {}),
+      ...(tools ? { tools: DEMO_TOOLS } : {}),
     };
-  }, [mode, model, prompt, system, size, temperature, maxTokens, thinking, canThink, voice]);
+  }, [mode, model, prompt, system, size, temperature, maxTokens, thinking, canThink, voice, tools]);
 
   const run = async () => {
     if (!prompt.trim() || state === "running") return;
@@ -96,6 +100,7 @@ export function Playground() {
           temperature,
           maxTokens,
           thinking: canThink ? thinking : false,
+          tools,
         },
         ctrl.signal
       );
@@ -164,31 +169,8 @@ export function Playground() {
         {/* Controls */}
         <div className="space-y-5 lg:col-span-4">
           {mode === "speech" ? (
-            <Field label="Voice" hint={`${voices.length} voices from /v1/audio/voices.`}>
-              <div className="grid grid-cols-2 gap-1.5">
-                {voices.map((v) => (
-                  <button
-                    key={v.speaker}
-                    onClick={() => setVoice(v.speaker)}
-                    aria-pressed={voice === v.speaker}
-                    className={`flex items-center justify-between gap-2 border px-3 py-2 text-left
-                      transition-colors duration-200 ${
-                        voice === v.speaker
-                          ? "border-signal text-signal"
-                          : "border-rule text-ink-2 hover:border-ink hover:text-ink"
-                      }`}
-                    style={{ borderRadius: "var(--r-sm)" }}
-                  >
-                    <span className="truncate text-[13px]">{v.name}</span>
-                    <span className="shrink-0 font-mono text-[10px] text-ink-3">{v.kind}</span>
-                  </button>
-                ))}
-                {voices.length === 0 &&
-                  Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="h-9 animate-pulse border border-rule bg-[var(--paper-2)]"
-                         style={{ borderRadius: "var(--r-sm)" }} />
-                  ))}
-              </div>
+            <Field label="Voice">
+              <VoicePicker voices={voices} value={voice} onChange={setVoice} />
             </Field>
           ) : (
             <Field label="Model">
@@ -258,6 +240,24 @@ export function Playground() {
                   className="w-full accent-[var(--signal)]"
                 />
               </Field>
+
+              <label
+                className="flex cursor-pointer items-center justify-between border border-rule px-3 py-2.5"
+                style={{ borderRadius: "var(--r-sm)" }}
+              >
+                <span className="text-[13px] text-ink">
+                  Tool calling
+                  <span className="mt-0.5 block text-[12px] text-ink-3">
+                    Sends a sample schema so the model can call it.
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={tools}
+                  onChange={(e) => setTools(e.target.checked)}
+                  className="size-4 accent-[var(--signal)]"
+                />
+              </label>
 
               <label
                 className={`flex items-center justify-between border border-rule px-3 py-2.5 ${

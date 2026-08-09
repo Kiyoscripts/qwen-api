@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, Trash, ArrowUp, Stop, ChatText } from "@phosphor-icons/react";
-import { listModels, streamChat, type ChatMessage, type Model } from "../lib/api";
+import { Plus, Trash, ArrowUp, Stop, ChatText, SpeakerHigh, Wrench, Spinner } from "@phosphor-icons/react";
+import { listModels, streamChat, speak, generateMedia, type ChatMessage, type Model } from "../lib/api";
 import { ModelPicker } from "../components/ModelPicker";
 
 interface Thread {
@@ -33,11 +33,13 @@ export function Chat() {
   const [model, setModel] = useState("qwen3.8-max");
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [tools, setTools] = useState(false);
+  const [speaking, setSpeaking] = useState<number | null>(null);
   const abort = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    listModels().then((m) => setModels(m.filter((x) => x.capabilities.chat_types.includes("t2t"))));
+    listModels().then(setModels);
     return () => abort.current?.abort();
   }, []);
 
@@ -79,9 +81,33 @@ export function Chat() {
 
     const ctrl = new AbortController();
     abort.current = ctrl;
+
+    const picked = models.find((m) => m.id === model);
+    const isMedia = picked ? !picked.capabilities.chat_types.includes("t2t") : false;
+
+    if (isMedia) {
+      try {
+        const markdown = await generateMedia(model, text);
+        update(id!, (t) => {
+          const msgs = [...t.messages];
+          msgs[msgs.length - 1] = { role: "assistant", content: markdown };
+          return { ...t, messages: msgs };
+        });
+      } catch (e: any) {
+        update(id!, (t) => {
+          const msgs = [...t.messages];
+          msgs[msgs.length - 1] = { role: "assistant", content: e.message };
+          return { ...t, messages: msgs };
+        });
+      } finally {
+        setStreaming(false);
+      }
+      return;
+    }
+
     try {
       let acc = "";
-      for await (const d of streamChat({ model, messages: withUser, thinking: false }, ctrl.signal)) {
+      for await (const d of streamChat({ model, messages: withUser, thinking: false, tools }, ctrl.signal)) {
         if (ctrl.signal.aborted) break;
         if (d.channel !== "answer") continue;
         acc += d.text;
@@ -99,6 +125,20 @@ export function Chat() {
       });
     } finally {
       setStreaming(false);
+    }
+  };
+
+  const readAloud = async (index: number, text: string) => {
+    setSpeaking(index);
+    try {
+      const url = await speak(text);
+      const audio = new Audio(url);
+      audio.onended = () => setSpeaking(null);
+      await audio.play();
+    } catch {
+      // No audio to play while the backend is a placeholder. Failing quietly
+      // beats a player that never starts.
+      setSpeaking(null);
     }
   };
 
@@ -172,11 +212,28 @@ export function Chat() {
               <div className="w-full max-w-[300px]">
                 <ModelPicker models={models} value={model} onChange={setModel} />
               </div>
-              {active && (
-                <span className="num shrink-0 text-[11.5px] text-ink-3">
-                  {active.messages.length} messages
-                </span>
-              )}
+              <div className="flex shrink-0 items-center gap-3">
+                <button
+                  onClick={() => setTools((v) => !v)}
+                  aria-pressed={tools}
+                  title="Send tool schemas with each message"
+                  className={`flex items-center gap-1.5 border px-2.5 py-1.5 font-mono text-[11px]
+                    transition-colors duration-200 ${
+                      tools
+                        ? "border-signal text-signal"
+                        : "border-rule text-ink-3 hover:border-ink hover:text-ink"
+                    }`}
+                  style={{ borderRadius: "var(--r-sm)" }}
+                >
+                  <Wrench size={12} weight="bold" />
+                  Tools
+                </button>
+                {active && (
+                  <span className="num text-[11.5px] text-ink-3">
+                    {active.messages.length} messages
+                  </span>
+                )}
+              </div>
             </div>
 
             <div ref={scroller} className="flex-1 overflow-y-auto px-4 py-5">
@@ -200,12 +257,30 @@ export function Chat() {
                           {m.content}
                         </p>
                       ) : (
-                        <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink">
-                          {m.content}
-                          {streaming && i === active.messages.length - 1 && (
-                            <span className="ml-px inline-block h-[1.05em] w-[7px] translate-y-[2px] bg-signal align-baseline animate-pulse" />
+                        <div>
+                          <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink">
+                            {m.content}
+                            {streaming && i === active.messages.length - 1 && (
+                              <span className="ml-px inline-block h-[1.05em] w-[7px] translate-y-[2px] bg-signal align-baseline animate-pulse" />
+                            )}
+                          </p>
+                          {m.content && !(streaming && i === active.messages.length - 1) && (
+                            <button
+                              onClick={() => readAloud(i, m.content)}
+                              disabled={speaking !== null}
+                              aria-label="Read aloud"
+                              className="mt-2 flex items-center gap-1.5 font-mono text-[11px] text-ink-3
+                                         transition-colors duration-200 hover:text-signal disabled:opacity-40"
+                            >
+                              {speaking === i ? (
+                                <Spinner size={12} weight="bold" className="animate-spin" />
+                              ) : (
+                                <SpeakerHigh size={12} weight="bold" />
+                              )}
+                              {speaking === i ? "Reading" : "Read aloud"}
+                            </button>
                           )}
-                        </p>
+                        </div>
                       )}
                     </div>
                   ))}
