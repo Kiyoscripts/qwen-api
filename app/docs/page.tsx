@@ -14,6 +14,7 @@ import {
   speech,
   anthropic,
   continuation,
+  clis,
 } from "./samples";
 
 export const metadata = {
@@ -35,6 +36,7 @@ const NAV: { id: string; label: string }[] = [
   { id: "speech", label: "Speech" },
   { id: "models", label: "Models" },
   { id: "anthropic", label: "Anthropic API" },
+  { id: "clis", label: "Coding CLIs" },
   { id: "errors", label: "Errors" },
   { id: "truncation", label: "Truncated replies" },
   { id: "limits", label: "Limits" },
@@ -304,6 +306,34 @@ export default function DocsPage() {
                 unmodified. Any <code>claude-*</code> model name maps to the flagship, or pass a Qwen id.
               </p>
               <CodeTabs samples={anthropic} />
+            </Section>
+
+            <Section id="clis" title="Coding CLIs">
+              <p>
+                Codex, OpenCode, Claude Code, Aider and friends all take a base URL and a key, so
+                they work here with configuration alone — no plugin, no shim. Pick the tab for your
+                tool; each one is complete as written.
+              </p>
+              <p>
+                The one thing worth reading before you paste: <b>two wire formats live at different
+                URLs.</b> Anything OpenAI-shaped wants <code>{BASE}/v1</code>, because it appends{" "}
+                <code>/chat/completions</code> to whatever you give it. Claude Code speaks the
+                Anthropic API and wants <code>{BASE}</code> with <b>no</b> <code>/v1</code>, because
+                it appends <code>/v1/messages</code> itself. Getting this backwards is the usual
+                reason a CLI hangs or 404s the moment you send a message.
+              </p>
+              <CodeTabs samples={clis} />
+              <p>
+                Tool calling works in all of them: <code>tools</code> and <code>tool_calls</code> are
+                handled on this side, so agentic edit-and-run loops behave normally. Streaming works
+                too, which is what makes these usable interactively.
+              </p>
+              <p>
+                Any model id from <a href="/models">Models</a> can go in these fields, not just the
+                Qwen ones — a CLI pointed here can drive Kimi or GPT through the same key. If a tool
+                insists on a provider-prefixed name, <code>openai/&lt;id&gt;</code> is the form that
+                usually satisfies it.
+              </p>
             </Section>
 
             <Section id="errors" title="Errors">

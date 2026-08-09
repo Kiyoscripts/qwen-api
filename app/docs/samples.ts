@@ -563,3 +563,86 @@ while r.choices[0].finish_reason == "length":
 print(text)`,
   },
 ];
+
+// Pointing a coding CLI at this API. Two wire formats are on offer, and which
+// one a CLI wants decides whether the URL ends in /v1 or not — that mismatch is
+// the single most common reason one of these appears to hang or 404.
+export const clis = [
+  {
+    lang: "Claude Code",
+    code: `# Claude Code speaks the Anthropic Messages API, which /v1/messages
+# implements — so it runs against this endpoint unmodified.
+#
+# Note the base URL has NO /v1: Claude Code appends the path itself.
+export ANTHROPIC_BASE_URL="${BASE}"
+export ANTHROPIC_AUTH_TOKEN="$QWEN_API_KEY"
+export ANTHROPIC_MODEL="qwen3.8-max"
+
+# Claude Code also reaches for a small, cheap model for background work such as
+# titling. Point that at this API too, or those calls fail while chat works.
+export ANTHROPIC_SMALL_FAST_MODEL="qwen3.8-max"
+# Newer builds read ANTHROPIC_DEFAULT_HAIKU_MODEL instead — setting both is safe.
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="qwen3.8-max"
+
+claude`,
+  },
+  {
+    lang: "Codex",
+    code: `# ~/.codex/config.toml
+#
+# wire_api = "chat" selects /v1/chat/completions. Codex defaults to the
+# Responses API, which this endpoint does not implement, so leaving it out is
+# what produces an immediate 404.
+
+model = "qwen3.8-max"
+model_provider = "qwen38"
+
+[model_providers.qwen38]
+name = "Qwen3.8 API"
+base_url = "${BASE}/v1"
+env_key = "QWEN_API_KEY"
+wire_api = "chat"
+
+# Then: export QWEN_API_KEY=... && codex`,
+  },
+  {
+    lang: "OpenCode",
+    code: `// opencode.json, in the project root or ~/.config/opencode/
+//
+// The openai-compatible adapter is the right one here: this is an OpenAI-shaped
+// endpoint that is not OpenAI, so the stock "openai" provider would aim at
+// api.openai.com.
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "qwen38": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Qwen3.8 API",
+      "options": {
+        "baseURL": "${BASE}/v1",
+        "apiKey": "{env:QWEN_API_KEY}"
+      },
+      "models": {
+        "qwen3.8-max": { "name": "Qwen3.8 Max" },
+        "qwen3.8-max-preview": { "name": "Qwen3.8 Max Preview" }
+      }
+    }
+  }
+}`,
+  },
+  {
+    lang: "Any OpenAI client",
+    code: `# Most other tools — Aider, Cline, Continue, Roo — need the same two values
+# and nothing else. Whatever the setting is called, it wants the /v1 root.
+
+export OPENAI_BASE_URL="${BASE}/v1"
+export OPENAI_API_KEY="$QWEN_API_KEY"
+
+# Aider
+aider --model openai/qwen3.8-max
+
+# Anything reading OPENAI_BASE_URL picks it up with no further configuration.
+# In a GUI, the fields are usually labelled "Base URL" and "API key"; pick the
+# "OpenAI-compatible" or "Custom" provider rather than "OpenAI".`,
+  },
+];
