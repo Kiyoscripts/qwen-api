@@ -247,4 +247,6 @@ export const es: Partial<Dict> = {
   footer_keys: "Claves",
   footer_blurb: "Un endpoint compatible con OpenAI y Anthropic para Qwen, Kimi, GPT, DeepSeek, Grok y Gemma.",
   footer_disclaimer: "Sin afiliación con Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI ni Google.",
+  login_dms_closed: "Tus MD están cerrados, así que no se pudo entregar la clave. Ábrelos para el servidor y vuelve a enviarla.",
+  login_dm_failed: "No se pudo enviar la clave. Inténtalo de nuevo.",
 };

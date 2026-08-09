@@ -247,4 +247,6 @@ export const fr: Partial<Dict> = {
   footer_keys: "Clés",
   footer_blurb: "Un point d'accès compatible OpenAI et Anthropic pour Qwen, Kimi, GPT, DeepSeek, Grok et Gemma.",
   footer_disclaimer: "Sans affiliation avec Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI ou Google.",
+  login_dms_closed: "Vos MP sont fermés, la clé n'a pas pu être remise. Ouvrez-les pour le serveur, puis renvoyez-la.",
+  login_dm_failed: "La clé n'a pas pu être envoyée. Réessayez.",
 };

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getT } from "@/lib/i18nServer";
 import { Reveal } from "./Reveal";
+import { DISCORD_INVITE } from "@/lib/links";
 
 export async function Footer() {
   const t = await getT();
@@ -46,8 +47,12 @@ export async function Footer() {
               </div>
             ))}
           </div>
-          <div className="mt-12 border-t border-rule pt-6">
+          <div className="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-rule pt-6">
             <p className="font-mono text-[11.5px] text-ink-3">{t("footer_disclaimer")}</p>
+            <a href={DISCORD_INVITE} target="_blank" rel="noreferrer"
+               className="font-mono text-[11.5px] text-ink-2 transition-colors duration-200 hover:text-signal">
+              {t("login_discord_server")}
+            </a>
           </div>
         </div>
       </footer>

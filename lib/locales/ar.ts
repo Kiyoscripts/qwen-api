@@ -248,4 +248,6 @@ export const ar: Partial<Dict> = {
   footer_keys: "المفاتيح",
   footer_blurb: "نقطة وصول متوافقة مع OpenAI وAnthropic لنماذج Qwen وKimi وGPT وDeepSeek وGrok وGemma.",
   footer_disclaimer: "لا صلة لنا بشركات Alibaba أو OpenAI أو Moonshot AI أو DeepSeek أو xAI أو Google.",
+  login_dms_closed: "رسائلك الخاصة مغلقة، لذا تعذّر تسليم المفتاح. افتحها لهذا الخادم ثم أعد الإرسال.",
+  login_dm_failed: "تعذّر إرسال المفتاح. حاول مرة أخرى.",
 };

@@ -247,4 +247,6 @@ export const ru: Partial<Dict> = {
   footer_keys: "Ключи",
   footer_blurb: "Конечная точка, совместимая с OpenAI и Anthropic, для Qwen, Kimi, GPT, DeepSeek, Grok и Gemma.",
   footer_disclaimer: "Не связано с Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI и Google.",
+  login_dms_closed: "Личные сообщения закрыты, поэтому ключ не доставлен. Откройте их для сервера и отправьте снова.",
+  login_dm_failed: "Ключ не удалось отправить. Попробуйте ещё раз.",
 };

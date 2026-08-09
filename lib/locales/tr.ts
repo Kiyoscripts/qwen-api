@@ -247,4 +247,6 @@ export const tr: Partial<Dict> = {
   footer_keys: "Anahtarlar",
   footer_blurb: "Qwen, Kimi, GPT, DeepSeek, Grok ve Gemma için OpenAI ve Anthropic uyumlu uç nokta.",
   footer_disclaimer: "Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI veya Google ile bağlantılı değildir.",
+  login_dms_closed: "DM'lerin kapalı olduğu için anahtar iletilemedi. Sunucu için DM'leri aç ve yeniden gönder.",
+  login_dm_failed: "Anahtar gönderilemedi. Tekrar dene.",
 };

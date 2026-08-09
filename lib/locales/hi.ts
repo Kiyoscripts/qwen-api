@@ -246,4 +246,6 @@ export const hi: Partial<Dict> = {
   footer_keys: "कुंजियाँ",
   footer_blurb: "Qwen, Kimi, GPT, DeepSeek, Grok और Gemma के लिए OpenAI तथा Anthropic अनुरूप एंडपॉइंट।",
   footer_disclaimer: "Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI या Google से कोई संबंध नहीं।",
+  login_dms_closed: "आपके डीएम बंद हैं, इसलिए कुंजी नहीं भेजी जा सकी। सर्वर के लिए डीएम खोलें, फिर दोबारा भेजें।",
+  login_dm_failed: "कुंजी नहीं भेजी जा सकी। दोबारा प्रयास करें।",
 };

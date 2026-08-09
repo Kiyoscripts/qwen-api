@@ -3,6 +3,7 @@
 
 import { randomBytes } from "node:crypto";
 import { admin } from "./supabase";
+import { CANONICAL_URL } from "./canonicalHost";
 import type { DiscordProfile, Role } from "./auth";
 
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -85,11 +86,15 @@ const LOGIN_MSG = (key: string) =>
   [
     "**Your Syde login key** 🔑",
     "",
-    "Use this on the site to log in. Treat it like a password — anyone with it can access your account.",
+    // Says where to go, not just what to do with it. The previous wording read
+    // "use this on the site" and named no address, so anyone who had closed the
+    // tab had to work out where to return to.
+    `Go to <${CANONICAL_URL}/login> and open the **Use a key** tab, then paste this in.`,
     "```",
     key,
     "```",
-    "Lost it? Just run `/link` again to get a fresh one (the old key stops working).",
+    "Treat it like a password. Anyone with it can reach your account.",
+    "Lost it? Run `/link` again for a fresh one, which retires the old key.",
   ].join("\n");
 
 export function loginKeyDM(key: string): string {

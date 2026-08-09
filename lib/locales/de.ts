@@ -247,4 +247,6 @@ export const de: Partial<Dict> = {
   footer_keys: "Schlüssel",
   footer_blurb: "Ein OpenAI- und Anthropic-kompatibler Endpunkt für Qwen, Kimi, GPT, DeepSeek, Grok und Gemma.",
   footer_disclaimer: "Nicht verbunden mit Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI oder Google.",
+  login_dms_closed: "Deine DMs sind geschlossen, der Schlüssel konnte nicht zugestellt werden. Öffne DMs für den Server und sende ihn erneut.",
+  login_dm_failed: "Der Schlüssel konnte nicht gesendet werden. Versuche es erneut.",
 };

@@ -247,4 +247,6 @@ export const ko: Partial<Dict> = {
   footer_keys: "키",
   footer_blurb: "Qwen, Kimi, GPT, DeepSeek, Grok, Gemma를 위한 OpenAI 및 Anthropic 호환 엔드포인트.",
   footer_disclaimer: "Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI, Google과 제휴 관계가 없습니다.",
+  login_dms_closed: "DM이 닫혀 있어 키를 보내지 못했습니다. 서버 DM을 허용한 뒤 다시 보내세요.",
+  login_dm_failed: "키를 보내지 못했습니다. 다시 시도하세요.",
 };

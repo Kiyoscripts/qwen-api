@@ -247,4 +247,6 @@ export const ja: Partial<Dict> = {
   footer_keys: "キー",
   footer_blurb: "Qwen、Kimi、GPT、DeepSeek、Grok、Gemma に対応した OpenAI・Anthropic 互換のエンドポイント。",
   footer_disclaimer: "Alibaba、OpenAI、Moonshot AI、DeepSeek、xAI、Google とは無関係です。",
+  login_dms_closed: "DM が閉じているため鍵を送れませんでした。サーバーからの DM を許可して、もう一度送信してください。",
+  login_dm_failed: "鍵を送信できませんでした。もう一度お試しください。",
 };

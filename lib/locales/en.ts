@@ -321,4 +321,6 @@ export const en = {
   footer_keys: "Keys",
   footer_blurb: "An OpenAI and Anthropic compatible endpoint for Qwen, Kimi, GPT, DeepSeek, Grok and Gemma.",
   footer_disclaimer: "Not affiliated with Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI or Google.",
+  login_dms_closed: "Your DMs are closed, so the key could not be delivered. Open DMs for the server, then send it again.",
+  login_dm_failed: "The key could not be sent. Try again.",
 } as const;

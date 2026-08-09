@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DiscordLogo, Key as KeyIcon, ArrowRight, Check, Warning } from "@phosphor-icons/react";
 import { useT } from "../I18n";
+import { DISCORD_INVITE } from "@/lib/links";
 
 /** QW- plus six characters from an alphabet with no 0, O, 1 or I, so a code
     read off another window cannot be typed into a different valid one. */
@@ -73,6 +74,15 @@ export function LoginForm() {
     } catch (err: any) { setError(err.message); } finally { setBusy(false); }
   };
 
+  const resend = async () => {
+    if (!linked) return;
+    await fetch("/api/auth/discord/redm", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ relay: linked.relay }),
+    }).catch(() => {});
+    setDm("sending");
+  };
+
   if (linked)
     return (
       <div>
@@ -83,23 +93,36 @@ export function LoginForm() {
           </span>
           <p className="h3 text-ink">{linked.username}</p>
         </div>
-        <div className="mt-6 border border-rule px-4 py-4" style={{ borderRadius: "var(--r-sm)" }}>
-          {dm === "sending" && <p className="text-[13.5px] text-ink-2">{t("login_enter_dm_key")}</p>}
-          {dm === "sent" && (
-            <p className="flex items-start gap-2 text-[13.5px] text-ink-2">
+        <p className="mt-4 font-mono text-[12px] text-signal">{t("login_linked")}</p>
+
+        <div className="mt-4 border border-rule px-4 py-4" style={{ borderRadius: "var(--r-sm)" }}>
+          <p className="flex items-start gap-2 text-[13.5px] text-ink-2">
+            {dm === "sent" ? (
               <Check size={15} weight="bold" className="mt-0.5 shrink-0 text-signal" />
-              {t("login_enter_dm_key")}
-            </p>
-          )}
-          {(dm === "dms_closed" || dm === "failed") && (
-            <p className="flex items-start gap-2 text-[13.5px] text-ink-2">
+            ) : dm === "sending" ? null : (
               <Warning size={15} weight="bold" className="mt-0.5 shrink-0 text-signal" />
-              {t("login_redm")}
-            </p>
-          )}
+            )}
+            {dm === "dms_closed"
+              ? t("login_dms_closed")
+              : dm === "failed"
+                ? t("login_dm_failed")
+                : t("login_enter_dm_key")}
+          </p>
+          <button onClick={resend}
+            className="mt-3 font-mono text-[11.5px] text-ink-3 underline underline-offset-2
+                       transition-colors duration-200 hover:text-signal">
+            {t("login_redm")}
+          </button>
         </div>
-        <button onClick={() => { router.push("/keys"); router.refresh(); }} className="btn btn-primary mt-5 w-full">
-          {t("nav_dashboard")} <ArrowRight size={13} weight="bold" />
+
+        {/* Linking is not signing in: the code links the account, the bot sends a
+            key, and that key is what signs you in. Sending them onward to the
+            dashboard here just bounced them back out. */}
+        <button
+          onClick={() => { setLinked(null); setTab("key"); setError(null); }}
+          className="btn btn-primary mt-5 w-full"
+        >
+          {t("login_have_key")} <ArrowRight size={13} weight="bold" />
         </button>
       </div>
     );
@@ -127,8 +150,16 @@ export function LoginForm() {
       {tab === "link" ? (
         <form onSubmit={submitCode} className="mt-6">
           <ol className="mb-5 space-y-2 text-[13.5px] text-ink-2">
-            <li><span className="num mr-2 text-ink-3">1</span>{t("login_run")} <code className="font-mono text-ink">/link</code></li>
-            <li><span className="num mr-2 text-ink-3">2</span>{t("login_enter_code_below")} <code className="font-mono text-ink">QW-DPKBY2</code></li>
+            <li>
+              <span className="num mr-2 text-ink-3">1</span>
+              {t("login_join_the")}{" "}
+              <a href={DISCORD_INVITE} target="_blank" rel="noreferrer"
+                 className="text-signal underline underline-offset-2">
+                {t("login_discord_server")}
+              </a>
+            </li>
+            <li><span className="num mr-2 text-ink-3">2</span>{t("login_run")} <code className="font-mono text-ink">/link</code></li>
+            <li><span className="num mr-2 text-ink-3">3</span>{t("login_enter_code_below")} <code className="font-mono text-ink">QW-DPKBY2</code></li>
           </ol>
           <label htmlFor="code" className="mb-2 block font-mono text-[11px] tracking-wide text-ink-3 uppercase">
             {t("login_your_link_code")}

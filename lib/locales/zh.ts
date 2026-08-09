@@ -246,4 +246,6 @@ export const zh: Partial<Dict> = {
   footer_keys: "密钥",
   footer_blurb: "面向 Qwen、Kimi、GPT、DeepSeek、Grok 与 Gemma 的 OpenAI 兼容与 Anthropic 兼容接口。",
   footer_disclaimer: "与 Alibaba、OpenAI、Moonshot AI、DeepSeek、xAI 及 Google 无隶属关系。",
+  login_dms_closed: "你的私信已关闭，密钥无法送达。请对该服务器开启私信后重新发送。",
+  login_dm_failed: "密钥发送失败，请重试。",
 };
