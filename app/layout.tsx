@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "highlight.js/styles/github-dark.css";
 import "./theme.css";
 import "./globals.css";
+import "./syde.css";
 import { I18nProvider } from "./I18n";
 import { getLocale } from "@/lib/i18nServer";
 import { dirFor } from "@/lib/i18n";

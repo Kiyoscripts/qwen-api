@@ -1,0 +1,207 @@
+/* ============================================================================
+   The Syde design system.
+
+   Loaded alongside the old stylesheet while the port runs. The two do not
+   collide by construction:
+
+     - Tailwind's preflight is NOT imported below, only its theme and utilities.
+       Preflight is a global reset, and importing it would restyle every page
+       that has not been ported yet.
+     - The tokens here are new names (--paper, --ink, --signal, --rule). The old
+       ones (--bg, --text, --accent) are untouched, so an unported page renders
+       exactly as it did.
+     - Everything new lives under .syde, which paints its own background and
+       text colour rather than inheriting the old body styles.
+
+   When the last page is ported, the old stylesheet and its tokens go, and .syde
+   moves up to <body>.
+   ========================================================================== */
+
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+:root {
+  /* surface */
+  --paper: #f6f7f9;
+  --paper-2: #eceef2;
+  --paper-3: #e2e5ea;
+  --ink: #0b0d12;
+  --ink-2: #454b57;
+  --ink-3: #767d8b;
+
+  /* the single accent, locked across every surface */
+  --signal: #1b3cf0;
+  --signal-press: #1631c4;
+  --signal-wash: #e4e8fd;
+  --on-signal: #ffffff;
+
+  /* line. The hairline is the material of this design. */
+  --rule: #d5d9e0;
+  --rule-strong: #b9bfca;
+
+  /* shape lock: sharp. Two values, no exceptions. */
+  --r: 0px;
+  --r-sm: 2px;
+
+  --syde-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Dark is a real second mode, not an inversion. Driven by the same
+   data-theme attribute the old ThemeSwitcher already sets. */
+:root[data-theme="dark"] {
+  --paper: #0b0d12;
+  --paper-2: #11141b;
+  --paper-3: #191d26;
+  --ink: #eef0f4;
+  --ink-2: #a7aebc;
+  --ink-3: #737b8a;
+
+  --signal: #6f8bff;
+  --signal-press: #8ba1ff;
+  --signal-wash: #161c33;
+  --on-signal: #080a10;
+
+  --rule: #232833;
+  --rule-strong: #333a49;
+}
+
+/* Expose the tokens to Tailwind so utilities and raw CSS agree. */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-paper-3: var(--paper-3);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-signal: var(--signal);
+  --color-signal-wash: var(--signal-wash);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+}
+
+/* ============================================================================
+   The root. Paints its own ground so nothing leaks in from the old body rules.
+   ========================================================================== */
+
+.syde {
+  min-height: 100dvh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.syde *,
+.syde *::before,
+.syde *::after { box-sizing: border-box; }
+
+.syde ::selection { background: var(--signal); color: var(--on-signal); }
+
+.syde :focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+/* Preflight is absent, so the handful of resets the new pages rely on are
+   declared here rather than inherited. */
+.syde h1, .syde h2, .syde h3, .syde p, .syde dl, .syde dd, .syde figure { margin: 0; }
+.syde ul, .syde ol { margin: 0; padding: 0; list-style: none; }
+.syde a { color: inherit; text-decoration: none; }
+.syde button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.syde input, .syde textarea, .syde select { font: inherit; color: inherit; }
+.syde table { border-collapse: collapse; }
+.syde img, .syde svg { display: block; max-width: 100%; }
+
+/* ============================================================================
+   The measure. A 12 column field with a fixed gutter; content aligns to it.
+   ========================================================================== */
+
+.syde .field {
+  width: 100%;
+  max-width: 1360px;
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+
+@media (min-width: 768px) { .syde .field { padding-inline: 40px; } }
+
+.syde .rules { position: fixed; inset: 0; z-index: 0; pointer-events: none; display: none; }
+
+@media (min-width: 1024px) {
+  .syde .rules { display: block; }
+  .syde .rules-inner {
+    width: 100%; max-width: 1360px; height: 100%;
+    margin-inline: auto; padding-inline: 40px;
+    display: grid; grid-template-columns: repeat(12, 1fr); gap: 24px;
+  }
+  .syde .rules-inner span { border-left: 1px solid var(--rule); opacity: 0.5; }
+  .syde .rules-inner span:last-child { border-right: 1px solid var(--rule); }
+}
+
+/* ============================================================================
+   Type. Display sizes are clamped so a hero never needs a media query.
+   ========================================================================== */
+
+.syde .display {
+  font-size: clamp(2.5rem, 1.2rem + 4.4vw, 5.25rem);
+  line-height: 0.94; letter-spacing: -0.035em; font-weight: 600;
+}
+
+.syde .h2 {
+  font-size: clamp(1.75rem, 1.1rem + 2vw, 2.85rem);
+  line-height: 1.02; letter-spacing: -0.028em; font-weight: 600;
+}
+
+.syde .h3 { font-size: 1.0625rem; line-height: 1.35; letter-spacing: -0.012em; font-weight: 600; }
+
+.syde .lede {
+  font-size: clamp(1rem, 0.95rem + 0.3vw, 1.1875rem);
+  line-height: 1.55; color: var(--ink-2); max-width: 46ch;
+}
+
+.syde .body { font-size: 0.9375rem; line-height: 1.6; color: var(--ink-2); max-width: 62ch; }
+
+/* Mono is structural here: labels, numbers, keys, paths. Not decoration. */
+.syde .tag {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+
+.syde .num {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+}
+
+/* ============================================================================
+   Controls. Sharp, high contrast, physical on press.
+   ========================================================================== */
+
+.syde .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  white-space: nowrap;                      /* a wrapped CTA is a broken CTA */
+  height: 44px; padding-inline: 20px;
+  border-radius: var(--r-sm); border: 1px solid transparent;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8125rem; font-weight: 500; letter-spacing: 0.01em;
+  cursor: pointer; text-decoration: none;
+  transition: background 240ms var(--syde-ease), color 240ms var(--syde-ease),
+              border-color 240ms var(--syde-ease), transform 90ms var(--syde-ease);
+}
+
+.syde .btn-primary { background: var(--signal); color: var(--on-signal); }
+.syde .btn-primary:hover { background: var(--signal-press); }
+.syde .btn-ghost { background: transparent; color: var(--ink); border-color: var(--rule-strong); }
+.syde .btn-ghost:hover { border-color: var(--ink); }
+.syde .btn:active { transform: translateY(1px); }
+.syde .btn:disabled { cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+  .syde *, .syde *::before, .syde *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

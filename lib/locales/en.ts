@@ -278,4 +278,47 @@ export const en = {
   admin_unban: "unban",
   admin_qwen_pool: "Qwen account pool",
   admin_oc_pool: "OneCompiler account pool",
+
+  // --- Syde redesign -------------------------------------------------------
+  // English is the source of truth: every other locale is Partial<typeof en>,
+  // so these render in English elsewhere until each file catches up, rather
+  // than rendering a raw key.
+  hero_title_a: "Every model,",
+  hero_title_b: "one endpoint.",
+  hero_sub: "Qwen, Kimi, GPT, DeepSeek and Grok behind a single key. OpenAI and Anthropic compatible, so your client does not change.",
+  cta_key: "Get a key",
+  cta_docs: "Read the docs",
+  cta_title: "Start with the free tier.",
+
+  rail_title: "{count} models, one key.",
+  rail_all: "Full catalogue",
+
+  quickstart_title: "Change two lines. Keep your client.",
+  quickstart_body: "The OpenAI SDKs work unmodified against /v1. Anthropic SDKs and Claude Code use /v1/messages on the bare origin, since they append the path themselves.",
+
+  stream_title: "Streams first, thinks out loud.",
+  stream_body: "Tokens arrive as they are produced. Reasoning models emit their thinking on a separate channel, so you can show it or drop it.",
+  stat_models_line: "models on one key",
+  stat_formats: "wire formats, OpenAI and Anthropic",
+  stat_context: "token context, on the flagships",
+  stat_pool: "accounts in the pool",
+  stat_keys: "API keys issued",
+
+  grid_title: "More than text in, text out.",
+  grid_media_t: "Image, video, audio in",
+  grid_media_b: "Send a file with the message. The flagship reads all four input kinds; every model states which it takes.",
+  grid_tools_t: "Tool calling",
+  grid_tools_b: "OpenAI function schemas in, tool_calls out, on every model including the ones with no native support.",
+  grid_out_t: "Speech and images out",
+  grid_out_b: "Generate images and video, or read a reply aloud, from the same key.",
+  grid_keys_t: "Keys you control",
+  grid_keys_b: "Hashed at rest, shown once, revocable. Usage is visible per key.",
+  grid_lang_t: "Twelve languages",
+  grid_lang_b: "The console and docs ship translated, not machine-swapped at runtime.",
+
+  footer_product: "Product",
+  footer_account: "Account",
+  footer_keys: "Keys",
+  footer_blurb: "An OpenAI and Anthropic compatible endpoint for Qwen, Kimi, GPT, DeepSeek, Grok and Gemma.",
+  footer_disclaimer: "Not affiliated with Alibaba, OpenAI, Moonshot AI, DeepSeek, xAI or Google.",
 } as const;
