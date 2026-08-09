@@ -1,0 +1,14 @@
+/* The pre-Syde stylesheet, demoted.
+ *
+ * Every page now renders inside .syde, but globals.css still defines unlayered
+ * rules for bare selectors: `a { color: var(--accent-2) }` and a `.btn` block.
+ * Unlayered CSS outranks layered CSS whatever the specificity, so those beat
+ * the new component styles and repainted the site in the old orange accent.
+ *
+ * Importing it into the lowest layer keeps it available without letting it win.
+ * The layer order is declared here because this file loads first. */
+
+@layer legacy, theme, base, components, utilities;
+
+@import "./theme.css" layer(legacy);
+@import "./globals.css" layer(legacy);

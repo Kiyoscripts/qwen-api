@@ -97,119 +97,135 @@
    The root. Paints its own ground so nothing leaks in from the old body rules.
    ========================================================================== */
 
-.syde {
-  min-height: 100dvh;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
+@layer base {
+  /* Unlayered CSS beats layered CSS whatever the specificity, so these live in
+     a layer. Left unlayered they overrode every Tailwind utility inside the
+     app: buttons lost their padding and borders, and inputs fell back to the
+     native box, because `.syde button { padding: 0 }` outranked `px-2.5`. */
 
-.syde *,
-.syde *::before,
-.syde *::after { box-sizing: border-box; }
-
-.syde ::selection { background: var(--signal); color: var(--on-signal); }
-
-.syde :focus-visible {
-  outline: 2px solid var(--signal);
-  outline-offset: 2px;
-}
-
-/* Preflight is absent, so the handful of resets the new pages rely on are
-   declared here rather than inherited. */
-.syde h1, .syde h2, .syde h3, .syde p, .syde dl, .syde dd, .syde figure { margin: 0; }
-.syde ul, .syde ol { margin: 0; padding: 0; list-style: none; }
-.syde a { color: inherit; text-decoration: none; }
-.syde button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
-.syde input, .syde textarea, .syde select { font: inherit; color: inherit; }
-.syde table { border-collapse: collapse; }
-.syde img, .syde svg { display: block; max-width: 100%; }
-
-/* ============================================================================
-   The measure. A 12 column field with a fixed gutter; content aligns to it.
-   ========================================================================== */
-
-.syde .field {
-  width: 100%;
-  max-width: 1360px;
-  margin-inline: auto;
-  padding-inline: 24px;
-}
-
-@media (min-width: 768px) { .syde .field { padding-inline: 40px; } }
-
-.syde .rules { position: fixed; inset: 0; z-index: 0; pointer-events: none; display: none; }
-
-@media (min-width: 1024px) {
-  .syde .rules { display: block; }
-  .syde .rules-inner {
-    width: 100%; max-width: 1360px; height: 100%;
-    margin-inline: auto; padding-inline: 40px;
-    display: grid; grid-template-columns: repeat(12, 1fr); gap: 24px;
+  .syde {
+    min-height: 100dvh;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
-  .syde .rules-inner span { border-left: 1px solid var(--rule); opacity: 0.5; }
-  .syde .rules-inner span:last-child { border-right: 1px solid var(--rule); }
+
+  .syde *, .syde *::before, .syde *::after { box-sizing: border-box; }
+
+  .syde ::selection { background: var(--signal); color: var(--on-signal); }
+  .syde :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  /* Preflight is not imported, so the resets the pages rely on are declared
+     here. This is the part preflight would otherwise do. */
+  .syde h1, .syde h2, .syde h3, .syde p, .syde dl, .syde dd, .syde figure { margin: 0; }
+  .syde ul, .syde ol { margin: 0; padding: 0; list-style: none; }
+  .syde a { color: inherit; text-decoration: none; }
+  .syde button {
+    font: inherit; color: inherit; background: none;
+    border: 0; padding: 0; cursor: pointer;
+  }
+  .syde input, .syde textarea, .syde select {
+    font: inherit; color: inherit;
+    background: none; border: 0; border-radius: 0;
+  }
+  .syde table { border-collapse: collapse; }
+  .syde img { display: block; max-width: 100%; }
+
+  /* Icons size from their own width/height attributes. `max-width: 100%` on an
+     SVG that also carries a viewBox lets the aspect ratio drive the used width,
+     which squashed 15px icons down to 3px inside a grid cell. `flex: none`
+     keeps them from being shrunk when they sit in a flex row. */
+  .syde svg { display: block; flex: none; }
+  .syde pre { margin: 0; }
 }
 
-/* ============================================================================
-   Type. Display sizes are clamped so a hero never needs a media query.
-   ========================================================================== */
+@layer components {
+  /* ============================================================================
+     The measure. A 12 column field with a fixed gutter; content aligns to it.
+     ========================================================================== */
 
-.syde .display {
-  font-size: clamp(2.5rem, 1.2rem + 4.4vw, 5.25rem);
-  line-height: 0.94; letter-spacing: -0.035em; font-weight: 600;
+  .syde .field {
+    width: 100%;
+    max-width: 1360px;
+    margin-inline: auto;
+    padding-inline: 24px;
+  }
+
+  @media (min-width: 768px) { .syde .field { padding-inline: 40px; } }
+
+  .syde .rules { position: fixed; inset: 0; z-index: 0; pointer-events: none; display: none; }
+
+  @media (min-width: 1024px) {
+    .syde .rules { display: block; }
+    .syde .rules-inner {
+      width: 100%; max-width: 1360px; height: 100%;
+      margin-inline: auto; padding-inline: 40px;
+      display: grid; grid-template-columns: repeat(12, 1fr); gap: 24px;
+    }
+    .syde .rules-inner span { border-left: 1px solid var(--rule); opacity: 0.5; }
+    .syde .rules-inner span:last-child { border-right: 1px solid var(--rule); }
+  }
+
+  /* ============================================================================
+     Type. Display sizes are clamped so a hero never needs a media query.
+     ========================================================================== */
+
+  .syde .display {
+    font-size: clamp(2.5rem, 1.2rem + 4.4vw, 5.25rem);
+    line-height: 0.94; letter-spacing: -0.035em; font-weight: 600;
+  }
+
+  .syde .h2 {
+    font-size: clamp(1.75rem, 1.1rem + 2vw, 2.85rem);
+    line-height: 1.02; letter-spacing: -0.028em; font-weight: 600;
+  }
+
+  .syde .h3 { font-size: 1.0625rem; line-height: 1.35; letter-spacing: -0.012em; font-weight: 600; }
+
+  .syde .lede {
+    font-size: clamp(1rem, 0.95rem + 0.3vw, 1.1875rem);
+    line-height: 1.55; color: var(--ink-2); max-width: 46ch;
+  }
+
+  .syde .body { font-size: 0.9375rem; line-height: 1.6; color: var(--ink-2); max-width: 62ch; }
+
+  /* Mono is structural here: labels, numbers, keys, paths. Not decoration. */
+  .syde .tag {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+
+  .syde .num {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  }
+
+  /* ============================================================================
+     Controls. Sharp, high contrast, physical on press.
+     ========================================================================== */
+
+  .syde .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    white-space: nowrap;                      /* a wrapped CTA is a broken CTA */
+    height: 44px; padding-inline: 20px;
+    border-radius: var(--r-sm); border: 1px solid transparent;
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 0.8125rem; font-weight: 500; letter-spacing: 0.01em;
+    cursor: pointer; text-decoration: none;
+    transition: background 240ms var(--syde-ease), color 240ms var(--syde-ease),
+                border-color 240ms var(--syde-ease), transform 90ms var(--syde-ease);
+  }
+
+  .syde .btn-primary { background: var(--signal); color: var(--on-signal); }
+  .syde .btn-primary:hover { background: var(--signal-press); }
+  .syde .btn-ghost { background: transparent; color: var(--ink); border-color: var(--rule-strong); }
+  .syde .btn-ghost:hover { border-color: var(--ink); }
+  .syde .btn:active { transform: translateY(1px); }
+  .syde .btn:disabled { cursor: default; }
 }
-
-.syde .h2 {
-  font-size: clamp(1.75rem, 1.1rem + 2vw, 2.85rem);
-  line-height: 1.02; letter-spacing: -0.028em; font-weight: 600;
-}
-
-.syde .h3 { font-size: 1.0625rem; line-height: 1.35; letter-spacing: -0.012em; font-weight: 600; }
-
-.syde .lede {
-  font-size: clamp(1rem, 0.95rem + 0.3vw, 1.1875rem);
-  line-height: 1.55; color: var(--ink-2); max-width: 46ch;
-}
-
-.syde .body { font-size: 0.9375rem; line-height: 1.6; color: var(--ink-2); max-width: 62ch; }
-
-/* Mono is structural here: labels, numbers, keys, paths. Not decoration. */
-.syde .tag {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--ink-3);
-}
-
-.syde .num {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
-}
-
-/* ============================================================================
-   Controls. Sharp, high contrast, physical on press.
-   ========================================================================== */
-
-.syde .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  white-space: nowrap;                      /* a wrapped CTA is a broken CTA */
-  height: 44px; padding-inline: 20px;
-  border-radius: var(--r-sm); border: 1px solid transparent;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.8125rem; font-weight: 500; letter-spacing: 0.01em;
-  cursor: pointer; text-decoration: none;
-  transition: background 240ms var(--syde-ease), color 240ms var(--syde-ease),
-              border-color 240ms var(--syde-ease), transform 90ms var(--syde-ease);
-}
-
-.syde .btn-primary { background: var(--signal); color: var(--on-signal); }
-.syde .btn-primary:hover { background: var(--signal-press); }
-.syde .btn-ghost { background: transparent; color: var(--ink); border-color: var(--rule-strong); }
-.syde .btn-ghost:hover { border-color: var(--ink); }
-.syde .btn:active { transform: translateY(1px); }
-.syde .btn:disabled { cursor: default; }
 
 /* ============================================================================
    Entry motion, in CSS rather than JavaScript.

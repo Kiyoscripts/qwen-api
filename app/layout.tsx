@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "highlight.js/styles/github-dark.css";
-import "./theme.css";
-import "./globals.css";
+import "./legacy.css";
 import "./syde.css";
 import { I18nProvider } from "./I18n";
 import { getLocale } from "@/lib/i18nServer";
