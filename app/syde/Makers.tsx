@@ -1,0 +1,24 @@
+import { Logo, } from "./Logo";
+import { LOGOS } from "@/lib/logos";
+
+/**
+ * Whose models are on the endpoint. Lockups rather than bare marks, because the
+ * job of this row is to be read. Every file inherits currentColor, so the row
+ * follows the theme with no second asset.
+ */
+const ORDER = ["qwen", "moonshotai", "openai", "deepseek", "xai", "google"];
+
+export function Makers() {
+  return (
+    <section className="border-b border-rule bg-[var(--paper-2)]">
+      <div className="field">
+        <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-8 py-11 lg:justify-between">
+          {ORDER.filter((k) => LOGOS[k]).map((maker) => (
+            <Logo key={maker} maker={maker} variant="lockup"
+                  className="h-[22px] text-ink-3 transition-colors duration-300 hover:text-ink" />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
