@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Trash, ArrowUp, Stop, ChatText, SpeakerHigh, Wrench, Spinner, Paperclip, X } from "@phosphor-icons/react";
+import { Plus, Trash, ArrowUp, Stop, ChatText, SpeakerHigh, Wrench, Spinner, Paperclip, X, CaretRight } from "@phosphor-icons/react";
 import { useT } from "../I18n";
 import { ModelPicker, acceptFor, toPickModel, type PickModel } from "./ModelPicker";
 
 interface Msg {
   role: "user" | "assistant";
   content: string;
+  /** The separate thinking channel, kept so it can be folded away rather than dropped. */
+  reasoning?: string;
   /** Data URL of an attachment, kept with the turn so it survives a reload. */
   file?: string;
   fileName?: string;
@@ -18,6 +20,10 @@ const STORE = "syde_threads";
 const load = (): Thread[] => { try { return JSON.parse(localStorage.getItem(STORE) ?? "[]"); } catch { return []; } };
 const save = (t: Thread[]) => localStorage.setItem(STORE, JSON.stringify(t.slice(0, 40)));
 const titleOf = (s: string) => s.trim().split(/\s+/).slice(0, 6).join(" ").slice(0, 44) || "New chat";
+
+/** Mirrors REQUIRE_THINKING on the server: these cannot run in Fast, so the
+    switch is shown as unavailable rather than silently ignored. */
+const ALWAYS_REASONS = new Set(["qwen3.8-max-preview"]);
 
 const TOOL = [{ type: "function", function: { name: "get_weather", description: "Current conditions for a place.",
   parameters: { type: "object", properties: { location: { type: "string" } }, required: ["location"] } } }];
@@ -31,6 +37,8 @@ export function ChatApp() {
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [tools, setTools] = useState(false);
+  const [fast, setFast] = useState(false);
+  const [openReasoning, setOpenReasoning] = useState<number | null>(null);
   const [speaking, setSpeaking] = useState<number | null>(null);
   const [file, setFile] = useState<{ url: string; name: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -48,6 +56,8 @@ export function ChatApp() {
 
   const active = threads.find((x) => x.id === activeId) ?? null;
   const accept = acceptFor(models.find((m) => m.id === model));
+  const picked = models.find((m) => m.id === model);
+  const canPickThink = Boolean(picked?.thinking) && !ALWAYS_REASONS.has(model);
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
@@ -102,6 +112,7 @@ export function ChatApp() {
               : { role: m.role, content: m.content }
           ),
           stream: !isMedia,
+          ...(canPickThink ? { enable_thinking: !fast } : {}),
           ...(tools ? { tools: TOOL } : {}),
         }),
         signal: ctrl.signal,
@@ -113,7 +124,7 @@ export function ChatApp() {
 
       const reader = r.body!.getReader();
       const dec = new TextDecoder();
-      let buf = "", acc = "";
+      let buf = "", acc = "", think = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -126,8 +137,19 @@ export function ChatApp() {
           const p = line.slice(5).trim();
           if (!p || p === "[DONE]") continue;
           try {
-            const c = JSON.parse(p)?.choices?.[0]?.delta?.content;
-            if (typeof c === "string" && c) { acc += c; put(acc); }
+            const d = JSON.parse(p)?.choices?.[0]?.delta;
+            if (typeof d?.reasoning_content === "string" && d.reasoning_content) {
+              think += d.reasoning_content;
+              update(id!, (x) => { const m = [...x.messages];
+                m[m.length - 1] = { role: "assistant", content: acc, reasoning: think };
+                return { ...x, messages: m }; });
+            }
+            if (typeof d?.content === "string" && d.content) {
+              acc += d.content;
+              update(id!, (x) => { const m = [...x.messages];
+                m[m.length - 1] = { role: "assistant", content: acc, reasoning: think || undefined };
+                return { ...x, messages: m }; });
+            }
           } catch { /* skip a bad frame */ }
         }
       }
@@ -187,6 +209,23 @@ export function ChatApp() {
               <div className="w-full max-w-[320px]">
                 <ModelPicker models={models} value={model} onChange={setModel} />
               </div>
+              <div className="flex shrink-0 items-center gap-1" role="group"
+                   aria-label={t("chat_reasoning")}
+                   title={canPickThink ? t("chat_reason_hint") : t("pg_always_reasons")}>
+                {([[false, t("chat_think")], [true, t("chat_fast")]] as const).map(([v, label]) => (
+                  <button key={String(v)} onClick={() => setFast(v)} disabled={!canPickThink}
+                    aria-pressed={canPickThink ? fast === v : v === false}
+                    className={`border px-2.5 py-1.5 font-mono text-[11px] transition-colors duration-200
+                      disabled:opacity-40 ${
+                        (canPickThink ? fast === v : v === false)
+                          ? "border-signal text-signal"
+                          : "border-rule text-ink-3 hover:border-ink hover:text-ink"}`}
+                    style={{ borderRadius: "var(--r-sm)" }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               <button onClick={() => setTools((v) => !v)} aria-pressed={tools} title={t("chat_tools_hint")}
                 className={`flex shrink-0 items-center gap-1.5 border px-2.5 py-1.5 font-mono text-[11px]
                   transition-colors duration-200 ${tools ? "border-signal text-signal"
@@ -219,6 +258,23 @@ export function ChatApp() {
                         </div>
                       ) : (
                         <div>
+                          {m.reasoning && (
+                            <div className="mb-2">
+                              <button onClick={() => setOpenReasoning(openReasoning === i ? null : i)}
+                                className="flex items-center gap-1.5 font-mono text-[11px] text-ink-3
+                                           transition-colors duration-200 hover:text-ink">
+                                <CaretRight size={11} weight="bold"
+                                  className={`transition-transform duration-200 ${openReasoning === i ? "rotate-90" : ""}`} />
+                                {t("chat_reasoning")}
+                              </button>
+                              {openReasoning === i && (
+                                <p className="mt-1.5 border-l border-rule pl-3 whitespace-pre-wrap
+                                              text-[12.5px] leading-relaxed text-ink-3">
+                                  {m.reasoning}
+                                </p>
+                              )}
+                            </div>
+                          )}
                           <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink">
                             {m.content}
                             {streaming && i === active.messages.length - 1 && (
