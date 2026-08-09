@@ -21,3 +21,8 @@ tsconfig.tsbuildinfo
 # Not needed at runtime.
 tests
 README.md
+
+# The redesign is a separate Vite app with its own toolchain and its own
+# node_modules. It is not part of the Next build, and shipping it would put a
+# second application into the runtime image for no reason.
+redesign
