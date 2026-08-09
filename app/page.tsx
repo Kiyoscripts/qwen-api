@@ -10,7 +10,7 @@ import { modelIcon } from "@/lib/modelIcons";
 
 export const dynamic = "force-dynamic";
 
-const BASE = "https://qwen38-api-production.up.railway.app";
+const BASE = "https://syde.up.railway.app";
 
 const MODELS = [
   { name: "Qwen3.8-Max", id: "qwen3.8-max", icon: "/qwen.svg", desc: "Flagship reasoning and vision. Streaming, tool calls, 300s ceiling.", tags: ["reasoning", "vision", "tools"] },

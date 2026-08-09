@@ -16,7 +16,7 @@
    ========================================================================== */
 
 export const LIVE = false;
-export const BASE = "https://qwen38-api-production.up.railway.app";
+export const BASE = "https://syde.up.railway.app";
 
 export interface ModelInput {
   text: boolean;
@@ -263,3 +263,230 @@ export const LATENCY_SAMPLE = [
   312, 288, 341, 297, 268, 305, 279, 264, 331, 292,
   256, 274, 318, 261, 249, 283, 271, 302, 258, 247,
 ];
+
+/* ============================================================================
+   Account, keys and pool admin.
+
+   Same placeholder rules as above: the shapes match the live endpoints, so
+   going live is swapping the bodies, not the pages.
+
+     POST /api/auth/discord/verify   { code }      -> { discord, relay }
+     GET  /api/auth/discord/dm-status?relay=       -> { status }
+     POST /api/auth/discord/redm     { relay }
+     POST /api/auth/discord/login    { key }       -> session cookie
+     GET  /api/auth/me                             -> Me | null
+     POST /api/auth/logout
+     GET  /api/account/keys                        -> { keys: Key[] }
+     POST /api/account/keys          { name }      -> { key, id }
+     POST /api/account/keys/revoke   { id }
+     GET  /api/account/usage                       -> { days: UsageDay[] }
+     GET  /api/admin/tokens                        -> { tokens: PoolToken[] }
+   ========================================================================== */
+
+export interface Me {
+  id: string;
+  username: string;
+  avatar: string | null;
+  role: "owner" | "admin" | "member";
+}
+
+export interface Key {
+  id: string;
+  name: string;
+  key_prefix: string;
+  revoked: boolean;
+  created_at: string;
+  last_used_at: string | null;
+  requests: number;
+}
+
+export interface UsageDay { day: string; requests: number; }
+
+export interface PoolToken {
+  id: string;
+  label: string;
+  active: boolean;
+  error_count: number;
+  last_used_at: string | null;
+  expires_at: string;
+}
+
+const SESSION = "syde_session";
+
+/** The signed-in user, or null. Session lives in this browser while mocked. */
+export async function me(): Promise<Me | null> {
+  if (LIVE) {
+    const r = await fetch(`${BASE}/api/auth/me`, { credentials: "include" });
+    if (!r.ok) return null;
+    return (await r.json()).user ?? null;
+  }
+  await wait(150);
+  const raw = localStorage.getItem(SESSION);
+  return raw ? (JSON.parse(raw) as Me) : null;
+}
+
+/** Step one of the Discord link: the bot hands out a one-time code. */
+export async function verifyCode(code: string): Promise<{ me: Me; relay: string }> {
+  if (LIVE) {
+    const r = await fetch(`${BASE}/api/auth/discord/verify`, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error ?? "That code did not work.");
+    const j = await r.json();
+    return { me: j.discord, relay: j.relay };
+  }
+  await wait(700);
+  if (!/^[0-9]{6}$/.test(code.trim())) throw new Error("Codes are six digits. Run /link in Discord to get one.");
+  const user: Me = { id: "512", username: "weirdmm", avatar: null, role: "owner" };
+  localStorage.setItem(SESSION, JSON.stringify(user));
+  return { me: user, relay: "relay-mock" };
+}
+
+/** Whether the bot managed to DM the login key. */
+export async function dmStatus(relay: string): Promise<"sending" | "sent" | "dms_closed" | "failed"> {
+  if (LIVE) {
+    const r = await fetch(`${BASE}/api/auth/discord/dm-status?relay=${encodeURIComponent(relay)}`);
+    return (await r.json()).status;
+  }
+  await wait(1200);
+  return "sent";
+}
+
+export async function loginWithKey(key: string): Promise<Me> {
+  if (LIVE) {
+    const r = await fetch(`${BASE}/api/auth/discord/login`, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key }),
+    });
+    if (!r.ok) throw new Error("That login key was not accepted.");
+    return (await r.json()).user;
+  }
+  await wait(600);
+  if (!/^(syde|qwen)_sk_/.test(key.trim())) throw new Error("A login key starts with syde_sk_.");
+  const user: Me = { id: "512", username: "weirdmm", avatar: null, role: "owner" };
+  localStorage.setItem(SESSION, JSON.stringify(user));
+  return user;
+}
+
+export async function logout(): Promise<void> {
+  if (LIVE) { await fetch(`${BASE}/api/auth/logout`, { method: "POST", credentials: "include" }); return; }
+  localStorage.removeItem(SESSION);
+}
+
+const KEYS = "syde_keys";
+const readKeys = (): Key[] => JSON.parse(localStorage.getItem(KEYS) ?? "[]");
+const writeKeys = (k: Key[]) => localStorage.setItem(KEYS, JSON.stringify(k));
+
+export async function listKeys(): Promise<Key[]> {
+  if (LIVE) {
+    const r = await fetch(`${BASE}/api/account/keys`, { credentials: "include" });
+    return (await r.json()).keys ?? [];
+  }
+  await wait(220);
+  return readKeys();
+}
+
+/** The full key is returned exactly once, which is why the page shows it once. */
+export async function createKey(name: string): Promise<{ key: string; record: Key }> {
+  if (LIVE) {
+    const r = await fetch(`${BASE}/api/account/keys`, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!r.ok) throw new Error("Could not create key.");
+    const j = await r.json();
+    return { key: j.key, record: j.record };
+  }
+  await wait(520);
+  const hex = [...crypto.getRandomValues(new Uint8Array(24))]
+    .map((b) => b.toString(16).padStart(2, "0")).join("");
+  const key = `syde_sk_${hex}`;
+  const record: Key = {
+    id: crypto.randomUUID(),
+    name: name || "Untitled key",
+    key_prefix: key.slice(0, 16) + "…",
+    revoked: false,
+    created_at: new Date().toISOString(),
+    last_used_at: null,
+    requests: 0,
+  };
+  writeKeys([record, ...readKeys()]);
+  return { key, record };
+}
+
+export async function revokeKey(id: string): Promise<void> {
+  if (LIVE) {
+    await fetch(`${BASE}/api/account/keys/revoke`, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    return;
+  }
+  await wait(240);
+  writeKeys(readKeys().map((k) => (k.id === id ? { ...k, revoked: true } : k)));
+}
+
+export async function usage(): Promise<UsageDay[]> {
+  if (LIVE) {
+    const r = await fetch(`${BASE}/api/account/usage`, { credentials: "include" });
+    return (await r.json()).days ?? [];
+  }
+  await wait(300);
+  const out: UsageDay[] = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400_000);
+    out.push({ day: d.toISOString().slice(0, 10), requests: Math.round(40 + Math.random() * 210) });
+  }
+  return out;
+}
+
+export async function poolTokens(): Promise<PoolToken[]> {
+  if (LIVE) {
+    const r = await fetch(`${BASE}/api/admin/tokens`, { credentials: "include" });
+    return (await r.json()).tokens ?? [];
+  }
+  await wait(280);
+  return Array.from({ length: 8 }).map((_, i) => ({
+    id: `tok-${i}`,
+    label: `account-${String(i + 1).padStart(3, "0")}`,
+    active: i !== 5,
+    error_count: i === 5 ? 12 : i % 3,
+    last_used_at: new Date(Date.now() - i * 3600_000).toISOString(),
+    expires_at: new Date(Date.now() + (16 - i) * 86400_000).toISOString(),
+  }));
+}
+
+export interface Voice { speaker: string; name: string; kind: "audio" | "omni"; }
+
+/**
+ * Speech voices, from GET /v1/audio/voices.
+ *
+ * A separate list from the model catalogue on purpose: speech picks a voice,
+ * not a chat model, so offering text models there would be offering something
+ * the endpoint cannot use.
+ */
+export async function listVoices(): Promise<Voice[]> {
+  if (LIVE) {
+    const r = await fetch(`${BASE}/v1/audio/voices`, { headers: authHeaders() });
+    if (!r.ok) throw new Error(`voices failed (${r.status})`);
+    return (await r.json()).data as Voice[];
+  }
+  await wait(200);
+  return [
+    { speaker: "cherry", name: "Cherry", kind: "audio" },
+    { speaker: "ethan", name: "Ethan", kind: "audio" },
+    { speaker: "nofish", name: "Nofish", kind: "audio" },
+    { speaker: "jennifer", name: "Jennifer", kind: "audio" },
+    { speaker: "ryan", name: "Ryan", kind: "audio" },
+    { speaker: "katerina", name: "Katerina", kind: "audio" },
+    { speaker: "elias", name: "Elias", kind: "omni" },
+    { speaker: "dylan", name: "Dylan", kind: "omni" },
+    { speaker: "sunny", name: "Sunny", kind: "omni" },
+    { speaker: "peter", name: "Peter", kind: "omni" },
+  ];
+}

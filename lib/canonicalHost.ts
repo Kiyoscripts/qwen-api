@@ -5,13 +5,13 @@
 // here either locks people out of the working site or leaves the retired one
 // usable.
 
-export const CANONICAL_HOST = "qwen38-api-production.up.railway.app";
+export const CANONICAL_HOST = "syde.up.railway.app";
 export const CANONICAL_URL = `https://${CANONICAL_HOST}`;
 
 /**
  * True for the canonical host and for local/LAN development.
  *
- * Every pattern is anchored: `qwen38-api-production.up.railway.app.evil.com`
+ * Every pattern is anchored: `syde.up.railway.app.evil.com`
  * and `localhost.evil.com` are hosts an attacker controls, and an unanchored
  * `includes()` would treat both as trusted.
  */

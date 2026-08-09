@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Sun, Moon, List, X } from "@phosphor-icons/react";
 import { Link, useRoute } from "../lib/router";
+import { Account } from "./Account";
 
 const ROUTES = [
   { to: "/models", label: "Models" },
@@ -86,9 +87,7 @@ export function Nav() {
               {dark ? <Moon size={15} weight="bold" /> : <Sun size={15} weight="bold" />}
             </button>
 
-            <Link to="/playground" className="btn btn-primary hidden sm:inline-flex">
-              Get a key
-            </Link>
+            <Account />
 
             <button
               type="button"

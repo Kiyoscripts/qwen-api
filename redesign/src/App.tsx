@@ -6,6 +6,9 @@ import { Models } from "./pages/Models";
 import { Playground } from "./pages/Playground";
 import { Docs } from "./pages/Docs";
 import { Chat } from "./pages/Chat";
+import { Login } from "./pages/Login";
+import { Keys } from "./pages/Keys";
+import { Admin } from "./pages/Admin";
 
 function View() {
   const { path } = useRoute();
@@ -13,6 +16,9 @@ function View() {
   if (path === "/playground") return <Playground />;
   if (path === "/chat") return <Chat />;
   if (path === "/docs") return <Docs />;
+  if (path === "/login") return <Login />;
+  if (path === "/keys") return <Keys />;
+  if (path === "/admin") return <Admin />;
   return <Home />;
 }
 

@@ -3,7 +3,7 @@ import { Reveal } from "../components/Reveal";
 
 const COLUMNS = [
   { head: "Product", links: [["Models", "/models"], ["Playground", "/playground"], ["Chat", "/chat"], ["Docs", "/docs"]] },
-  { head: "Reference", links: [["Chat completions", "/docs"], ["Anthropic API", "/docs"], ["Coding CLIs", "/docs"]] },
+  { head: "Account", links: [["Sign in", "/login"], ["Keys", "/keys"], ["Docs", "/docs"]] },
 ];
 
 export function Footer() {
@@ -15,7 +15,7 @@ export function Footer() {
           <Reveal className="grid items-center gap-8 md:grid-cols-12">
             <h2 className="h2 md:col-span-7 text-ink">Start with the free tier.</h2>
             <div className="flex flex-wrap gap-3 md:col-span-5 md:justify-end">
-              <Link to="/playground" className="btn btn-primary">
+              <Link to="/login" className="btn btn-primary">
                 Get a key
               </Link>
               <Link to="/docs" className="btn btn-ghost">

@@ -22,8 +22,8 @@ const eq = (name: string, got: string, want: string) => check(name, got === want
 // 1. The deployed shape: the supervisor's loopback must never win over the
 //    public domain Railway injects.
 eq("railway domain beats loopback SITE_URL",
-  publicSiteUrl({ SITE_URL: "http://127.0.0.1:8080", RAILWAY_PUBLIC_DOMAIN: "qwen38-api-production.up.railway.app" }),
-  "https://qwen38-api-production.up.railway.app");
+  publicSiteUrl({ SITE_URL: "http://127.0.0.1:8080", RAILWAY_PUBLIC_DOMAIN: "syde.up.railway.app" }),
+  "https://syde.up.railway.app");
 
 // 2. Railway supplies a bare domain, not a URL, so a scheme has to be added —
 //    without double-prefixing one that already has it.
@@ -38,8 +38,8 @@ eq("PUBLIC_SITE_URL wins",
 
 // 4. Running the bot off-host — a dev machine aimed at the real site — has
 //    neither of the first two, and SITE_URL is then the only sensible answer.
-eq("falls back to SITE_URL", publicSiteUrl({ SITE_URL: "https://qwen38-api-production.up.railway.app" }),
-  "https://qwen38-api-production.up.railway.app");
+eq("falls back to SITE_URL", publicSiteUrl({ SITE_URL: "https://syde.up.railway.app" }),
+  "https://syde.up.railway.app");
 eq("nothing set yields empty", publicSiteUrl({}), "");
 
 // 5. Trailing slashes would produce "//login" once a path is appended.
@@ -52,7 +52,7 @@ eq("whitespace trimmed", publicSiteUrl({ PUBLIC_SITE_URL: "  https://example.com
 for (const url of ["http://127.0.0.1:8080", "http://localhost:3000", "https://0.0.0.0:8080", "http://[::1]:8080", "http://localhost"]) {
   check(`loopback: ${url}`, isLoopback(url));
 }
-for (const url of ["https://qwen38-api-production.up.railway.app", "https://example.com", "https://127.0.0.1.evil.com"]) {
+for (const url of ["https://syde.up.railway.app", "https://example.com", "https://127.0.0.1.evil.com"]) {
   check(`not loopback: ${url}`, !isLoopback(url));
 }
 

@@ -13,14 +13,14 @@ const check = (name: string, got: string, want: string) => {
 };
 
 // Behind Railway's proxy: forwarded headers decide.
-check("railway proxy", publicOrigin(req({ host: "0.0.0.0:8080", "x-forwarded-host": "qwen38-api-production.up.railway.app", "x-forwarded-proto": "https" })),
-  "https://qwen38-api-production.up.railway.app");
-check("proxy sets Host only", publicOrigin(req({ host: "qwen38-api-production.up.railway.app", "x-forwarded-proto": "https" })),
-  "https://qwen38-api-production.up.railway.app");
-check("no forwarded proto, public host", publicOrigin(req({ host: "qwen38-api-production.up.railway.app" })),
-  "https://qwen38-api-production.up.railway.app");
-check("comma-joined forwarded chain", publicOrigin(req({ host: "0.0.0.0:8080", "x-forwarded-host": "qwen38-api-production.up.railway.app, internal", "x-forwarded-proto": "https, http" })),
-  "https://qwen38-api-production.up.railway.app");
+check("railway proxy", publicOrigin(req({ host: "0.0.0.0:8080", "x-forwarded-host": "syde.up.railway.app", "x-forwarded-proto": "https" })),
+  "https://syde.up.railway.app");
+check("proxy sets Host only", publicOrigin(req({ host: "syde.up.railway.app", "x-forwarded-proto": "https" })),
+  "https://syde.up.railway.app");
+check("no forwarded proto, public host", publicOrigin(req({ host: "syde.up.railway.app" })),
+  "https://syde.up.railway.app");
+check("comma-joined forwarded chain", publicOrigin(req({ host: "0.0.0.0:8080", "x-forwarded-host": "syde.up.railway.app, internal", "x-forwarded-proto": "https, http" })),
+  "https://syde.up.railway.app");
 
 // Development stays on http, with the port preserved.
 check("localhost dev", publicOrigin(req({ host: "localhost:3000" })), "http://localhost:3000");
@@ -29,7 +29,7 @@ check("mDNS", publicOrigin(req({ host: "manolis-macbook.local:3000" })), "http:/
 
 // A forged Host cannot make us mint URLs on someone else's domain.
 check("forged host falls back", publicOrigin(req({ host: "evil.com" })), CANONICAL_URL);
-check("suffix spoof falls back", publicOrigin(req({ host: "qwen38-api-production.up.railway.app.evil.com" })), CANONICAL_URL);
+check("suffix spoof falls back", publicOrigin(req({ host: "syde.up.railway.app.evil.com" })), CANONICAL_URL);
 check("no host at all", publicOrigin(req({})), CANONICAL_URL);
 // The bug itself: the bind address is not a reachable origin.
 check("bare bind address falls back", publicOrigin(req({ host: "0.0.0.0:8080" })), CANONICAL_URL);

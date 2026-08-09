@@ -1,7 +1,7 @@
 // Code samples for the docs, kept out of the page so the page stays readable.
 // Every one is written to run as-is once SYDE_API_KEY is set.
 
-export const BASE = "https://qwen38-api-production.up.railway.app";
+export const BASE = "https://syde.up.railway.app";
 
 export const quickstart = [
   {

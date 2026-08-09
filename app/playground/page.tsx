@@ -583,7 +583,7 @@ export default function Playground() {
    * and the JSON is indented to sit under `-d` rather than starting at column 0.
    */
   function curl(): string {
-    const url = BASE || "https://qwen38-api-production.up.railway.app";
+    const url = BASE || "https://syde.up.railway.app";
 
     // POSIX single-quoted strings have no escape character; the only way out is
     // to close the quote, emit an escaped quote, and reopen: ' -> '\''

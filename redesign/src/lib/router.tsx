@@ -34,10 +34,12 @@ export const useRoute = () => useContext(RouteCtx);
 export function Link({
   to,
   className,
+  style,
   children,
 }: {
   to: string;
   className?: string;
+  style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
   const { go } = useRoute();
@@ -45,6 +47,7 @@ export function Link({
     <a
       href={to}
       className={className}
+      style={style}
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
         e.preventDefault();

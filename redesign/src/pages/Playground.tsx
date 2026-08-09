@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Play, Stop, ArrowsClockwise, CaretRight } from "@phosphor-icons/react";
-import { listModels, streamChat, LIVE, type Model } from "../lib/api";
+import { listModels, listVoices, streamChat, LIVE, type Model, type Voice } from "../lib/api";
 import { ModelPicker } from "../components/ModelPicker";
 import { Reveal } from "../components/Reveal";
 
@@ -32,6 +32,8 @@ export function Playground() {
   const [thinking, setThinking] = useState(true);
   const [size, setSize] = useState("16:9");
   const [showBody, setShowBody] = useState(false);
+  const [voices, setVoices] = useState<Voice[]>([]);
+  const [voice, setVoice] = useState("cherry");
 
   const [reasoning, setReasoning] = useState("");
   const [answer, setAnswer] = useState("");
@@ -41,6 +43,7 @@ export function Playground() {
 
   useEffect(() => {
     listModels().then(setModels);
+    listVoices().then(setVoices);
     return () => abort.current?.abort();
   }, []);
 
@@ -59,7 +62,7 @@ export function Playground() {
   const body = useMemo(() => {
     if (mode === "image" || mode === "video")
       return { model, prompt, size, ...(mode === "image" ? { n: 1 } : {}) };
-    if (mode === "speech") return { model, input: prompt, voice: "cherry" };
+    if (mode === "speech") return { model: "qwen-tts", input: prompt, voice };
     return {
       model,
       messages: [
@@ -71,7 +74,7 @@ export function Playground() {
       max_tokens: maxTokens,
       ...(canThink && !thinking ? { enable_thinking: false } : {}),
     };
-  }, [mode, model, prompt, system, size, temperature, maxTokens, thinking, canThink]);
+  }, [mode, model, prompt, system, size, temperature, maxTokens, thinking, canThink, voice]);
 
   const run = async () => {
     if (!prompt.trim() || state === "running") return;
@@ -160,9 +163,38 @@ export function Playground() {
       <div className="mt-8 grid gap-5 lg:grid-cols-12">
         {/* Controls */}
         <div className="space-y-5 lg:col-span-4">
-          <Field label="Model">
-            <ModelPicker models={models} value={model} onChange={setModel} filter={modeFilter} />
-          </Field>
+          {mode === "speech" ? (
+            <Field label="Voice" hint={`${voices.length} voices from /v1/audio/voices.`}>
+              <div className="grid grid-cols-2 gap-1.5">
+                {voices.map((v) => (
+                  <button
+                    key={v.speaker}
+                    onClick={() => setVoice(v.speaker)}
+                    aria-pressed={voice === v.speaker}
+                    className={`flex items-center justify-between gap-2 border px-3 py-2 text-left
+                      transition-colors duration-200 ${
+                        voice === v.speaker
+                          ? "border-signal text-signal"
+                          : "border-rule text-ink-2 hover:border-ink hover:text-ink"
+                      }`}
+                    style={{ borderRadius: "var(--r-sm)" }}
+                  >
+                    <span className="truncate text-[13px]">{v.name}</span>
+                    <span className="shrink-0 font-mono text-[10px] text-ink-3">{v.kind}</span>
+                  </button>
+                ))}
+                {voices.length === 0 &&
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="h-9 animate-pulse border border-rule bg-[var(--paper-2)]"
+                         style={{ borderRadius: "var(--r-sm)" }} />
+                  ))}
+              </div>
+            </Field>
+          ) : (
+            <Field label="Model">
+              <ModelPicker models={models} value={model} onChange={setModel} filter={modeFilter} />
+            </Field>
+          )}
 
           {mode === "chat" && (
             <Field label="System prompt" hint="Optional. Sent as the first message.">
