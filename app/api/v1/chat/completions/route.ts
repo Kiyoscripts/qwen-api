@@ -16,7 +16,8 @@ import {
   QwenError,
   type OpenAIMessage,
 } from "@/lib/qwen";
-import { withTokenFailover } from "@/lib/tokens";
+import { withTokenFailover, tokenById } from "@/lib/tokens";
+import { findSession, saveSession, forgetSession } from "@/lib/qwenSessions";
 import { virtualModel, generateImage, startVideo, type VirtualModel } from "@/lib/media";
 import { resolveWatermark, buildMediaUrl } from "@/lib/watermark";
 import { hasTools, preprocessToolMessages, buildRegistry, ToolStream, extractToolCalls, applyToolPolicy, type OAIToolCall } from "@/lib/tools";
@@ -207,9 +208,48 @@ export async function POST(req: NextRequest) {
   // rate-limited or expired, transparently retry on a different pooled account.
   let token: string;
   let chatId: string | undefined;
-  let qwenRes: Awaited<ReturnType<typeof openCompletion>>;
+  let entryId: string | null = null;
+  let qwenRes!: Awaited<ReturnType<typeof openCompletion>>;
+
+  // Is this a continuation of a thread Qwen already holds? If so the request
+  // carries only the new turn, and Qwen supplies the history from its own copy —
+  // which is what stops a large system prompt being re-sent on every turn.
+  const prior = toolsOn ? null : findSession(effMessages, backendModel);
+  let resumed = false;
+  if (prior) {
+    // A thread lives on one account, so the continuation must go to that account
+    // or not at all — hence no failover here.
+    const pinned = await tokenById(prior.entryId);
+    if (pinned) {
+      try {
+        const model = await resolveModel(pinned, backendModel);
+        if (!model) throw new QwenError("model gone", 404);
+        const last = effMessages[effMessages.length - 1];
+        const files = await uploadImages(pinned, imageUrlsIn(last));
+        const thinking = REQUIRE_THINKING.has(backendModel)
+          ? true
+          : model.thinking && body.enable_thinking !== false;
+        const msg: any = buildMessage([last], { model: backendModel, chatType: "t2t", files, thinking });
+        msg.parentId = prior.responseId;
+        qwenRes = await openCompletion(pinned, prior.chatId, {
+          model: backendModel, messages: [msg], stream: true, parentId: prior.responseId,
+        });
+        token = pinned;
+        chatId = prior.chatId;
+        entryId = prior.entryId;
+        resumed = true;
+      } catch {
+        // The thread is gone, the account is gone, or Qwen refused the parent.
+        // Nothing is lost: fall through and send the transcript in full.
+        forgetSession(prior);
+      }
+    }
+    if (!resumed) forgetSession(prior);
+  }
+
   try {
-    const { token: usedToken, result } = await withTokenFailover(async (candidate) => {
+    if (!resumed) {
+    const { token: usedToken, entryId: usedEntry, result } = await withTokenFailover(async (candidate) => {
       const model = await resolveModel(candidate, backendModel);
       if (!model) throw new QwenError(`Model '${modelId}' is not available.`, 404);
       const files = await uploadImages(candidate, imageUrlsIn(messages[messages.length - 1]));
@@ -233,8 +273,10 @@ export async function POST(req: NextRequest) {
       }
     });
     token = usedToken;
+    entryId = usedEntry;
     chatId = result.chatId;
     qwenRes = result.res;
+    }
   } catch (e: any) {
     const status = e instanceof QwenError ? e.status : 502;
     logUsage(record.id, modelId, hadImage, wantStream, status);
@@ -243,8 +285,20 @@ export async function POST(req: NextRequest) {
 
   const id = "chatcmpl-" + randomUUID();
   const created = Math.floor(Date.now() / 1000);
+  // A chat we intend to resume must outlive the request — deleting it is what
+  // would force the next turn to re-send everything.
+  let keepChat = false;
   const cleanup = async () => {
+    if (keepChat) return void (await forgetAllMemories(token));
     await Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);
+  };
+  /** Remember this thread so the next turn can carry just its new message. */
+  const remember = (assistantText: string, st: StreamStatus) => {
+    if (toolsOn || !st.responseId || !chatId || !entryId) return;
+    keepChat = true;
+    saveSession(effMessages, assistantText, backendModel, {
+      chatId, responseId: st.responseId, entryId,
+    });
   };
   const withReasoning = showReasoning();
 
@@ -341,8 +395,12 @@ export async function POST(req: NextRequest) {
         const send = (obj: unknown) => { hb.touch(); controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); };
         send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
         const st: StreamStatus = { complete: false };
+        // Accumulated only to key the resumable thread: the next request's
+        // transcript ends with exactly this answer.
+        let streamed = "";
         try {
           for await (const { phase, text } of qwenDeltas(qwenRes, st)) {
+            if (phase !== "think") streamed += text;
             const delta =
               phase === "think"
                 ? withReasoning
@@ -360,6 +418,7 @@ export async function POST(req: NextRequest) {
         send({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: finishFor(st, created, modelId) }] });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
+        remember(streamed, st);
         await cleanup();
         logUsage(record.id, modelId, hadImage, true, 200);
       },
@@ -381,6 +440,7 @@ export async function POST(req: NextRequest) {
     logUsage(record.id, modelId, hadImage, false, status);
     return err(e.message, status, "upstream_error");
   }
+  remember(content, st);
   await cleanup();
   logUsage(record.id, modelId, hadImage, false, 200);
 

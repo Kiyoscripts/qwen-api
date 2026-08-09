@@ -391,7 +391,7 @@ export async function uploadImages(token: string, imageUrls: string[]): Promise<
 export async function openCompletion(
   token: string,
   chatId: string,
-  opts: { model: string; messages: unknown[]; stream: boolean; size?: string }
+  opts: { model: string; messages: unknown[]; stream: boolean; size?: string; parentId?: string | null }
 ): Promise<Response> {
   // Live SPA sends both camelCase + snake_case ids. Matching that form avoids
   // WAF rejections that fire on "minimal" JSON bodies.
@@ -404,7 +404,7 @@ export async function openCompletion(
     chat_id: chatId,
     chat_mode: "normal",
     model: opts.model,
-    parent_id: null,
+    parent_id: opts.parentId ?? null,
     messages: opts.messages,
     timestamp: Date.now(),
     ...(opts.size ? { size: opts.size } : {}),
@@ -464,6 +464,15 @@ export interface StreamStatus {
   complete: boolean;
   /** Real token counts, which Qwen reports on the closing frames. */
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  /**
+   * The id Qwen assigns to the answer it is about to write, announced on the
+   * opening `response.created` frame.
+   *
+   * This is what makes a follow-up turn cheap: quote it as parent_id on the next
+   * request and Qwen walks its own copy of the thread, so the next message can
+   * carry just the new turn instead of the whole transcript.
+   */
+  responseId?: string;
 }
 
 // Async generator over SSE deltas. Yields {phase, text}. Throws on stream errors.
@@ -495,6 +504,10 @@ export async function* qwenDeltas(res: Response, status?: StreamStatus): AsyncGe
         continue;
       }
       if (evt?.error) throw new QwenError(`Qwen stream error: ${evt.error.details || evt.error.code || "unknown"}`);
+      // Opening frame: {"response.created": {chat_id, parent_id, response_id}}.
+      if (status && evt?.["response.created"]?.response_id) {
+        status.responseId = String(evt["response.created"].response_id);
+      }
       if (status && evt?.usage) {
         const u = evt.usage;
         status.usage = {
