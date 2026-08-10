@@ -1,5 +1,5 @@
-import { Shell } from "../syde/Shell";
-import { LoginForm } from "../syde/LoginForm";
+import { Shell } from "../Shell";
+import { LoginForm } from "../LoginForm";
 
 export const runtime = "nodejs";
 

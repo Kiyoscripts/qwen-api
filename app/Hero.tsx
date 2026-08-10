@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useT } from "../I18n";
+import { useT } from "./I18n";
 import { Console } from "./Console";
 
 /**

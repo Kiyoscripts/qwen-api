@@ -1,5 +1,5 @@
-import { Shell } from "../syde/Shell";
-import { KeysPanel } from "../syde/KeysPanel";
+import { Shell } from "../Shell";
+import { KeysPanel } from "../KeysPanel";
 
 export const runtime = "nodejs";
 

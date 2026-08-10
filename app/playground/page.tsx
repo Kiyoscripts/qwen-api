@@ -1,5 +1,5 @@
-import { Shell } from "../syde/Shell";
-import { Workbench } from "../syde/Workbench";
+import { Shell } from "../Shell";
+import { Workbench } from "../Workbench";
 
 export const runtime = "nodejs";
 

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
-import { useT } from "../I18n";
+import { useT } from "./I18n";
 import { ModelCard, type CardModel } from "./ModelCard";
 
 /** Search and company filter over the catalogue. Filtering is local: the list

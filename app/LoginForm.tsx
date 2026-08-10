@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DiscordLogo, Key as KeyIcon, ArrowRight, Check, Warning } from "@phosphor-icons/react";
-import { useT } from "../I18n";
+import { useT } from "./I18n";
 import { DISCORD_INVITE } from "@/lib/links";
 
 /** QW- plus six characters from an alphabet with no 0, O, 1 or I, so a code

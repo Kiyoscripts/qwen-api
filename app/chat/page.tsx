@@ -1,5 +1,5 @@
-import { Shell } from "../syde/Shell";
-import { ChatApp } from "../syde/ChatApp";
+import { Shell } from "../Shell";
+import { ChatApp } from "../ChatApp";
 
 export const runtime = "nodejs";
 

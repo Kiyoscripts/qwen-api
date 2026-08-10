@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Plus, Trash, ArrowUp, Stop, ChatText, SpeakerHigh, Wrench, Spinner, Paperclip, X, CaretRight } from "@phosphor-icons/react";
-import { useT } from "../I18n";
+import { useT } from "./I18n";
 import { ModelPicker, acceptFor, toPickModel, type PickModel } from "./ModelPicker";
 import { MediaAnswer } from "./MediaAnswer";
 

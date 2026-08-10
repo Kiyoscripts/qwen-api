@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, Warning } from "@phosphor-icons/react";
-import { useT } from "../I18n";
+import { useT } from "./I18n";
 
 
 type Pool = "qwen" | "onecompiler";

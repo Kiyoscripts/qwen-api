@@ -1,7 +1,7 @@
 import { getT } from "@/lib/i18nServer";
 import { Reveal } from "./Reveal";
 import { CodeTabs } from "./CodeTabs";
-import { BASE } from "../docs/samples";
+import { BASE } from "./docs/samples";
 
 /**
  * Full-width single column, deliberately unlike every other section: the code

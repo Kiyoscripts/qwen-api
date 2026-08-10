@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Sparkle, X, ArrowUp, Stop } from "@phosphor-icons/react";
-import { useT } from "../I18n";
+import { useT } from "./I18n";
 import { DOCS_MODEL, DOCS_SYSTEM } from "@/lib/docsContext";
 
 interface Turn { role: "user" | "assistant"; content: string }

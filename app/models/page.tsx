@@ -5,9 +5,9 @@ import { VIRTUAL_MODELS } from "@/lib/media";
 import { ONECOMPILER_MODELS } from "@/lib/onecompiler";
 import { TOKENROUTER_MODELS, tokenRouterConfigured } from "@/lib/tokenrouter";
 import { modelMaker } from "@/lib/modelIcons";
-import { Shell } from "../syde/Shell";
-import { ModelBrowser } from "../syde/ModelBrowser";
-import type { CardModel } from "../syde/ModelCard";
+import { Shell } from "../Shell";
+import { ModelBrowser } from "../ModelBrowser";
+import type { CardModel } from "../ModelCard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

@@ -1,6 +1,6 @@
-import { Shell } from "../syde/Shell";
-import { DocsBody } from "../syde/DocsBody";
-import { DocsAssistant } from "../syde/DocsAssistant";
+import { Shell } from "../Shell";
+import { DocsBody } from "../DocsBody";
+import { DocsAssistant } from "../DocsAssistant";
 
 export const runtime = "nodejs";
 

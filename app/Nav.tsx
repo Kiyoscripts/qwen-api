@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Sun, Moon, List, X, Translate, Check, DiscordLogo } from "@phosphor-icons/react";
-import { useT } from "../I18n";
+import { useT } from "./I18n";
 import { LOCALES, LOCALE_COOKIE, LOCALE_STORE, dirFor, type LocaleCode } from "@/lib/i18n";
 import { DISCORD_INVITE } from "@/lib/links";
-import { avatarUrl, type Me } from "../Account";
+import { avatarUrl, type Me } from "./Account";
 
 /**
  * The shell nav.

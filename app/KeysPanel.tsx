@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Copy, Check, Warning, SignOut } from "@phosphor-icons/react";
-import { useT } from "../I18n";
+import { useT } from "./I18n";
 
 interface Key {
   id: string; name: string | null; key_prefix: string;

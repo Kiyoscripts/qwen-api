@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { CodeTabs } from "./CodeTabs";
 import { Reveal } from "./Reveal";
-import { BASE } from "../docs/samples";
+import { BASE } from "./docs/samples";
 
 /**
  * The full reference, same seventeen sections and same ids as the live docs, so

@@ -1,9 +1,9 @@
-import { Shell } from "./syde/Shell";
-import { Hero } from "./syde/Hero";
-import { Makers } from "./syde/Makers";
-import { Stats } from "./syde/Stats";
-import { Quickstart } from "./syde/Quickstart";
-import { Grid } from "./syde/Grid";
+import { Shell } from "./Shell";
+import { Hero } from "./Hero";
+import { Makers } from "./Makers";
+import { Stats } from "./Stats";
+import { Quickstart } from "./Quickstart";
+import { Grid } from "./Grid";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

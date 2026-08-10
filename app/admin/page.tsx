@@ -1,5 +1,5 @@
-import { Shell } from "../syde/Shell";
-import { AdminPanel } from "../syde/AdminPanel";
+import { Shell } from "../Shell";
+import { AdminPanel } from "../AdminPanel";
 
 export const runtime = "nodejs";
 

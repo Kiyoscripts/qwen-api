@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Play, Stop, CaretRight, MagnifyingGlass, Paperclip, X, Trash } from "@phosphor-icons/react";
-import { useT } from "../I18n";
+import { useT } from "./I18n";
 import { ModelPicker, acceptFor, toPickModel, type PickModel } from "./ModelPicker";
 import { MediaAnswer } from "./MediaAnswer";
 
@@ -48,6 +48,8 @@ export function Workbench() {
   const [reasoning, setReasoning] = useState("");
   const [answer, setAnswer] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
+  // Video is a task, not a request: it is started, then polled.
+  const [progress, setProgress] = useState<number | null>(null);
   const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [ms, setMs] = useState<number | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -130,6 +132,48 @@ export function Workbench() {
     const started = performance.now();
 
     try {
+      if (mode === "video") {
+        // Going through chat/completions blocks until the render finishes, which
+        // is two minutes of nothing on screen. The task endpoint hands back a
+        // ticket immediately, and the ticket pins polling to the pooled account
+        // the task actually lives on.
+        setProgress(0);
+        const start = await fetch("/v1/videos/generations", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model, prompt, size }), signal: ctrl.signal,
+        });
+        if (!start.ok) {
+          setAnswer(start.status === 401 ? t("pg_get_key") : `${t("error")} (${start.status})`);
+          setState("error"); setProgress(null);
+          return;
+        }
+        const j = await start.json();
+        const q = j.ticket
+          ? `ticket=${encodeURIComponent(j.ticket)}`
+          : `task_id=${encodeURIComponent(j.id)}`;
+
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 5000));
+          if (ctrl.signal.aborted) { setProgress(null); return; }
+          const st = await fetch(`/v1/videos/status?${q}`, { signal: ctrl.signal });
+          const sj = await st.json().catch(() => ({}));
+          if (sj?.status === "completed" && sj?.data?.[0]?.url) {
+            setAnswer(`![video](${sj.data[0].url})`);
+            setProgress(null);
+            setState("done"); setMs(Math.round(performance.now() - started));
+            return;
+          }
+          if (sj?.status === "failed") {
+            setAnswer(t("error"));
+            setProgress(null); setState("error");
+            return;
+          }
+          // Upstream reports progress only sometimes, so null means "running"
+          // rather than "stuck", and the bar falls back to an indeterminate one.
+          setProgress(typeof sj?.progress === "number" ? sj.progress : null);
+        }
+      }
+
       if (mode === "speech") {
         const r = await fetch("/v1/audio/speech", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -405,6 +449,24 @@ export function Workbench() {
               )
             ) : (
               <div className="px-4 py-4">
+                {state === "running" && mode === "video" && (
+                  <div className="mb-4">
+                    <div className="flex items-baseline justify-between">
+                      <span className="font-mono text-[11.5px] text-ink-3">{t("pg_starting_render")}</span>
+                      {progress !== null && (
+                        <span className="num text-[12px] text-ink-2">{Math.round(progress)}%</span>
+                      )}
+                    </div>
+                    <div className="mt-2 h-1 w-full overflow-hidden bg-[var(--paper-3)]">
+                      {progress === null ? (
+                        <div className="h-full w-1/3 animate-pulse bg-signal" />
+                      ) : (
+                        <div className="h-full bg-signal transition-[width] duration-500 ease-out"
+                             style={{ width: `${Math.max(2, progress)}%` }} />
+                      )}
+                    </div>
+                  </div>
+                )}
                 {answer ? (
                   <MediaAnswer text={answer}
                     className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-ink" />
