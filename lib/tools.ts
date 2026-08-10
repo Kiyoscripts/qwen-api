@@ -532,11 +532,98 @@ export function applyToolPolicy(
    The state machine
    --------------------------------------------------------------------------- */
 
+/* ============================================================================
+   Native tool-call grammars.
+
+   The proxy asks for <tool_call>{json}</tool_call>, which Qwen already speaks
+   natively so it costs nothing there. Other models ignore the instruction and
+   emit their own scheme instead, and the reply then reaches the caller as raw
+   markup: a harness sees prose where it expected tool_calls, and the run stalls.
+   Reported from OpenCode against Kimi K3, which emits Moonshot's token grammar:
+
+     <|open|>tools<|sep|>
+       <|open|>call tool="read" index="1"<|sep|>
+         <|open|>argument key="filePath" type="string"<|sep|>/some/path<|close|>argument<|sep|>
+       <|close|>call<|sep|>
+     <|close|>tools<|sep|>
+
+   Recognising it is strictly better than instructing harder: the instruction is
+   advisory and the model is free to ignore it, but the output is unambiguous.
+   ========================================================================== */
+
+const NATIVE_CALL = /<\|open\|>call\s+tool="([^"]+)"[^]*?<\|close\|>call/g;
+const NATIVE_ARG = /<\|open\|>argument\s+key="([^"]+)"(?:\s+type="([^"]+)")?\s*<\|sep\|>([^]*?)<\|close\|>argument/g;
+
+/** Coerce an argument to the type the model declared. Anything unparseable
+    stays a string, which is the safest reading of an ambiguous value. */
+function nativeValue(raw: string, type?: string): unknown {
+  const v = raw.trim();
+  if (type === "number" || type === "integer") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : v;
+  }
+  if (type === "boolean") {
+    if (v === "true") return true;
+    if (v === "false") return false;
+    return v;
+  }
+  if (type === "object" || type === "array") {
+    try { return JSON.parse(v); } catch { return v; }
+  }
+  return v;
+}
+
+/**
+ * Read the Moonshot token grammar, if it is present.
+ *
+ * Returns null when nothing matches, so callers can tell "no native calls" from
+ * "native calls with no arguments".
+ */
+export function nativeToolCalls(text: string, reg: Registry): { text: string; calls: OAIToolCall[] } | null {
+  if (!text.includes("<|open|>")) return null;
+
+  const calls: OAIToolCall[] = [];
+  NATIVE_CALL.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = NATIVE_CALL.exec(text)) !== null) {
+    const name = m[1];
+    // Unknown names are dropped for the same reason the XML path drops them:
+    // a call the caller never offered cannot be answered.
+    const resolved = reg.permissive ? name : reg.byNorm.get(normName(name));
+    if (!resolved) continue;
+
+    const args: Record<string, unknown> = {};
+    NATIVE_ARG.lastIndex = 0;
+    let a: RegExpExecArray | null;
+    while ((a = NATIVE_ARG.exec(m[0])) !== null) args[a[1]] = nativeValue(a[3], a[2]);
+
+    calls.push({
+      id: newId(),
+      type: "function",
+      function: { name: resolved, arguments: JSON.stringify(args) },
+    });
+  }
+  if (!calls.length) return null;
+
+  // Strip the whole envelope, including the wrapper and any stray separators,
+  // so none of it reaches the caller as prose.
+  const cleaned = text
+    .replace(/<\|open\|>tools<\|sep\|>/g, "")
+    .replace(/<\|close\|>tools<\|sep\|>/g, "")
+    .replace(NATIVE_CALL, "")
+    .replace(/<\|sep\|>/g, "")
+    .trim();
+
+  return { text: cleaned, calls };
+}
+
+const NATIVE_OPEN = "<|open|>";
+
 const OPEN = "<tool_call";
 const CLOSE = "</tool_call>";
 const FENCE = "```";
 // Sentinels we must not emit half of, in case a chunk boundary splits one.
-const SENTINELS = [OPEN, CLOSE, FENCE];
+const SENTINELS = [OPEN, CLOSE, FENCE, NATIVE_OPEN];
 
 /** Longest suffix of `s` that is a proper prefix of any sentinel. */
 function partialTail(s: string): number {
@@ -553,7 +640,7 @@ function partialTail(s: string): number {
   return best;
 }
 
-type State = "text" | "tag" | "call" | "fence" | "json";
+type State = "text" | "tag" | "call" | "fence" | "json" | "native";
 
 const HOLD_CAP = 64 * 1024; // give up holding text back past this
 
@@ -596,6 +683,12 @@ export class ToolStream {
     this.hold = "";
 
     while (s.length) {
+      if (this.state === "native") {
+        this.buf += s;
+        s = "";
+        continue;
+      }
+
       if (this.state === "text") {
         // A reply that opens with `{` may be a bare JSON envelope from a model
         // that ignored the XML protocol. Hold it until it closes, then decide.
@@ -616,17 +709,31 @@ export class ToolStream {
 
         const iOpen = s.indexOf(OPEN);
         const iFence = s.indexOf(FENCE);
+        const iNative = s.indexOf(NATIVE_OPEN);
         // Whichever sentinel comes first wins.
         let i = -1;
-        let which: "open" | "fence" | null = null;
-        if (iOpen !== -1 && (iFence === -1 || iOpen < iFence)) { i = iOpen; which = "open"; }
-        else if (iFence !== -1) { i = iFence; which = "fence"; }
+        let which: "open" | "fence" | "native" | null = null;
+        const first = [
+          [iOpen, "open"] as const,
+          [iFence, "fence"] as const,
+          [iNative, "native"] as const,
+        ].filter(([at]) => at !== -1).sort((a, b) => a[0] - b[0])[0];
+        if (first) { i = first[0]; which = first[1]; }
 
         if (which === null) {
           const keep = partialTail(s);
           const text = s.slice(0, s.length - keep);
           if (text) { out += text; this.emitted = true; }
           this.hold = s.slice(s.length - keep);
+          s = "";
+        } else if (which === "native") {
+          // Once a native envelope starts, the rest of the turn belongs to it.
+          // Buffering to the end is enough: a tool call ends the turn anyway,
+          // and partial markup must never reach the caller.
+          const text = s.slice(0, i);
+          if (text) { out += text; this.emitted = true; }
+          this.state = "native";
+          this.buf = s.slice(i);
           s = "";
         } else if (which === "open") {
           const text = s.slice(0, i);
@@ -764,13 +871,33 @@ export class ToolStream {
     this.buf = "";
     this.hold = "";
 
-    if (this.state === "call" || this.state === "fence" || this.state === "json") {
+    if (this.state === "native") {
+      const native = nativeToolCalls(tail, this.reg);
+      if (native) {
+        this.calls.push(...native.calls);
+        if (native.text) out += native.text;
+      } else if (tail) {
+        out += tail;
+      }
+    } else if (this.state === "call" || this.state === "fence" || this.state === "json") {
       // Cut off mid-block — Qwen does this at the 300s cap. Repair what's there.
       const found = callsInBlock(tail, this.reg);
       if (found.length) this.calls.push(...found);
       else if (tail) out += tail;
     } else if (tail) {
       out += tail;
+    }
+
+    // The model used its own grammar instead of ours. Checked before the bare
+    // JSON fallback because this envelope is unambiguous, and checked even when
+    // text has already been emitted: leaving the markup in the reply helps
+    // nobody, and a harness waiting on tool_calls is stuck without it.
+    if (this.calls.length === 0) {
+      const native = nativeToolCalls(out, this.reg);
+      if (native) {
+        this.calls.push(...native.calls);
+        out = native.text;
+      }
     }
 
     // Last resort: the model ignored the protocol and replied with a bare JSON
