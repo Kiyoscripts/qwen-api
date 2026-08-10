@@ -38,6 +38,14 @@ import {
   tokenRouterText,
   TokenRouterError,
 } from "@/lib/tokenrouter";
+import {
+  isOpenCodeZenModel,
+  resolveOpenCodeZenModel,
+  openCompletion as openOpenCodeZenCompletion,
+  openCodeZenDeltas,
+  openCodeZenText,
+  OpenCodeZenError,
+} from "@/lib/opencodezen";
 import { logUsage } from "@/lib/supabase";
 import { authenticate } from "@/lib/apiAuth";
 import { publicOrigin } from "@/lib/canonicalHost";
@@ -166,6 +174,12 @@ export async function POST(req: NextRequest) {
   // so with no key set the id is simply unknown and falls through as before.
   if (isTokenRouterModel(modelId)) {
     return handleTokenRouter({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
+  }
+
+  // OpenCode Zen free tier (Big Pickle and friends). Same gate: no key means the
+  // id is unknown and falls through rather than advertising a dead model.
+  if (isOpenCodeZenModel(modelId)) {
+    return handleOpenCodeZen({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
   }
 
   // Image / video generation models: generate a result and return it as markdown
@@ -871,6 +885,166 @@ async function handleTokenRouter(args: {
       {
         index: 0,
         message: { role: "assistant", content: toolCalls.length ? null : toolContent, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) },
+        finish_reason: toolCalls.length ? "tool_calls" : "stop",
+      },
+    ],
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  });
+}
+
+// --- OpenCode Zen (Big Pickle + free promo models) --------------------------
+//
+// OpenAI-compatible chat/completions gateway. Public ids are namespaced
+// `opencode/<zen-id>`; the upstream call rewrites to the bare Zen id. Big
+// Pickle streams reasoning_content before content — both are forwarded when
+// QWEN_SHOW_REASONING is on so agent clients that surface thinking can use it.
+async function handleOpenCodeZen(args: {
+  messages: OpenAIMessage[];
+  modelId: string;
+  wantStream: boolean;
+  hadImage: boolean;
+  recordId: string;
+  body: any;
+}) {
+  const { messages, modelId, wantStream, hadImage, recordId, body } = args;
+
+  const model = resolveOpenCodeZenModel(modelId);
+  if (!model) {
+    logUsage(recordId, modelId, hadImage, wantStream, 404);
+    return err(`Model '${modelId}' is not available.`, 404, "model_not_found");
+  }
+
+  // Free Zen chat models are text-only on this path.
+  if (hadImage) {
+    logUsage(recordId, modelId, hadImage, wantStream, 400);
+    return err(`Model '${modelId}' does not accept image input.`, 400);
+  }
+
+  const toolsOn = hasTools(body);
+  const effMessages: OpenAIMessage[] = toolsOn
+    ? (preprocessToolMessages(messages, body.tools, body.tool_choice) as OpenAIMessage[])
+    : messages;
+
+  let zenRes: Response;
+  try {
+    zenRes = await openOpenCodeZenCompletion({
+      model: modelId,
+      messages: effMessages,
+      stream: wantStream,
+      temperature: typeof body.temperature === "number" ? body.temperature : undefined,
+      max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : undefined,
+    });
+  } catch (e: any) {
+    const status = e instanceof OpenCodeZenError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, wantStream, status);
+    return err(e.message || "Upstream error", status, "upstream_error");
+  }
+
+  const id = "chatcmpl-" + randomUUID();
+  const created = Math.floor(Date.now() / 1000);
+  const withReasoning = showReasoning();
+
+  if (wantStream) {
+    const encoder = new TextEncoder();
+    let hb: ReturnType<typeof keepAlive> | null = null;
+    const registry = toolsOn ? buildRegistry(body.tools) : null;
+    const stream = new ReadableStream({
+      async start(controller) {
+        hb = keepAlive(controller, encoder);
+        const send = (delta: any, finish: string | null = null) => {
+          hb!.touch();
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
+            )
+          );
+        };
+        try {
+          send({ role: "assistant" });
+
+          const parser = registry ? new ToolStream(registry) : null;
+          let toolCalls: OAIToolCall[] = [];
+
+          try {
+            for await (const d of openCodeZenDeltas(zenRes)) {
+              if (d.kind === "reasoning") {
+                if (withReasoning && d.text) send({ reasoning_content: d.text });
+                continue;
+              }
+              if (parser) {
+                const out = parser.push(d.text);
+                if (out) send({ content: out });
+              } else {
+                send({ content: d.text });
+              }
+            }
+            if (parser) {
+              const fin = parser.end();
+              if (fin.text) send({ content: fin.text });
+              toolCalls = applyToolPolicy(fin.toolCalls, body, registry!);
+            }
+          } catch (e: any) {
+            if (parser) {
+              try { toolCalls = applyToolPolicy(parser.end().toolCalls, body, registry!); } catch { /* nothing to salvage */ }
+            }
+            send({ content: `\n[error: ${e.message}]` });
+          }
+
+          hb.stop();
+          if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
+          send({}, toolCalls.length ? "tool_calls" : "stop");
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          logUsage(recordId, modelId, hadImage, true, 200);
+        } catch {
+          logUsage(recordId, modelId, hadImage, true, 499);
+        } finally {
+          hb.stop();
+          await zenRes.body?.cancel().catch(() => {});
+        }
+      },
+      async cancel() {
+        hb?.stop();
+        await zenRes.body?.cancel().catch(() => {});
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  }
+
+  let content = "";
+  let reasoning = "";
+  try {
+    const json: any = await zenRes.json();
+    if (json?.error) throw new OpenCodeZenError(json.error.message || "Upstream error", 502);
+    ({ content, reasoning } = openCodeZenText(json));
+  } catch (e: any) {
+    const status = e instanceof OpenCodeZenError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, false, status);
+    return err(e.message || "Upstream error", status, "upstream_error");
+  }
+  logUsage(recordId, modelId, hadImage, false, 200);
+
+  const { content: toolContent, toolCalls: parsed } = toolsOn
+    ? extractToolCalls(content, body.tools)
+    : { content, toolCalls: [] as OAIToolCall[] };
+  const toolCalls = toolsOn ? applyToolPolicy(parsed, body, buildRegistry(body.tools)) : [];
+
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: toolCalls.length ? toolContent : content,
+  };
+  if (toolCalls.length) message.tool_calls = toolCalls;
+  if (withReasoning && reasoning) message.reasoning_content = reasoning;
+
+  return NextResponse.json({
+    id,
+    object: "chat.completion",
+    created,
+    model: modelId,
+    choices: [
+      {
+        index: 0,
+        message,
         finish_reason: toolCalls.length ? "tool_calls" : "stop",
       },
     ],

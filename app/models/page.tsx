@@ -4,6 +4,7 @@ import { withTokenFailover } from "@/lib/tokens";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { ONECOMPILER_MODELS } from "@/lib/onecompiler";
 import { TOKENROUTER_MODELS, tokenRouterConfigured } from "@/lib/tokenrouter";
+import { OPENCODE_ZEN_MODELS, openCodeZenConfigured } from "@/lib/opencodezen";
 import { modelMaker } from "@/lib/modelIcons";
 import { Shell } from "../Shell";
 import { ModelBrowser } from "../ModelBrowser";
@@ -29,6 +30,18 @@ async function load(): Promise<{ rows: CardModel[]; degraded: boolean }> {
     for (const m of TOKENROUTER_MODELS)
       rows.push({ id: m.id, name: m.name, owner: "tokenrouter",
         maker: modelMaker(m.id, "tokenrouter").key, inputs: [], thinking: true });
+
+  if (openCodeZenConfigured())
+    for (const m of OPENCODE_ZEN_MODELS)
+      rows.push({
+        id: m.id,
+        name: m.name,
+        owner: "opencode",
+        maker: modelMaker(m.id, "opencode").key,
+        inputs: [],
+        thinking: Boolean(m.thinking),
+        context: m.contextLength,
+      });
 
   try {
     const { result } = await withTokenFailover((t) => getModels(t));

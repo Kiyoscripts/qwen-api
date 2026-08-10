@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getModels } from "@/lib/qwen";
 import { ONECOMPILER_MODELS } from "@/lib/onecompiler";
 import { TOKENROUTER_MODELS, tokenRouterConfigured } from "@/lib/tokenrouter";
+import { OPENCODE_ZEN_MODELS, openCodeZenConfigured } from "@/lib/opencodezen";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 import { withTokenFailover } from "@/lib/tokens";
@@ -58,6 +59,24 @@ const tokenRouterEntries = tokenRouterConfigured()
     }))
   : [];
 
+// OpenCode Zen free / stealth models (Big Pickle etc.). Same configuration gate.
+const openCodeZenEntries = openCodeZenConfigured()
+  ? OPENCODE_ZEN_MODELS.map((m) => ({
+      id: m.id,
+      object: "model" as const,
+      created: 0,
+      owned_by: "opencode",
+      display_name: m.name,
+      capabilities: {
+        vision: false,
+        thinking: Boolean(m.thinking),
+        chat_types: ["t2t"],
+        input: { text: true, image: false, document: false, video: false, audio: false },
+        ...(m.contextLength ? { context_length: m.contextLength } : {}),
+      },
+    }))
+  : [];
+
 export async function GET(req: NextRequest) {
   if (!(await authenticate(req))) {
     return NextResponse.json({ error: { message: "Invalid or missing API key.", type: "invalid_request_error" } }, { status: 401 });
@@ -92,7 +111,10 @@ export async function GET(req: NextRequest) {
     } catch {
       /* Qwen pool unavailable -> still return the static entries */
     }
-    return NextResponse.json({ object: "list", data: [...customEntries, ...mediaEntries, ...oneCompilerEntries, ...tokenRouterEntries, ...qwenEntries] });
+    return NextResponse.json({
+      object: "list",
+      data: [...customEntries, ...mediaEntries, ...oneCompilerEntries, ...tokenRouterEntries, ...openCodeZenEntries, ...qwenEntries],
+    });
   } catch (e: any) {
     return NextResponse.json({ error: { message: e.message, type: "upstream_error" } }, { status: 503 });
   }

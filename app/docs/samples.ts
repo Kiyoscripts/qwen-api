@@ -624,7 +624,15 @@ wire_api = "chat"
       },
       "models": {
         "qwen3.8-max": { "name": "Qwen3.8 Max" },
-        "qwen3.8-max-preview": { "name": "Qwen3.8 Max Preview" }
+        "qwen3.8-max-preview": { "name": "Qwen3.8 Max Preview" },
+        // Free OpenCode Zen stealth model (requires OPENCODE_ZEN_API_KEY on the server)
+        "opencode/big-pickle": {
+          "name": "Big Pickle",
+          "reasoning": true,
+          "limit": { "context": 200000, "output": 32000 }
+        },
+        "deepseek/deepseek-v4-flash": { "name": "DeepSeek V4 Flash" },
+        "moonshotai/kimi-k3": { "name": "Kimi K3" }
       }
     }
   }

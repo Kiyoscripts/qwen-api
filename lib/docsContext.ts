@@ -52,14 +52,14 @@ INPUTS
 - Images are sent as a content part: { type: "image_url", image_url: { url } }, where url may be a data: URL.
 
 MODELS
-- Qwen ids look like qwen3.8-max. Other makers are prefixed: moonshotai/kimi-k3-free, openai/gpt-5.6-luna, deepseek/deepseek-v4-pro, xai/grok-4.3, google/gemma-3.12b.
+- Qwen ids look like qwen3.8-max. Other makers are prefixed: moonshotai/kimi-k3, openai/gpt-5.6-luna, deepseek/deepseek-v4-pro, deepseek/deepseek-v4-flash (OpenCode Zen free tier), xai/grok-4.3, google/gemma-3.12b, nvidia/nemotron-3-ultra-free, cohere/north-mini-code-free, opencode/big-pickle.
 - Media models: qwen-image-3.0, qwen-image-2.0 (both also edit), qwen-wan (video).
 - Flagship context is 1,000,000 tokens.
 
 CODING CLIS
 - Claude Code: ANTHROPIC_BASE_URL=${CANONICAL_URL} (no /v1), ANTHROPIC_AUTH_TOKEN=$SYDE_API_KEY, ANTHROPIC_MODEL=qwen3.8-max. Also set ANTHROPIC_SMALL_FAST_MODEL, or background calls fail while chat works.
 - Codex: in ~/.codex/config.toml set model_provider with base_url = "${CANONICAL_URL}/v1", env_key = "SYDE_API_KEY", and wire_api = "chat". Without wire_api it defaults to the Responses API, which this endpoint does not implement.
-- OpenCode: provider entry with npm "@ai-sdk/openai-compatible", baseURL "${CANONICAL_URL}/v1".
+- OpenCode: provider entry with npm "@ai-sdk/openai-compatible", baseURL "${CANONICAL_URL}/v1". Model id opencode/big-pickle is Big Pickle (free OpenCode Zen stealth model; only listed when the server has OPENCODE_ZEN_API_KEY).
 - Aider and most others: OPENAI_BASE_URL="${CANONICAL_URL}/v1" and OPENAI_API_KEY, then a model like openai/qwen3.8-max.
 
 ERRORS

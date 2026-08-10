@@ -11,6 +11,9 @@
 //
 // openai.svg and grok.svg are monochrome marks pinned to white inside the file:
 // they are rendered through <img>, which cannot inherit the page's currentColor.
+/** Fallback for bare (non-namespaced) Qwen ids like `qwen3.8-max`. */
+export const DEFAULT_MODEL_ICON = "/qwen.svg";
+
 export const MAKER_ICONS: Record<string, string> = {
   openai: "/openai.svg",
   google: "/gemini.svg",
@@ -18,10 +21,11 @@ export const MAKER_ICONS: Record<string, string> = {
   moonshotai: "/kimi.svg",
   qwen: "/qwen.svg",
   xai: "/grok.svg",
+  nvidia: "/nvidia.svg",
+  cohere: "/cohere.svg",
+  // OpenCode Zen free/stealth models without a dedicated brand mark.
+  opencode: "/opencode.svg",
 };
-
-/** Fallback for bare (non-namespaced) Qwen ids like `qwen3.8-max`. */
-export const DEFAULT_MODEL_ICON = "/qwen.svg";
 
 export function modelIcon(id: string | undefined | null): string {
   if (!id) return DEFAULT_MODEL_ICON;
@@ -44,6 +48,9 @@ export const MAKER_LABELS: Record<string, string> = {
   moonshotai: "Moonshot AI",
   qwen: "Qwen",
   xai: "xAI",
+  nvidia: "NVIDIA",
+  cohere: "Cohere",
+  opencode: "OpenCode Zen",
 };
 
 export interface Maker {

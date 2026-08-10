@@ -46,8 +46,11 @@ export class TokenRouterError extends Error {
 }
 
 export interface TokenRouterModel {
+  /** Public id callers request (no "-free" suffix). */
   id: string;
   name: string;
+  /** Id sent upstream when it differs from the public id. */
+  upstreamId?: string;
 }
 
 /**
@@ -55,7 +58,8 @@ export interface TokenRouterModel {
  * through to the Qwen path rather than being blindly forwarded upstream.
  */
 export const TOKENROUTER_MODELS: TokenRouterModel[] = [
-  { id: "moonshotai/kimi-k3-free", name: "Kimi K3" },
+  // Public id is kimi-k3; the free-tier gateway still wants the free slug.
+  { id: "moonshotai/kimi-k3", name: "Kimi K3", upstreamId: "moonshotai/kimi-k3-free" },
 ];
 
 /** Whether the provider has credentials. Nothing is advertised without them. */
@@ -84,6 +88,9 @@ export async function openCompletion(opts: TokenRouterCompletionOpts): Promise<R
     throw new TokenRouterError("TokenRouter is not configured. Set TOKENROUTER_API_KEY.", 402);
   }
 
+  const entry = resolveTokenRouterModel(opts.model);
+  const upstreamModel = entry?.upstreamId || opts.model;
+
   // Bounds time-to-first-byte only. Once the stream is flowing the caller reads
   // at its own pace, so this cannot sever a long but healthy reply.
   const ac = new AbortController();
@@ -100,7 +107,7 @@ export async function openCompletion(opts: TokenRouterCompletionOpts): Promise<R
         Accept: opts.stream ? "text/event-stream" : "application/json",
       },
       body: JSON.stringify({
-        model: opts.model,
+        model: upstreamModel,
         messages: opts.messages,
         stream: opts.stream,
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),

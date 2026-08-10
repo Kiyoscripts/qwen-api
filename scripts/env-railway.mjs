@@ -16,7 +16,8 @@ const DEFAULTS = { QWEN_SHOW_REASONING: "true", QWEN_FORGET_MEMORIES: "true" };
 const OPTIONAL = ["QWEN_CLIENT_VERSION", "QWEN_USER_AGENT", "QWEN_EXTRA_COOKIES", "QWEN_MEDIA_MODEL", "QWEN_TTS_MODEL", "ENABLE_VIDEO_GENERATION",
                   "PUBLIC_KEY_CREATION", "KEY_RL_PER_IP_HOUR",
                   "KEY_RL_PER_IP_DAY", "KEY_BLACKLIST_THRESHOLD", "KEY_RL_GLOBAL_HOUR", "CRON_SECRET",
-                  "TOKENROUTER_API_KEY", "TOKENROUTER_BASE"];
+                  "TOKENROUTER_API_KEY", "TOKENROUTER_BASE",
+                  "OPENCODE_ZEN_API_KEY", "OPENCODE_ZEN_BASE", "OPENCODE_ZEN_TIMEOUT_MS"];
 
 // The Discord bot ships in the same image, so its config belongs in the same
 // paste. Copied only when present rather than placeholdered like REQUIRED: a
