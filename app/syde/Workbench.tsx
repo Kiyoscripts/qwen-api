@@ -60,10 +60,21 @@ export function Workbench() {
     return () => abort.current?.abort();
   }, []);
 
-  const needs = (m: PickModel) =>
-    mode === "image" ? m.chatTypes.includes("t2i")
-      : mode === "video" ? m.chatTypes.includes("t2v")
-      : m.chatTypes.includes("t2t");
+  /**
+   * Which models belong in this mode.
+   *
+   * Not simply "declares t2v": the pooled Qwen chat models advertise t2i and
+   * t2v in their own capabilities, so that test matched almost everything and
+   * the Video picker listed chat models that cannot generate a video. A media
+   * model is one that cannot do plain text, which is true of the three virtual
+   * ids and of nothing else on the endpoint.
+   */
+  const needs = (m: PickModel) => {
+    const text = m.chatTypes.includes("t2t");
+    if (mode === "image") return !text && m.chatTypes.includes("t2i");
+    if (mode === "video") return !text && m.chatTypes.includes("t2v");
+    return text;
+  };
 
   useEffect(() => { setTurns([]); setAnswer(""); setReasoning(""); }, [mode]);
 

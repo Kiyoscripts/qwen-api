@@ -521,12 +521,20 @@ aider --model openai/qwen3.8-max`,
                 Request too large (max 32MB)
               </p>
               <p className="body mt-2 text-[13px]">
-                That one is not from this API. It is Claude Code refusing to
-                send a request at all, and it never reaches us, so no setting
-                here changes it. It usually means a very large file was read
-                into the conversation. Press escape twice to rewind past the
-                message that pulled it in, run <C>/compact</C>, or read part of
-                the file rather than all of it.
+                Claude Code shows this for two different things and does not
+                say which, so the 32MB figure is not to be trusted. It is
+                sometimes its own guard refusing to send a request. It is just
+                as often our <C>413</C> for a prompt over the character cap,
+                relabelled — in which case both the number and the mention of
+                attachments are wrong.
+              </p>
+              <p className="body mt-2 text-[13px]">
+                On a fresh session the prompt is mostly Claude Code&apos;s own
+                system prompt, its tool schemas, any <C>CLAUDE.md</C> and any
+                MCP server tools, all sent before you type anything. Dropping
+                unused MCP servers is the biggest single reduction; otherwise{" "}
+                <C>/compact</C>, or press escape twice to rewind past a large
+                file.
               </p>
             </div>
           </Section>

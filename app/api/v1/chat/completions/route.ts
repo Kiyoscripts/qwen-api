@@ -56,7 +56,17 @@ const DEFAULT_MODEL = "qwen3.8-max";
  * the full 300s or returned a bare 502. Set below that so the refusal is
  * deterministic rather than a coin flip.
  */
-const PROMPT_CHAR_LIMIT = 110_000;
+// Upstream latency scales at roughly a second per 1k characters against a 300s
+// ceiling, so this is a time budget expressed in characters, not a context
+// limit: the flagship window is a million tokens.
+//
+// It sat at 110k, which turned out to refuse a coding harness on its first
+// message. Claude Code sends its system prompt, every tool schema and any
+// CLAUDE.md before the user has typed anything, so "hello" arrived already over
+// the line and the session was unusable rather than slow. 180k keeps roughly a
+// hundred seconds of headroom under the ceiling while letting that baseline
+// through, which is the right trade: a slow answer beats a refused one.
+const PROMPT_CHAR_LIMIT = 180_000;
 
 // These models require feature_config.thinking_enabled = true — they can't run in
 // "Fast" (non-thinking) mode, so `enable_thinking: false` is ignored for them.
@@ -195,6 +205,14 @@ export async function POST(req: NextRequest) {
   // sees its turn die. Refuse early with a status that names the problem.
   const promptChars = effMessages.reduce((n: number, m: any) => n + messageText(m).length, 0);
   if (promptChars > PROMPT_CHAR_LIMIT) {
+    // Logged because the caller usually never sees our message. Claude Code
+    // replaces a 413 with its own "max 32MB" wording, which names a limit that
+    // is not ours and a cause that may not be true, so the only place the real
+    // size is recorded is here.
+    console.warn(
+      `[413] ${modelId}: ${promptChars} chars over ${PROMPT_CHAR_LIMIT}` +
+        `, ${effMessages.length} messages, tools=${toolsOn ? body.tools?.length ?? 0 : "off"}`
+    );
     logUsage(record.id, modelId, hadImage, wantStream, 413);
     return err(
       `Request too large: ~${Math.round(promptChars / 1000)}k characters of prompt, limit is ~${Math.round(PROMPT_CHAR_LIMIT / 1000)}k. ` +

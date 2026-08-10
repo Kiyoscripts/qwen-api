@@ -72,9 +72,13 @@ LIMITS
 - Prompts are capped by assembled character count, and an oversized request is refused immediately rather than failing slowly.
 - Over the cap returns 413 with type context_length_exceeded and the measured size in the message. In agent sessions tool results usually dominate, not the user's own messages.
 
-NOT OUR ERRORS
-- "Request too large (max 32MB). Double press esc to go back and try with a smaller file." is Claude Code's own client-side guard. It refuses to send the request, so it never reaches this API and no setting here affects it. Usual cause is a very large file read into the conversation. Remedies: press escape twice to rewind past that message, run /compact, or read part of the file instead of all of it.
-- Our equivalent looks different: HTTP 413, type context_length_exceeded, and a message counting characters rather than megabytes.
+CLAUDE CODE SAYING "REQUEST TOO LARGE (MAX 32MB)"
+- Claude Code shows this wording for two different things and does not distinguish them, so treat the 32MB figure as unreliable.
+- It can be Claude Code's own guard refusing to send a request, usually after a very large file was read in.
+- It can equally be our HTTP 413 for a prompt over the character cap, which Claude Code relabels with its own message. In that case the number and the mention of attachments are both wrong.
+- The cap is a time budget rather than a context limit: upstream takes roughly a second per 1k characters against a 300s ceiling. The flagship context window itself is a million tokens.
+- On a fresh session the prompt is mostly Claude Code's own system prompt, its tool schemas, any CLAUDE.md, and any MCP server tools, all of which are sent before the user types anything. Disconnecting unused MCP servers is the single biggest reduction.
+- Remedies either way: /compact, press escape twice to rewind past a large file, drop unused MCP servers, or read part of a file rather than all of it.
 `.trim();
 
 export const DOCS_MODEL = "openai/gpt-5.6-luna";
