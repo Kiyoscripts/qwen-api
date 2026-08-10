@@ -89,7 +89,12 @@ export function Workbench() {
   }, [mode, models]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canThink = models.find((m) => m.id === model)?.thinking ?? false;
-  const accept = acceptFor(models.find((m) => m.id === model));
+  // Image and video both take a reference image, for editing and for
+  // image-to-video respectively, so those modes always offer one.
+  const accept =
+    mode === "image" || mode === "video"
+      ? "image/*"
+      : acceptFor(models.find((m) => m.id === model));
 
   const body = useMemo(() => {
     if (mode === "image" || mode === "video") return { model, messages: [{ role: "user", content: prompt }], size };
@@ -140,7 +145,12 @@ export function Workbench() {
         setProgress(0);
         const start = await fetch("/v1/videos/generations", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model, prompt, size }), signal: ctrl.signal,
+          body: JSON.stringify({
+            model, prompt, size,
+            // A reference image turns this into image-to-video upstream.
+            ...(file ? { images: [file.url] } : {}),
+          }),
+          signal: ctrl.signal,
         });
         if (!start.ok) {
           setAnswer(start.status === 401 ? t("pg_get_key") : `${t("error")} (${start.status})`);
@@ -159,6 +169,7 @@ export function Workbench() {
           const sj = await st.json().catch(() => ({}));
           if (sj?.status === "completed" && sj?.data?.[0]?.url) {
             setAnswer(`![video](${sj.data[0].url})`);
+            setFile(null);
             setProgress(null);
             setState("done"); setMs(Math.round(performance.now() - started));
             return;

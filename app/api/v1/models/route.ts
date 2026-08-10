@@ -21,6 +21,11 @@ const mediaEntries = VIRTUAL_MODELS.map((m) => ({
     vision: m.kind === "image", // image models accept a reference image (editing)
     thinking: false,
     chat_types: m.kind === "image" ? ["t2i", "image_edit"] : ["t2v"],
+    // Both kinds take a reference image: the image models for editing, the
+    // video model for image-to-video. Leaving this out made clients read
+    // `vision: false` as "no files", which disabled attachment on the very
+    // model that needs one to do image-to-video.
+    input: { text: true, image: true, document: false, video: false, audio: false },
   },
 }));
 
