@@ -1,9 +1,9 @@
-// OpenCode Zen — free / stealth models (Big Pickle and friends) via the
+// OpenCode Zen — promo / stealth models (Big Pickle and friends) via the
 // OpenAI-compatible chat/completions endpoint.
 //
 // OpenCode Zen is the gateway behind OpenCode CLI's curated model list
 // (https://opencode.ai/zen). Paid models use mixed wire formats (Responses,
-// Anthropic Messages, Google); the free tier we expose here is all chat/
+// Anthropic Messages, Google); the tier we expose here is all chat/
 // completions, so this module stays as thin as TokenRouter.
 //
 // Operational notes:
@@ -11,14 +11,16 @@
 //  - Requires an OpenCode Zen API key (sign in at https://opencode.ai/auth,
 //    or reuse the key OpenCode CLI stores after `/connect`). Without a key the
 //    models are not advertised and not routable — same gate as TokenRouter.
-//  - Public ids are namespaced `opencode/<zen-id>` so the catalogue groups
-//    under OpenCode; the request to Zen rewrites to the bare model id.
+//  - Public ids never include "free" / "-free". Zen's upstream free-tier slugs
+//    (when they differ) live only in `upstreamId`.
 //  - Cloudflare sits in front of opencode.ai and rejects bare urllib-style
 //    clients (error 1010). A browser-ish User-Agent is required.
-//  - Free models may use collected prompts to improve the model during the
-//    promo window — treat them as best-effort, not a private backend.
+//  - Promo models may use collected prompts to improve the model — treat them
+//    as best-effort, not a private backend.
 //  - Big Pickle streams `reasoning_content` before `content`. We surface both
-//    so callers that honour reasoning_content see the think phase.
+//    when reasoning is on; default is reasoning_effort "none" so it is fast.
+//  - Upstream is always opened with stream:true (headers land immediately).
+//    Non-stream callers still get a full JSON body; we buffer the SSE for them.
 
 import type { OpenAIMessage } from "./qwen";
 
@@ -29,13 +31,29 @@ export const OPENCODE_ZEN_BASE = (
 const OPENCODE_ZEN_API_KEY = process.env.OPENCODE_ZEN_API_KEY || "";
 
 /**
- * How long to wait for the upstream to START responding.
+ * How long to wait for the upstream to START responding (headers / first byte).
  *
- * Free stealth models (especially Big Pickle) often spend tens of seconds in a
- * reasoning phase before the first content token. Bound TTFB so a saturated
- * free tier fails with a named status rather than burning the 300s ceiling.
+ * Promo capacity is flaky: a saturated free endpoint can hang indefinitely.
+ * Fail with a named status rather than burning the 300s function ceiling.
  */
-const OPENCODE_ZEN_TIMEOUT_MS = Number(process.env.OPENCODE_ZEN_TIMEOUT_MS || 90_000);
+const OPENCODE_ZEN_TIMEOUT_MS = Number(process.env.OPENCODE_ZEN_TIMEOUT_MS || 45_000);
+
+/** How long a live stream may go quiet between chunks before we cut it. */
+const OPENCODE_ZEN_IDLE_MS = Number(process.env.OPENCODE_ZEN_IDLE_MS || 60_000);
+
+/** Retries for transient Zen 502/503 (promo endpoints flap often). */
+const OPENCODE_ZEN_RETRIES = Math.max(0, Number(process.env.OPENCODE_ZEN_RETRIES || 2));
+
+/**
+ * Default reasoning for thinking models (Big Pickle).
+ *
+ * Measured against Zen: reasoning_effort "none" → ~1.3s TTFB and a real answer;
+ * default / medium → ~20s of reasoning_content and often no content within the
+ * first minute. Callers can still opt in via body.reasoning_effort or
+ * enable_thinking: true.
+ */
+const OPENCODE_ZEN_REASONING_DEFAULT =
+  (process.env.OPENCODE_ZEN_REASONING_DEFAULT || "none").toLowerCase();
 
 /** UA that Cloudflare accepts — bare node fetch / urllib is blocked (1010). */
 const OPENCODE_ZEN_UA =
@@ -52,10 +70,11 @@ export class OpenCodeZenError extends Error {
 }
 
 export interface OpenCodeZenModel {
-  /** Public id callers request, e.g. `opencode/big-pickle`. */
+  /** Public id callers request — never contains "free". */
   id: string;
+  /** Display name — never contains "Free". */
   name: string;
-  /** Bare model id sent to Zen, e.g. `big-pickle`. */
+  /** Bare model id sent to Zen (may still end in -free). */
   upstreamId: string;
   /** Context window Zen documents for the model, when known. */
   contextLength?: number;
@@ -63,9 +82,11 @@ export interface OpenCodeZenModel {
 }
 
 /**
- * Free-tier models served over `/chat/completions`. Paid Zen models use other
- * wire formats and are deliberately not listed — this registry is the free set
- * only, so an unset key never offers a model that would bill the account.
+ * Promo / stealth models served over `/chat/completions`. Paid Zen models use
+ * other wire formats and are deliberately not listed.
+ *
+ * Public id + name are product names only. The free-tier Zen slug stays in
+ * `upstreamId` when Zen requires it.
  */
 export const OPENCODE_ZEN_MODELS: OpenCodeZenModel[] = [
   {
@@ -75,8 +96,6 @@ export const OPENCODE_ZEN_MODELS: OpenCodeZenModel[] = [
     contextLength: 200_000,
     thinking: true,
   },
-  // Public id drops "-free" and the display name is the product name; Zen still
-  // needs the free-tier upstream id.
   {
     id: "deepseek/deepseek-v4-flash",
     name: "DeepSeek V4 Flash",
@@ -84,38 +103,38 @@ export const OPENCODE_ZEN_MODELS: OpenCodeZenModel[] = [
     thinking: false,
   },
   {
-    id: "opencode/mimo-v2.5-free",
-    name: "MiMo v2.5 Free",
+    id: "opencode/mimo-v2.5",
+    name: "MiMo v2.5",
     upstreamId: "mimo-v2.5-free",
     thinking: false,
   },
   {
-    id: "opencode/laguna-s-2.1-free",
-    name: "Laguna S 2.1 Free",
+    id: "opencode/laguna-s-2.1",
+    name: "Laguna S 2.1",
     upstreamId: "laguna-s-2.1-free",
     thinking: false,
   },
   {
-    id: "opencode/ling-3.0-tiny-free",
-    name: "Ling 3.0 Tiny Free",
+    id: "opencode/ling-3.0-tiny",
+    name: "Ling 3.0 Tiny",
     upstreamId: "ling-3.0-tiny-free",
     thinking: false,
   },
   {
-    id: "opencode/longcat-2.0-free",
-    name: "LongCat 2.0 Free",
+    id: "opencode/longcat-2.0",
+    name: "LongCat 2.0",
     upstreamId: "longcat-2.0-free",
     thinking: false,
   },
   {
-    id: "nvidia/nemotron-3-ultra-free",
-    name: "Nemotron 3 Ultra Free",
+    id: "nvidia/nemotron-3-ultra",
+    name: "Nemotron 3 Ultra",
     upstreamId: "nemotron-3-ultra-free",
     thinking: false,
   },
   {
-    id: "cohere/north-mini-code-free",
-    name: "North Mini Code Free",
+    id: "cohere/north-mini-code",
+    name: "North Mini Code",
     upstreamId: "north-mini-code-free",
     thinking: false,
   },
@@ -138,9 +157,38 @@ export interface OpenCodeZenCompletionOpts {
   /** Public model id (`opencode/big-pickle`). */
   model: string;
   messages: OpenAIMessage[];
+  /**
+   * Whether the *caller* wants a streamed response. Upstream is always opened
+   * with stream:true; this flag only affects Accept and how the route buffers.
+   */
   stream: boolean;
   temperature?: number;
   max_tokens?: number;
+  /**
+   * Zen reasoning_effort. "none" is the fast default for thinking models.
+   * Pass "low"/"medium"/"high" (or enableThinking) for deeper thought.
+   */
+  reasoningEffort?: string;
+  enableThinking?: boolean;
+}
+
+/** Map caller knobs onto a Zen reasoning_effort value. */
+export function resolveReasoningEffort(opts: {
+  model: OpenCodeZenModel;
+  reasoningEffort?: string;
+  enableThinking?: boolean;
+}): string | undefined {
+  if (!opts.model.thinking) return undefined;
+  if (typeof opts.reasoningEffort === "string" && opts.reasoningEffort.trim()) {
+    return opts.reasoningEffort.trim().toLowerCase();
+  }
+  if (opts.enableThinking === true) return "medium";
+  if (opts.enableThinking === false) return "none";
+  return OPENCODE_ZEN_REASONING_DEFAULT;
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 export async function openCompletion(opts: OpenCodeZenCompletionOpts): Promise<Response> {
@@ -153,50 +201,74 @@ export async function openCompletion(opts: OpenCodeZenCompletionOpts): Promise<R
     throw new OpenCodeZenError(`Model '${opts.model}' is not available on OpenCode Zen.`, 404);
   }
 
-  // Bounds time-to-first-byte only. Once the stream is flowing the caller reads
-  // at its own pace, so this cannot sever a long but healthy reply.
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), OPENCODE_ZEN_TIMEOUT_MS);
+  const reasoningEffort = resolveReasoningEffort({
+    model: entry,
+    reasoningEffort: opts.reasoningEffort,
+    enableThinking: opts.enableThinking,
+  });
 
-  let res: Response;
-  try {
-    res = await fetch(`${OPENCODE_ZEN_BASE}/chat/completions`, {
-      method: "POST",
-      signal: ac.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENCODE_ZEN_API_KEY}`,
-        Accept: opts.stream ? "text/event-stream" : "application/json",
-        "User-Agent": OPENCODE_ZEN_UA,
-      },
-      body: JSON.stringify({
-        model: entry.upstreamId,
-        messages: opts.messages,
-        stream: opts.stream,
-        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
-        ...(opts.max_tokens !== undefined ? { max_tokens: opts.max_tokens } : {}),
-      }),
-    });
-  } catch (e: any) {
-    if (e?.name === "AbortError") {
-      throw new OpenCodeZenError(
-        `OpenCode Zen did not respond within ${Math.round(OPENCODE_ZEN_TIMEOUT_MS / 1000)}s. The free tier is likely saturated; try again or use another model.`,
-        504
-      );
+  // Always stream from Zen: headers land immediately and the free tier's
+  // multi-second think phases no longer look like a hung non-stream POST.
+  const body = JSON.stringify({
+    model: entry.upstreamId,
+    messages: opts.messages,
+    stream: true,
+    ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+    ...(opts.max_tokens !== undefined ? { max_tokens: opts.max_tokens } : {}),
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+  });
+
+  let lastErr: OpenCodeZenError | null = null;
+  const attempts = 1 + OPENCODE_ZEN_RETRIES;
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await sleep(250 * attempt);
+
+    const ac = new AbortController();
+    // TTFB only: once headers arrive we clear this and let idle-timeout on the
+    // body reader handle a stream that goes quiet mid-reply.
+    const timer = setTimeout(() => ac.abort(), OPENCODE_ZEN_TIMEOUT_MS);
+
+    let res: Response;
+    try {
+      res = await fetch(`${OPENCODE_ZEN_BASE}/chat/completions`, {
+        method: "POST",
+        signal: ac.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENCODE_ZEN_API_KEY}`,
+          Accept: "text/event-stream",
+          "User-Agent": OPENCODE_ZEN_UA,
+        },
+        body,
+      });
+    } catch (e: any) {
+      clearTimeout(timer);
+      if (e?.name === "AbortError") {
+        lastErr = new OpenCodeZenError(
+          `OpenCode Zen did not respond within ${Math.round(OPENCODE_ZEN_TIMEOUT_MS / 1000)}s. The free tier is likely saturated; try again or use another model.`,
+          504
+        );
+        continue; // retry timeout too — capacity is the usual cause
+      }
+      lastErr = new OpenCodeZenError(`Could not reach ${OPENCODE_ZEN_BASE}: ${e.message}`, 502);
+      continue;
+    } finally {
+      clearTimeout(timer);
     }
-    throw new OpenCodeZenError(`Could not reach ${OPENCODE_ZEN_BASE}: ${e.message}`, 502);
-  } finally {
-    clearTimeout(timer);
+
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => "");
+      const status = res.status >= 400 ? res.status : 502;
+      lastErr = new OpenCodeZenError(errorMessage(text) || `Upstream error (${res.status})`, status);
+      // Retry only the flaky free-tier capacity errors, not 401/404/400.
+      if (status === 429 || status === 502 || status === 503 || status === 504) continue;
+      throw lastErr;
+    }
+    return res;
   }
 
-  if (!res.ok || (opts.stream && !res.body)) {
-    const text = await res.text().catch(() => "");
-    // 429 is the expected steady state on a free promo under load — pass it
-    // through so a caller that can back off is told the truth.
-    const status = res.status >= 400 ? res.status : 502;
-    throw new OpenCodeZenError(errorMessage(text) || `Upstream error (${res.status})`, status);
-  }
-  return res;
+  throw lastErr || new OpenCodeZenError("OpenCode Zen request failed.", 502);
 }
 
 /** Pull a human-readable message out of whichever error envelope came back. */
@@ -222,14 +294,40 @@ export interface OpenCodeZenDelta {
  * both `[DONE]` and a plain end-of-body terminate. Mid-stream error objects
  * after a 200 are the one case that interrupts, so the caller is not left with
  * a silently truncated answer.
+ *
+ * An idle timeout aborts a stream that went quiet (common when free capacity
+ * dies mid-token) rather than hanging the function until maxDuration.
  */
 export async function* openCodeZenDeltas(res: Response): AsyncGenerator<OpenCodeZenDelta> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
 
+  const readWithIdle = (): Promise<ReadableStreamReadResult<Uint8Array>> =>
+    new Promise((resolve, reject) => {
+      const idle = setTimeout(() => {
+        reader.cancel().catch(() => {});
+        reject(
+          new OpenCodeZenError(
+            `OpenCode Zen stream went quiet for ${Math.round(OPENCODE_ZEN_IDLE_MS / 1000)}s. The free tier likely dropped the connection.`,
+            504
+          )
+        );
+      }, OPENCODE_ZEN_IDLE_MS);
+      reader
+        .read()
+        .then((r) => {
+          clearTimeout(idle);
+          resolve(r);
+        })
+        .catch((e) => {
+          clearTimeout(idle);
+          reject(e);
+        });
+    });
+
   while (true) {
-    const { done, value } = await reader.read();
+    const { done, value } = await readWithIdle();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 

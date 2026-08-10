@@ -43,7 +43,6 @@ import {
   resolveOpenCodeZenModel,
   openCompletion as openOpenCodeZenCompletion,
   openCodeZenDeltas,
-  openCodeZenText,
   OpenCodeZenError,
 } from "@/lib/opencodezen";
 import { logUsage } from "@/lib/supabase";
@@ -925,6 +924,9 @@ async function handleOpenCodeZen(args: {
     ? (preprocessToolMessages(messages, body.tools, body.tool_choice) as OpenAIMessage[])
     : messages;
 
+  // Upstream always streams (fast headers + progressive tokens). reasoning_effort
+  // defaults to "none" for Big Pickle so it answers in ~1s instead of thinking
+  // for 20s; pass enable_thinking:true or reasoning_effort to opt back in.
   let zenRes: Response;
   try {
     zenRes = await openOpenCodeZenCompletion({
@@ -933,6 +935,8 @@ async function handleOpenCodeZen(args: {
       stream: wantStream,
       temperature: typeof body.temperature === "number" ? body.temperature : undefined,
       max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : undefined,
+      reasoningEffort: typeof body.reasoning_effort === "string" ? body.reasoning_effort : undefined,
+      enableThinking: typeof body.enable_thinking === "boolean" ? body.enable_thinking : undefined,
     });
   } catch (e: any) {
     const status = e instanceof OpenCodeZenError ? e.status : 502;
@@ -1011,16 +1015,20 @@ async function handleOpenCodeZen(args: {
     return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
   }
 
+  // Non-stream client: Zen already streams to us; reassemble into one JSON body.
   let content = "";
   let reasoning = "";
   try {
-    const json: any = await zenRes.json();
-    if (json?.error) throw new OpenCodeZenError(json.error.message || "Upstream error", 502);
-    ({ content, reasoning } = openCodeZenText(json));
+    for await (const d of openCodeZenDeltas(zenRes)) {
+      if (d.kind === "reasoning") reasoning += d.text;
+      else content += d.text;
+    }
   } catch (e: any) {
     const status = e instanceof OpenCodeZenError ? e.status : 502;
     logUsage(recordId, modelId, hadImage, false, status);
     return err(e.message || "Upstream error", status, "upstream_error");
+  } finally {
+    await zenRes.body?.cancel().catch(() => {});
   }
   logUsage(recordId, modelId, hadImage, false, 200);
 

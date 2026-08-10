@@ -632,6 +632,7 @@ wire_api = "chat"
           "limit": { "context": 200000, "output": 32000 }
         },
         "deepseek/deepseek-v4-flash": { "name": "DeepSeek V4 Flash" },
+        "opencode/mimo-v2.5": { "name": "MiMo v2.5" },
         "moonshotai/kimi-k3": { "name": "Kimi K3" }
       }
     }

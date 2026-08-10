@@ -52,7 +52,7 @@ INPUTS
 - Images are sent as a content part: { type: "image_url", image_url: { url } }, where url may be a data: URL.
 
 MODELS
-- Qwen ids look like qwen3.8-max. Other makers are prefixed: moonshotai/kimi-k3, openai/gpt-5.6-luna, deepseek/deepseek-v4-pro, deepseek/deepseek-v4-flash (OpenCode Zen free tier), xai/grok-4.3, google/gemma-3.12b, nvidia/nemotron-3-ultra-free, cohere/north-mini-code-free, opencode/big-pickle.
+- Qwen ids look like qwen3.8-max. Other makers are prefixed: moonshotai/kimi-k3, openai/gpt-5.6-luna, deepseek/deepseek-v4-pro, deepseek/deepseek-v4-flash, xai/grok-4.3, google/gemma-3.12b, nvidia/nemotron-3-ultra, cohere/north-mini-code, opencode/big-pickle. Public ids never include "free".
 - Media models: qwen-image-3.0, qwen-image-2.0 (both also edit), qwen-wan (video).
 - Flagship context is 1,000,000 tokens.
 
