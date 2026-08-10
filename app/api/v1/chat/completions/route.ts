@@ -301,7 +301,12 @@ export async function POST(req: NextRequest) {
    * a pooled account — the thread is per chat, but memories are per account.
    */
   const cleanup = async () => {
-    await forgetAllMemories(token);
+    // A chat is only worth keeping if it can be resumed. Tool turns never are:
+    // resume is skipped for them, so each request opens a fresh chat that is
+    // never read again. Keeping those is cost with no benefit, and harness
+    // traffic is almost entirely tool turns, so it is the bulk of them.
+    if (toolsOn) await Promise.all([deleteChat(token, chatId), forgetAllMemories(token)]);
+    else await forgetAllMemories(token);
   };
   /** Remember this thread so the next turn can carry just its new message. */
   const remember = (assistantText: string, st: StreamStatus) => {
