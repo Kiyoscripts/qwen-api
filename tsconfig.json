@@ -35,8 +35,6 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "redesign",
-    "legacy"
+    "node_modules"
   ]
 }
