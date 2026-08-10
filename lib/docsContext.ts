@@ -70,6 +70,11 @@ ERRORS
 LIMITS
 - Rate limits are per key and reported on x-ratelimit-* response headers.
 - Prompts are capped by assembled character count, and an oversized request is refused immediately rather than failing slowly.
+- Over the cap returns 413 with type context_length_exceeded and the measured size in the message. In agent sessions tool results usually dominate, not the user's own messages.
+
+NOT OUR ERRORS
+- "Request too large (max 32MB). Double press esc to go back and try with a smaller file." is Claude Code's own client-side guard. It refuses to send the request, so it never reaches this API and no setting here affects it. Usual cause is a very large file read into the conversation. Remedies: press escape twice to rewind past that message, run /compact, or read part of the file instead of all of it.
+- Our equivalent looks different: HTTP 413, type context_length_exceeded, and a message counting characters rather than megabytes.
 `.trim();
 
 export const DOCS_MODEL = "openai/gpt-5.6-luna";

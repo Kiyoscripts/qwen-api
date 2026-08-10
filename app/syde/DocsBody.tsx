@@ -506,6 +506,29 @@ aider --model openai/qwen3.8-max`,
               rather than tokens, and a request over the cap is refused
               immediately instead of failing slowly.
             </P>
+            <P>
+              A request over that cap comes back as <C>413</C> with{" "}
+              <C>context_length_exceeded</C> and the actual size in the message,
+              so it is clear whether you were near the line or far over it. In
+              long agent sessions the prompt is usually dominated by tool
+              results rather than your own messages.
+            </P>
+            <div
+              className="border border-rule px-4 py-3.5"
+              style={{ borderRadius: "var(--r-sm)" }}
+            >
+              <p className="font-mono text-[11px] tracking-wide text-ink-3 uppercase">
+                Request too large (max 32MB)
+              </p>
+              <p className="body mt-2 text-[13px]">
+                That one is not from this API. It is Claude Code refusing to
+                send a request at all, and it never reaches us, so no setting
+                here changes it. It usually means a very large file was read
+                into the conversation. Press escape twice to rewind past the
+                message that pulled it in, run <C>/compact</C>, or read part of
+                the file rather than all of it.
+              </p>
+            </div>
           </Section>
         </div>
       </div>
