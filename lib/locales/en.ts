@@ -206,6 +206,7 @@ export const en = {
   pg_starting_render: "Starting render…",
   pg_synthesising: "Synthesising…",
   pg_always_reasons: "This model always reasons — thinking can't be turned off.",
+  pg_no_reasoning: "This model has no reasoning / effort switch.",
   pg_voice: "Voice",
   // --- usage charts ---------------------------------------------------------
   usage_requests_30d: "Requests · 30d",

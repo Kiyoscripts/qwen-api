@@ -19,6 +19,9 @@ type Mode = "chat" | "image" | "video" | "speech";
 interface Turn { role: "user" | "assistant"; content: string; reasoning?: string; file?: string }
 interface Voice { speaker: string; name: string; gender?: string; description?: string; kind?: string }
 
+/** Mirrors REQUIRE_THINKING on the server: these cannot run in Fast. */
+const ALWAYS_REASONS = new Set(["qwen3.8-max-preview"]);
+
 /**
  * The playground.
  *
@@ -37,7 +40,8 @@ export function Workbench() {
   const [prompt, setPrompt] = useState("");
   const [temperature, setTemperature] = useState(0.7);
   const [maxTokens, setMaxTokens] = useState(1024);
-  const [thinking, setThinking] = useState(true);
+  /** false = Think, true = Fast — same polarity as chat. */
+  const [fast, setFast] = useState(false);
   const [effort, setEffort] = useState("low");
   const [tools, setTools] = useState(false);
   const [size, setSize] = useState("16:9");
@@ -93,8 +97,8 @@ export function Workbench() {
   const picked = models.find((m) => m.id === model);
   const effortLevels = picked?.reasoningEffort ?? [];
   const hasEffort = effortLevels.length > 0;
-  // Binary think toggle only when multi-level effort is not available.
-  const canThink = Boolean(picked?.thinking) && !hasEffort;
+  // Binary Think/Fast only when the model can reason and has no multi-level effort.
+  const canPickThink = Boolean(picked?.thinking) && !ALWAYS_REASONS.has(model) && !hasEffort;
   // Image and video both take a reference image, for editing and for
   // image-to-video respectively, so those modes always offer one.
   const accept =
@@ -133,12 +137,13 @@ export function Workbench() {
       ],
       stream: true, temperature, max_tokens: maxTokens,
       ...(hasEffort ? { reasoning_effort: effort } : {}),
-      ...(canThink && !thinking ? { enable_thinking: false } : {}),
+      // Same contract as chat: only send enable_thinking when the user can pick.
+      ...(canPickThink ? { enable_thinking: !fast } : {}),
       ...(tools ? { tools: [{ type: "function", function: { name: "get_weather",
         description: "Current conditions for a place.",
         parameters: { type: "object", properties: { location: { type: "string" } }, required: ["location"] } } }] } : {}),
     };
-  }, [mode, model, prompt, system, size, temperature, maxTokens, thinking, canThink, hasEffort, effort, tools, voice, file, turns]);
+  }, [mode, model, prompt, system, size, temperature, maxTokens, fast, canPickThink, hasEffort, effort, tools, voice, file, turns]);
 
   const run = async () => {
     if (!prompt.trim() || state === "running") return;
@@ -343,6 +348,12 @@ export function Workbench() {
                   onChange={(e) => setMaxTokens(Number(e.target.value))} className="w-full accent-[var(--signal)]" />
               </Field>
               <Toggle label={t("pg_send_tool_schemas")} on={tools} onChange={setTools} />
+              {/*
+                Reasoning controls — same behaviour as /chat:
+                - multi-level effort when the model advertises reasoning_effort
+                - Think / Fast when the model only has a boolean thinking flag
+                - always-on models keep Think selected and Fast disabled
+              */}
               {hasEffort ? (
                 <Field label={t("chat_effort")}>
                   <EffortPicker
@@ -353,8 +364,40 @@ export function Workbench() {
                   />
                 </Field>
               ) : (
-                <Toggle label={t("chat_reasoning")} on={canThink && thinking} onChange={setThinking} disabled={!canThink}
-                        hint={!canThink ? t("pg_always_reasons") : undefined} />
+                <Field label={t("chat_reasoning")}>
+                  <div
+                    className="flex flex-wrap items-center gap-1"
+                    role="group"
+                    aria-label={t("chat_reasoning")}
+                    title={canPickThink ? t("chat_reason_hint") : t("pg_always_reasons")}
+                  >
+                    {([[false, t("chat_think")], [true, t("chat_fast")]] as const).map(([v, label]) => (
+                      <button
+                        key={String(v)}
+                        type="button"
+                        onClick={() => setFast(v)}
+                        disabled={!canPickThink}
+                        aria-pressed={canPickThink ? fast === v : v === false}
+                        className={`border px-2.5 py-1.5 font-mono text-[11px] transition-colors duration-200
+                          disabled:opacity-40 ${
+                            (canPickThink ? fast === v : v === false)
+                              ? "border-signal text-signal"
+                              : "border-rule text-ink-3 hover:border-ink hover:text-ink"
+                          }`}
+                        style={{ borderRadius: "var(--r-sm)" }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {!canPickThink && (
+                    <p className="mt-1.5 text-[12px] text-ink-3">
+                      {picked?.thinking || ALWAYS_REASONS.has(model)
+                        ? t("pg_always_reasons")
+                        : t("pg_no_reasoning")}
+                    </p>
+                  )}
+                </Field>
               )}
             </>
           )}
