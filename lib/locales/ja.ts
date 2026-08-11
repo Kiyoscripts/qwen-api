@@ -255,4 +255,6 @@ export const ja: Partial<Dict> = {
   da_q1: "どのベース URL を使いますか？",
   da_q2: "Claude Code の設定方法は？",
   da_q3: "音声を受け取れるモデルは？",
+  chat_effort: "処理量",
+  pg_no_reasoning: "このモデルには推論／処理量の切り替えがありません。",
 };

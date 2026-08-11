@@ -255,4 +255,6 @@ export const ko: Partial<Dict> = {
   da_q1: "어떤 기본 URL을 쓰나요?",
   da_q2: "Claude Code는 어떻게 설정하나요?",
   da_q3: "오디오를 받는 모델은?",
+  chat_effort: "연산량",
+  pg_no_reasoning: "이 모델에는 추론·연산량 전환이 없습니다.",
 };

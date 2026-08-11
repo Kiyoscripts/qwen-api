@@ -256,4 +256,6 @@ export const ar: Partial<Dict> = {
   da_q1: "أي عنوان أساسي أستخدم؟",
   da_q2: "كيف أُعِدّ Claude Code؟",
   da_q3: "أي النماذج تقبل الصوت؟",
+  chat_effort: "الجهد",
+  pg_no_reasoning: "لا يملك هذا النموذج مفتاحًا للاستدلال أو الجهد.",
 };

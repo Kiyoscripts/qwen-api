@@ -255,4 +255,6 @@ export const tr: Partial<Dict> = {
   da_q1: "Hangi temel URL'yi kullanmalıyım?",
   da_q2: "Claude Code'u nasıl kurarım?",
   da_q3: "Hangi modeller ses kabul eder?",
+  chat_effort: "Çaba",
+  pg_no_reasoning: "Bu modelde akıl yürütme ya da çaba anahtarı yok.",
 };

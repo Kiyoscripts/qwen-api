@@ -255,4 +255,6 @@ export const pt: Partial<Dict> = {
   da_q1: "Que URL base devo usar?",
   da_q2: "Como configuro o Claude Code?",
   da_q3: "Que modelos aceitam áudio?",
+  chat_effort: "Esforço",
+  pg_no_reasoning: "Este modelo não tem controlo de raciocínio nem de esforço.",
 };

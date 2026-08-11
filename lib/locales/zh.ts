@@ -254,4 +254,6 @@ export const zh: Partial<Dict> = {
   da_q1: "该用哪个基础 URL？",
   da_q2: "如何配置 Claude Code？",
   da_q3: "哪些模型支持音频？",
+  chat_effort: "投入程度",
+  pg_no_reasoning: "该模型没有推理或投入程度的切换。",
 };

@@ -254,4 +254,6 @@ export const hi: Partial<Dict> = {
   da_q1: "मैं कौन सा बेस URL इस्तेमाल करूँ?",
   da_q2: "Claude Code कैसे सेट करूँ?",
   da_q3: "कौन से मॉडल ऑडियो लेते हैं?",
+  chat_effort: "प्रयास",
+  pg_no_reasoning: "इस मॉडल में रीज़निंग या प्रयास का विकल्प नहीं है।",
 };
