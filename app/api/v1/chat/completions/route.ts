@@ -45,6 +45,7 @@ import {
   openCodeZenDeltas,
   OpenCodeZenError,
 } from "@/lib/opencodezen";
+import { pickReasoningEffort, defaultEffort } from "@/lib/reasoningEffort";
 import { logUsage } from "@/lib/supabase";
 import { authenticate } from "@/lib/apiAuth";
 import { publicOrigin } from "@/lib/canonicalHost";
@@ -774,6 +775,15 @@ async function handleTokenRouter(args: {
     ? (preprocessToolMessages(messages, body.tools, body.tool_choice) as OpenAIMessage[])
     : messages;
 
+  let effort: string | null = null;
+  try {
+    effort = pickReasoningEffort(body, model.reasoningEffort);
+  } catch (msg: any) {
+    logUsage(recordId, modelId, hadImage, wantStream, 400);
+    return err(typeof msg === "string" ? msg : "Invalid reasoning_effort.", 400);
+  }
+  if (!effort && model.reasoningEffort?.length) effort = defaultEffort(model.reasoningEffort) ?? null;
+
   let trRes: Response;
   try {
     trRes = await openTokenRouterCompletion({
@@ -782,6 +792,7 @@ async function handleTokenRouter(args: {
       stream: wantStream,
       temperature: typeof body.temperature === "number" ? body.temperature : undefined,
       max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : undefined,
+      reasoningEffort: effort || undefined,
     });
   } catch (e: any) {
     const status = e instanceof TokenRouterError ? e.status : 502;
@@ -925,8 +936,16 @@ async function handleOpenCodeZen(args: {
     : messages;
 
   // Upstream always streams (fast headers + progressive tokens). reasoning_effort
-  // defaults to "none" for Big Pickle so it answers in ~1s instead of thinking
-  // for 20s; pass enable_thinking:true or reasoning_effort to opt back in.
+  // defaults to "none" when supported so models answer quickly; pass an explicit
+  // level (or enable_thinking:true) for deeper thought.
+  let effort: string | null = null;
+  try {
+    effort = pickReasoningEffort(body, model.reasoningEffort);
+  } catch (msg: any) {
+    logUsage(recordId, modelId, hadImage, wantStream, 400);
+    return err(typeof msg === "string" ? msg : "Invalid reasoning_effort.", 400);
+  }
+
   let zenRes: Response;
   try {
     zenRes = await openOpenCodeZenCompletion({
@@ -935,7 +954,7 @@ async function handleOpenCodeZen(args: {
       stream: wantStream,
       temperature: typeof body.temperature === "number" ? body.temperature : undefined,
       max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : undefined,
-      reasoningEffort: typeof body.reasoning_effort === "string" ? body.reasoning_effort : undefined,
+      reasoningEffort: effort || undefined,
       enableThinking: typeof body.enable_thinking === "boolean" ? body.enable_thinking : undefined,
     });
   } catch (e: any) {

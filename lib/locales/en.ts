@@ -123,6 +123,7 @@ export const en = {
   chat_fast: "Fast",
   chat_tools: "Tools",
   chat_reasoning: "Reasoning",
+  chat_effort: "Effort",
   chat_other_models: "Other models",
   chat_thought_for: "thought {seconds}s",
   chat_truncated: "The reply was cut off before the model finished.",

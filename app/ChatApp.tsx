@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, Trash, ArrowUp, Stop, ChatText, SpeakerHigh, Wrench, Spinner, Paperclip, X, CaretRight } from "@phosphor-icons/react";
 import { useT } from "./I18n";
 import { ModelPicker, acceptFor, toPickModel, type PickModel } from "./ModelPicker";
+import { EffortPicker } from "./EffortPicker";
 import { MediaAnswer } from "./MediaAnswer";
 
 interface Msg {
@@ -41,6 +42,8 @@ export function ChatApp() {
   const [streaming, setStreaming] = useState(false);
   const [tools, setTools] = useState(false);
   const [fast, setFast] = useState(false);
+  /** Multi-level reasoning_effort when the model advertises levels. */
+  const [effort, setEffort] = useState("low");
   const [openReasoning, setOpenReasoning] = useState<number | null>(null);
   const [speaking, setSpeaking] = useState<number | null>(null);
   const [file, setFile] = useState<{ url: string; name: string } | null>(null);
@@ -60,11 +63,20 @@ export function ChatApp() {
   const active = threads.find((x) => x.id === activeId) ?? null;
   const accept = acceptFor(models.find((m) => m.id === model));
   const picked = models.find((m) => m.id === model);
-  const canPickThink = Boolean(picked?.thinking) && !ALWAYS_REASONS.has(model);
+  const effortLevels = picked?.reasoningEffort ?? [];
+  const hasEffort = effortLevels.length > 0;
+  // Binary Fast/Think only when the model can reason but has no multi-level effort.
+  const canPickThink = Boolean(picked?.thinking) && !ALWAYS_REASONS.has(model) && !hasEffort;
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
   }, [active?.messages.length, streaming]);
+
+  // Keep effort on a level the current model actually supports.
+  useEffect(() => {
+    if (!hasEffort) return;
+    if (!effortLevels.includes(effort)) setEffort(effortLevels[0]);
+  }, [model, hasEffort, effortLevels, effort]);
 
   const update = (id: string, fn: (t: Thread) => Thread) =>
     setThreads((prev) => { const next = prev.map((x) => (x.id === id ? fn(x) : x)); save(next); return next; });
@@ -115,6 +127,7 @@ export function ChatApp() {
               : { role: m.role, content: m.content }
           ),
           stream: !isMedia,
+          ...(hasEffort ? { reasoning_effort: effort } : {}),
           ...(canPickThink ? { enable_thinking: !fast } : {}),
           ...(tools ? { tools: TOOL } : {}),
         }),
@@ -212,26 +225,35 @@ export function ChatApp() {
         <section className="lg:col-span-9">
           <div className="flex h-[calc(100dvh-9rem)] min-h-[420px] flex-col border border-rule"
                style={{ borderRadius: "var(--r-sm)" }}>
-            <div className="flex items-center justify-between gap-3 border-b border-rule px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rule px-3 py-2.5">
               <div className="w-full max-w-[320px]">
                 <ModelPicker models={models} value={model} onChange={setModel} />
               </div>
-              <div className="flex shrink-0 items-center gap-1" role="group"
-                   aria-label={t("chat_reasoning")}
-                   title={canPickThink ? t("chat_reason_hint") : t("pg_always_reasons")}>
-                {([[false, t("chat_think")], [true, t("chat_fast")]] as const).map(([v, label]) => (
-                  <button key={String(v)} onClick={() => setFast(v)} disabled={!canPickThink}
-                    aria-pressed={canPickThink ? fast === v : v === false}
-                    className={`border px-2.5 py-1.5 font-mono text-[11px] transition-colors duration-200
-                      disabled:opacity-40 ${
-                        (canPickThink ? fast === v : v === false)
-                          ? "border-signal text-signal"
-                          : "border-rule text-ink-3 hover:border-ink hover:text-ink"}`}
-                    style={{ borderRadius: "var(--r-sm)" }}>
-                    {label}
-                  </button>
-                ))}
-              </div>
+              {hasEffort ? (
+                <EffortPicker
+                  levels={effortLevels}
+                  value={effort}
+                  onChange={setEffort}
+                  label={t("chat_effort")}
+                />
+              ) : (
+                <div className="flex shrink-0 items-center gap-1" role="group"
+                     aria-label={t("chat_reasoning")}
+                     title={canPickThink ? t("chat_reason_hint") : t("pg_always_reasons")}>
+                  {([[false, t("chat_think")], [true, t("chat_fast")]] as const).map(([v, label]) => (
+                    <button key={String(v)} onClick={() => setFast(v)} disabled={!canPickThink}
+                      aria-pressed={canPickThink ? fast === v : v === false}
+                      className={`border px-2.5 py-1.5 font-mono text-[11px] transition-colors duration-200
+                        disabled:opacity-40 ${
+                          (canPickThink ? fast === v : v === false)
+                            ? "border-signal text-signal"
+                            : "border-rule text-ink-3 hover:border-ink hover:text-ink"}`}
+                      style={{ borderRadius: "var(--r-sm)" }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <button onClick={() => setTools((v) => !v)} aria-pressed={tools} title={t("chat_tools_hint")}
                 className={`flex shrink-0 items-center gap-1.5 border px-2.5 py-1.5 font-mono text-[11px]

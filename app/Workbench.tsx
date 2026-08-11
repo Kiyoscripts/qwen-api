@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Play, Stop, CaretRight, MagnifyingGlass, Paperclip, X, Trash } from "@phosphor-icons/react";
 import { useT } from "./I18n";
 import { ModelPicker, acceptFor, toPickModel, type PickModel } from "./ModelPicker";
+import { EffortPicker } from "./EffortPicker";
 import { MediaAnswer } from "./MediaAnswer";
 
 type Mode = "chat" | "image" | "video" | "speech";
@@ -37,6 +38,7 @@ export function Workbench() {
   const [temperature, setTemperature] = useState(0.7);
   const [maxTokens, setMaxTokens] = useState(1024);
   const [thinking, setThinking] = useState(true);
+  const [effort, setEffort] = useState("low");
   const [tools, setTools] = useState(false);
   const [size, setSize] = useState("16:9");
   const [voice, setVoice] = useState("Cherry");
@@ -88,13 +90,22 @@ export function Workbench() {
     if (first) setModel(first.id);
   }, [mode, models]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const canThink = models.find((m) => m.id === model)?.thinking ?? false;
+  const picked = models.find((m) => m.id === model);
+  const effortLevels = picked?.reasoningEffort ?? [];
+  const hasEffort = effortLevels.length > 0;
+  // Binary think toggle only when multi-level effort is not available.
+  const canThink = Boolean(picked?.thinking) && !hasEffort;
   // Image and video both take a reference image, for editing and for
   // image-to-video respectively, so those modes always offer one.
   const accept =
     mode === "image" || mode === "video"
       ? "image/*"
-      : acceptFor(models.find((m) => m.id === model));
+      : acceptFor(picked);
+
+  useEffect(() => {
+    if (!hasEffort) return;
+    if (!effortLevels.includes(effort)) setEffort(effortLevels[0]);
+  }, [model, hasEffort, effortLevels, effort]);
 
   const body = useMemo(() => {
     if (mode === "image" || mode === "video") return { model, messages: [{ role: "user", content: prompt }], size };
@@ -121,12 +132,13 @@ export function Workbench() {
           : []),
       ],
       stream: true, temperature, max_tokens: maxTokens,
+      ...(hasEffort ? { reasoning_effort: effort } : {}),
       ...(canThink && !thinking ? { enable_thinking: false } : {}),
       ...(tools ? { tools: [{ type: "function", function: { name: "get_weather",
         description: "Current conditions for a place.",
         parameters: { type: "object", properties: { location: { type: "string" } }, required: ["location"] } } }] } : {}),
     };
-  }, [mode, model, prompt, system, size, temperature, maxTokens, thinking, canThink, tools, voice, file, turns]);
+  }, [mode, model, prompt, system, size, temperature, maxTokens, thinking, canThink, hasEffort, effort, tools, voice, file, turns]);
 
   const run = async () => {
     if (!prompt.trim() || state === "running") return;
@@ -331,8 +343,19 @@ export function Workbench() {
                   onChange={(e) => setMaxTokens(Number(e.target.value))} className="w-full accent-[var(--signal)]" />
               </Field>
               <Toggle label={t("pg_send_tool_schemas")} on={tools} onChange={setTools} />
-              <Toggle label={t("chat_reasoning")} on={canThink && thinking} onChange={setThinking} disabled={!canThink}
-                      hint={!canThink ? t("pg_always_reasons") : undefined} />
+              {hasEffort ? (
+                <Field label={t("chat_effort")}>
+                  <EffortPicker
+                    levels={effortLevels}
+                    value={effort}
+                    onChange={setEffort}
+                    label={t("chat_effort")}
+                  />
+                </Field>
+              ) : (
+                <Toggle label={t("chat_reasoning")} on={canThink && thinking} onChange={setThinking} disabled={!canThink}
+                        hint={!canThink ? t("pg_always_reasons") : undefined} />
+              )}
             </>
           )}
 

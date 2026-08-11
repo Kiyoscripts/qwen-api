@@ -20,6 +20,7 @@
 //    advertised and not routable, so the site runs exactly as it did before.
 
 import type { OpenAIMessage } from "./qwen";
+import { KIMI_K3_EFFORT, type ReasoningEffort } from "./reasoningEffort";
 
 export const TOKENROUTER_BASE = (process.env.TOKENROUTER_BASE || "https://api.tokenrouter.com/v1").replace(/\/+$/, "");
 
@@ -51,6 +52,8 @@ export interface TokenRouterModel {
   name: string;
   /** Id sent upstream when it differs from the public id. */
   upstreamId?: string;
+  /** Supported reasoning_effort values, if any. */
+  reasoningEffort?: readonly ReasoningEffort[];
 }
 
 /**
@@ -59,7 +62,13 @@ export interface TokenRouterModel {
  */
 export const TOKENROUTER_MODELS: TokenRouterModel[] = [
   // Public id is kimi-k3; the free-tier gateway still wants the free slug.
-  { id: "moonshotai/kimi-k3", name: "Kimi K3", upstreamId: "moonshotai/kimi-k3-free" },
+  {
+    id: "moonshotai/kimi-k3",
+    name: "Kimi K3",
+    upstreamId: "moonshotai/kimi-k3-free",
+    // Kimi documents low / high / max.
+    reasoningEffort: KIMI_K3_EFFORT,
+  },
 ];
 
 /** Whether the provider has credentials. Nothing is advertised without them. */
@@ -81,6 +90,7 @@ export interface TokenRouterCompletionOpts {
   stream: boolean;
   temperature?: number;
   max_tokens?: number;
+  reasoningEffort?: string;
 }
 
 export async function openCompletion(opts: TokenRouterCompletionOpts): Promise<Response> {
@@ -112,6 +122,7 @@ export async function openCompletion(opts: TokenRouterCompletionOpts): Promise<R
         stream: opts.stream,
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
         ...(opts.max_tokens !== undefined ? { max_tokens: opts.max_tokens } : {}),
+        ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
       }),
     });
   } catch (e: any) {

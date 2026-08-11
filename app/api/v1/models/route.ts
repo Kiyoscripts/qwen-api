@@ -60,7 +60,13 @@ const tokenRouterEntries = tokenRouterConfigured()
       created: 0,
       owned_by: "tokenrouter",
       display_name: m.name,
-      capabilities: { vision: false, thinking: false, chat_types: ["t2t"], input: { text: true, image: false, document: false, video: false, audio: false } },
+      capabilities: {
+        vision: false,
+        thinking: Boolean(m.reasoningEffort?.length),
+        chat_types: ["t2t"],
+        input: { text: true, image: false, document: false, video: false, audio: false },
+        ...(m.reasoningEffort?.length ? { reasoning_effort: [...m.reasoningEffort] } : {}),
+      },
     }))
   : [];
 
@@ -74,14 +80,14 @@ const openCodeZenEntries = openCodeZenConfigured()
       display_name: m.name,
       capabilities: {
         vision: false,
-        thinking: Boolean(m.thinking),
+        thinking: Boolean(m.thinking || m.reasoningEffort?.length),
         chat_types: ["t2t"],
         input: { text: true, image: false, document: false, video: false, audio: false },
         ...(m.contextLength ? { context_length: m.contextLength } : {}),
+        ...(m.reasoningEffort?.length ? { reasoning_effort: [...m.reasoningEffort] } : {}),
       },
     }))
   : [];
-
 export async function GET(req: NextRequest) {
   if (!(await authenticate(req))) {
     return NextResponse.json({ error: { message: "Invalid or missing API key.", type: "invalid_request_error" } }, { status: 401 });

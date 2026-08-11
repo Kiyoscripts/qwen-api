@@ -59,8 +59,10 @@ MODELS
 CODING CLIS
 - Claude Code: ANTHROPIC_BASE_URL=${CANONICAL_URL} (no /v1), ANTHROPIC_AUTH_TOKEN=$SYDE_API_KEY, ANTHROPIC_MODEL=qwen3.8-max. Also set ANTHROPIC_SMALL_FAST_MODEL, or background calls fail while chat works.
 - Codex: in ~/.codex/config.toml set model_provider with base_url = "${CANONICAL_URL}/v1", env_key = "SYDE_API_KEY", and wire_api = "chat". Without wire_api it defaults to the Responses API, which this endpoint does not implement.
-- OpenCode: provider entry with npm "@ai-sdk/openai-compatible", baseURL "${CANONICAL_URL}/v1". Model id opencode/big-pickle is Big Pickle (free OpenCode Zen stealth model; only listed when the server has OPENCODE_ZEN_API_KEY).
+- OpenCode: provider entry with npm "@ai-sdk/openai-compatible", baseURL "${CANONICAL_URL}/v1". Model id opencode/big-pickle is Big Pickle (only listed when OPENCODE_ZEN_API_KEY is set).
 - Aider and most others: OPENAI_BASE_URL="${CANONICAL_URL}/v1" and OPENAI_API_KEY, then a model like openai/qwen3.8-max.
+- reasoning_effort: multi-level effort when capabilities.reasoning_effort is present on /v1/models (e.g. deepseek/deepseek-v4-flash: low|high|max; opencode/laguna-s-2.1: low|medium|high; moonshotai/kimi-k3 via TokenRouter: low|high|max). Omit or use enable_thinking only for models without that list.
+
 
 ERRORS
 - OpenAI envelope, and the Anthropic shape on /v1/messages. Upstream status codes pass through rather than being flattened.

@@ -9,6 +9,8 @@ export interface ModelInputs { image: boolean; document: boolean; video: boolean
 export interface PickModel {
   id: string; name: string; maker: string; chatTypes: string[]; thinking: boolean;
   input: ModelInputs;
+  /** Multi-level reasoning_effort values this model accepts, if any. */
+  reasoningEffort: string[];
 }
 
 /**
@@ -31,12 +33,16 @@ export function acceptFor(m: PickModel | undefined): string {
 /** Reads the capability block the API returns for each model. */
 export function toPickModel(m: any): PickModel {
   const i = m.capabilities?.input ?? {};
+  const effort = Array.isArray(m.capabilities?.reasoning_effort)
+    ? m.capabilities.reasoning_effort.filter((x: unknown) => typeof x === "string")
+    : [];
   return {
     id: m.id,
     name: m.display_name || m.id,
     maker: (m.owned_by === "qwen" ? "qwen" : String(m.id).split("/")[0]) || "qwen",
     chatTypes: m.capabilities?.chat_types ?? ["t2t"],
     thinking: Boolean(m.capabilities?.thinking),
+    reasoningEffort: effort,
     input: {
       image: Boolean(i.image ?? m.capabilities?.vision),
       document: Boolean(i.document),

@@ -17,12 +17,19 @@
 //    clients (error 1010). A browser-ish User-Agent is required.
 //  - Promo models may use collected prompts to improve the model — treat them
 //    as best-effort, not a private backend.
-//  - Big Pickle streams `reasoning_content` before `content`. We surface both
-//    when reasoning is on; default is reasoning_effort "none" so it is fast.
+//  - Big Pickle can reason but OpenCode lists no variants for it — no effort UI.
+//  - Effort levels mirror OpenCode's catalog (`variants`); empty = unsupported.
 //  - Upstream is always opened with stream:true (headers land immediately).
 //    Non-stream callers still get a full JSON body; we buffer the SSE for them.
 
 import type { OpenAIMessage } from "./qwen";
+import {
+  DEEPSEEK_FLASH_EFFORT,
+  LOW_MED_HIGH_EFFORT,
+  NORTH_MINI_EFFORT,
+  defaultEffort,
+  type ReasoningEffort,
+} from "./reasoningEffort";
 
 export const OPENCODE_ZEN_BASE = (
   process.env.OPENCODE_ZEN_BASE || "https://opencode.ai/zen/v1"
@@ -43,17 +50,6 @@ const OPENCODE_ZEN_IDLE_MS = Number(process.env.OPENCODE_ZEN_IDLE_MS || 60_000);
 
 /** Retries for transient Zen 502/503 (promo endpoints flap often). */
 const OPENCODE_ZEN_RETRIES = Math.max(0, Number(process.env.OPENCODE_ZEN_RETRIES || 2));
-
-/**
- * Default reasoning for thinking models (Big Pickle).
- *
- * Measured against Zen: reasoning_effort "none" → ~1.3s TTFB and a real answer;
- * default / medium → ~20s of reasoning_content and often no content within the
- * first minute. Callers can still opt in via body.reasoning_effort or
- * enable_thinking: true.
- */
-const OPENCODE_ZEN_REASONING_DEFAULT =
-  (process.env.OPENCODE_ZEN_REASONING_DEFAULT || "none").toLowerCase();
 
 /** UA that Cloudflare accepts — bare node fetch / urllib is blocked (1010). */
 const OPENCODE_ZEN_UA =
@@ -79,6 +75,11 @@ export interface OpenCodeZenModel {
   /** Context window Zen documents for the model, when known. */
   contextLength?: number;
   thinking?: boolean;
+  /**
+   * Supported `reasoning_effort` values for this model. Empty/undefined means
+   * the model does not expose multi-level effort (do not send the field).
+   */
+  reasoningEffort?: readonly ReasoningEffort[];
 }
 
 /**
@@ -94,52 +95,63 @@ export const OPENCODE_ZEN_MODELS: OpenCodeZenModel[] = [
     name: "Big Pickle",
     upstreamId: "big-pickle",
     contextLength: 200_000,
+    // Reasons, but OpenCode variants is empty — no effort switch.
     thinking: true,
   },
   {
     id: "deepseek/deepseek-v4-flash",
     name: "DeepSeek V4 Flash",
     upstreamId: "deepseek-v4-flash-free",
-    thinking: false,
+    thinking: true,
+    // opencode/deepseek-v4-flash-free variants: low, high, max
+    reasoningEffort: DEEPSEEK_FLASH_EFFORT,
   },
   {
     id: "opencode/mimo-v2.5",
     name: "MiMo v2.5",
     upstreamId: "mimo-v2.5-free",
-    thinking: false,
+    // variants empty
+    thinking: true,
   },
   {
     id: "opencode/laguna-s-2.1",
     name: "Laguna S 2.1",
     upstreamId: "laguna-s-2.1-free",
-    thinking: false,
+    thinking: true,
+    // variants: low, medium, high
+    reasoningEffort: LOW_MED_HIGH_EFFORT,
   },
   {
     id: "opencode/ling-3.0-tiny",
     name: "Ling 3.0 Tiny",
     upstreamId: "ling-3.0-tiny-free",
-    thinking: false,
+    // variants empty
+    thinking: true,
   },
   {
     id: "opencode/longcat-2.0",
     name: "LongCat 2.0",
     upstreamId: "longcat-2.0-free",
-    thinking: false,
+    thinking: true,
+    // variants: low, medium, high
+    reasoningEffort: LOW_MED_HIGH_EFFORT,
   },
   {
     id: "nvidia/nemotron-3-ultra",
     name: "Nemotron 3 Ultra",
     upstreamId: "nemotron-3-ultra-free",
-    thinking: false,
+    // variants empty
+    thinking: true,
   },
   {
     id: "cohere/north-mini-code",
     name: "North Mini Code",
     upstreamId: "north-mini-code-free",
-    thinking: false,
+    thinking: true,
+    // variants: none, high
+    reasoningEffort: NORTH_MINI_EFFORT,
   },
 ];
-
 /** Whether the provider has credentials. Nothing is advertised without them. */
 export function openCodeZenConfigured(): boolean {
   return OPENCODE_ZEN_API_KEY.length > 0;
@@ -165,8 +177,9 @@ export interface OpenCodeZenCompletionOpts {
   temperature?: number;
   max_tokens?: number;
   /**
-   * Zen reasoning_effort. "none" is the fast default for thinking models.
-   * Pass "low"/"medium"/"high" (or enableThinking) for deeper thought.
+   * Zen reasoning_effort. When omitted, models that support effort default to
+   * "none" (or the first listed level). enableThinking maps true→medium,
+   * false→none when no explicit effort is set.
    */
   reasoningEffort?: string;
   enableThinking?: boolean;
@@ -178,13 +191,18 @@ export function resolveReasoningEffort(opts: {
   reasoningEffort?: string;
   enableThinking?: boolean;
 }): string | undefined {
-  if (!opts.model.thinking) return undefined;
+  const levels = opts.model.reasoningEffort;
+  if (!levels || levels.length === 0) return undefined;
   if (typeof opts.reasoningEffort === "string" && opts.reasoningEffort.trim()) {
     return opts.reasoningEffort.trim().toLowerCase();
   }
-  if (opts.enableThinking === true) return "medium";
-  if (opts.enableThinking === false) return "none";
-  return OPENCODE_ZEN_REASONING_DEFAULT;
+  if (opts.enableThinking === true) {
+    return levels.includes("medium" as ReasoningEffort) ? "medium" : levels[levels.length - 1];
+  }
+  if (opts.enableThinking === false) {
+    return levels.includes("none" as ReasoningEffort) ? "none" : levels[0];
+  }
+  return defaultEffort(levels);
 }
 
 function sleep(ms: number) {
