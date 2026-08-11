@@ -26,6 +26,12 @@ const COHERE_LOCKUP = '<svg fill="currentColor" fill-rule="evenodd" height="1em"
 const OPENROUTER_MONO = '<svg fill="currentColor" fill-rule="evenodd" height="1em" style="flex:none;line-height:1" viewBox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><title>OpenRouter</title><path d="M18.654 3.87a5.087 5.087 0 110 10.174L23.7 19.09c.64.641.187 1.737-.72 1.737H8.48a8.479 8.479 0 010-16.958h10.175zM8.479 7.26a5.087 5.087 0 100 10.176 5.087 5.087 0 000-10.175z"></path></svg>';
 const OPENROUTER_LOCKUP = '<svg fill="currentColor" fill-rule="evenodd" height="1em" style="flex:none;line-height:1" viewBox="0 0 120 24" xmlns="http://www.w3.org/2000/svg"><title>OpenRouter</title><path d="M8.472 5.521c3.499 0 6.403 2.699 6.403 6.29 0 3.613-2.835 6.38-6.426 6.38C4.927 18.19 2 15.47 2 11.856c0-3.613 2.927-6.335 6.472-6.335zm0 10.2c2.218 0 3.636-1.76 3.636-3.865 0-2.104-1.44-3.865-3.659-3.865-2.195 0-3.659 1.715-3.659 3.82 0 2.08 1.464 3.91 3.682 3.91zM22.613 18.169c-.937 0-2.995-.48-3.956-1.967V24h-2.721V5.774h2.653v1.898c1.029-1.67 3.018-2.127 4.093-2.127 3.75 0 5.992 3.224 5.992 6.289 0 3.316-2.447 6.335-6.06 6.335zm-.343-2.47c2.196 0 3.66-1.738 3.66-3.842s-1.441-3.865-3.66-3.865c-2.218 0-3.658 1.76-3.658 3.865 0 2.104 1.44 3.842 3.659 3.842zM32.426 12.68c.046 1.875 1.784 3.178 3.568 3.178 1.487 0 2.584-.549 3.293-1.898l1.967 1.304c-1.052 1.944-3.087 2.95-5.214 2.95-3.614 0-6.403-2.722-6.403-6.358 0-3.453 2.607-6.335 6.151-6.335 3.797 0 5.946 2.63 5.946 6.312 0 .115 0 .55-.046.847h-9.262zm.138-2.059h6.403c-.091-1.738-1.486-2.767-3.179-2.767-1.67 0-2.973 1.098-3.224 2.767zM51.344 11.147c0-1.738-.823-3.041-2.698-3.041-1.715 0-2.813 1.235-2.813 3.087v6.792h-2.721V5.773h2.652V7.42a4.586 4.586 0 013.728-1.899c3.11 0 4.574 2.173 4.574 4.94v7.524h-2.722v-6.838zM62.49 8.518a5.37 5.37 0 00-.777-.069c-2.081 0-3.18 1.235-3.18 3.34v6.197h-2.72V5.774h2.652v1.943C59.22 6.345 60.5 5.66 61.827 5.66c.16 0 .503.023.663.069v2.79zM69.283 5.521c3.498 0 6.403 2.699 6.403 6.29 0 3.613-2.836 6.38-6.426 6.38-3.522 0-6.45-2.721-6.45-6.335 0-3.613 2.928-6.335 6.473-6.335zm0 10.2c2.218 0 3.636-1.76 3.636-3.865 0-2.104-1.441-3.865-3.66-3.865-2.195 0-3.658 1.715-3.658 3.82 0 2.08 1.463 3.91 3.682 3.91zM79.693 12.611c0 1.738.823 3.042 2.699 3.042 1.715 0 2.813-1.235 2.813-3.088V5.774h2.721v12.212h-2.653V16.34a4.586 4.586 0 01-3.727 1.898c-3.065 0-4.574-2.173-4.574-4.963v-7.5h2.721v6.837zM94.376 13.617c0 1.51.754 2.036 2.104 2.036.251 0 .525-.023.868-.092v2.31c-.48.183-1.12.252-1.463.252-2.63 0-4.23-1.373-4.23-4.071V8.22h-2.242V5.773h2.241V2h2.722v3.773h2.995V8.22h-2.995v5.397zM100.578 12.68c.046 1.875 1.784 3.178 3.568 3.178 1.486 0 2.584-.549 3.293-1.898l1.967 1.304c-1.052 1.944-3.088 2.95-5.214 2.95-3.614 0-6.404-2.722-6.404-6.358 0-3.453 2.607-6.335 6.152-6.335 3.796 0 5.946 2.63 5.946 6.312 0 .115 0 .55-.046.847h-9.262zm.137-2.059h6.404c-.092-1.738-1.487-2.767-3.179-2.767-1.67 0-2.973 1.098-3.225 2.767zM117.759 8.518a5.357 5.357 0 00-.777-.069c-2.081 0-3.179 1.235-3.179 3.34v6.197h-2.721V5.774h2.653v1.943c.754-1.372 2.035-2.058 3.361-2.058.16 0 .503.023.663.069v2.79z"></path></svg>';
 
+/* Solar's rising-sun mark, recoloured to currentColor like the rest of the pack.
+ * Upstage ships a "solar chat" lockup rather than a company wordmark, and the
+ * logo wall on the home page is a fixed six that does not include it, so the
+ * mark stands in for both variants. */
+const SOLAR_MARK = '<svg fill="currentColor" style="flex:none;line-height:1" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M29.5239 0L28.7246 2.5751H24.1122L24.8907 0H29.5239ZM27.5091 6.77995L28.2584 4.20485H19.4249L18.6964 6.77995H27.5091ZM26.9929 8.40537L26.2436 10.9805H2.47402L3.20668 8.40537H26.9929ZM24.9989 15.1852L25.7482 12.6101H5.17569L4.44304 15.1852H24.9989ZM27.1636 16.8149L26.4143 19.39H5.8917L6.62435 16.8149H27.1636ZM28.3125 23.5948L29.0618 21.0197H5.35883L4.62618 23.5948H28.3125ZM13.2182 25.2203L12.4689 27.7954H3.3607L4.09335 25.2203H13.2182ZM7.50685 29.4251L6.70759 32.0002H2.09521L2.87366 29.4251H7.50685Z"/></svg>';
+
 export const LOGO_SVG: Record<string, string> = {
   "deepseek-lockup": DEEPSEEK_LOCKUP,
   "deepseek-mono": DEEPSEEK_MONO,
@@ -45,6 +51,8 @@ export const LOGO_SVG: Record<string, string> = {
   "cohere-mono": COHERE_MONO,
   "opencode-lockup": OPENROUTER_LOCKUP,
   "opencode-mono": OPENROUTER_MONO,
+  "solar-lockup": SOLAR_MARK,
+  "solar-mono": SOLAR_MARK,
 };
 
 export const LOGOS: Record<string, { name: string; mono: string; lockup: string }> = {
@@ -57,4 +65,5 @@ export const LOGOS: Record<string, { name: string; mono: string; lockup: string 
   nvidia: { name: "NVIDIA", mono: LOGO_SVG["nvidia-mono"], lockup: LOGO_SVG["nvidia-lockup"] },
   cohere: { name: "Cohere", mono: LOGO_SVG["cohere-mono"], lockup: LOGO_SVG["cohere-lockup"] },
   opencode: { name: "OpenCode Zen", mono: LOGO_SVG["opencode-mono"], lockup: LOGO_SVG["opencode-lockup"] },
+  upstage: { name: "Solar", mono: LOGO_SVG["solar-mono"], lockup: LOGO_SVG["solar-lockup"] },
 };

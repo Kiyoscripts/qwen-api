@@ -45,6 +45,14 @@ import {
   openCodeZenDeltas,
   OpenCodeZenError,
 } from "@/lib/opencodezen";
+import {
+  isSolarModel,
+  resolveSolarModel,
+  openCompletion as openSolarCompletion,
+  solarDeltas,
+  emptySummary,
+  SolarError,
+} from "@/lib/solar";
 import { pickReasoningEffort, defaultEffort } from "@/lib/reasoningEffort";
 import { logUsage } from "@/lib/supabase";
 import { authenticate } from "@/lib/apiAuth";
@@ -180,6 +188,12 @@ export async function POST(req: NextRequest) {
   // id is unknown and falls through rather than advertising a dead model.
   if (isOpenCodeZenModel(modelId)) {
     return handleOpenCodeZen({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
+  }
+
+  // Upstage's Solar Chat (Solar Pro 4). A public site with no key to hold, so
+  // the gate is availability rather than configuration.
+  if (isSolarModel(modelId)) {
+    return handleSolar({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
   }
 
   // Image / video generation models: generate a result and return it as markdown
@@ -1083,5 +1097,186 @@ async function handleOpenCodeZen(args: {
       },
     ],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  });
+}
+
+// --- Solar Chat (Upstage) ---------------------------------------------------
+//
+// A WebSocket upstream rather than an HTTP one, so this path holds a live
+// socket for the length of the reply instead of a Response body. `run.cancel()`
+// takes the place of cancelling that body, and must run on every exit — a
+// client that hangs up mid-answer would otherwise leave the socket open until
+// the idle timeout fires.
+//
+// Two things Solar gives us that the other providers do not: real token counts,
+// which are reported instead of the usual zeros, and search citations, which
+// lib/solar.ts appends as a source list so the answer's [n] markers resolve.
+async function handleSolar(args: {
+  messages: OpenAIMessage[];
+  modelId: string;
+  wantStream: boolean;
+  hadImage: boolean;
+  recordId: string;
+  body: any;
+}) {
+  const { messages, modelId, wantStream, hadImage, recordId, body } = args;
+
+  const model = resolveSolarModel(modelId);
+  if (!model) {
+    logUsage(recordId, modelId, hadImage, wantStream, 404);
+    return err(`Model '${modelId}' is not available.`, 404, "model_not_found");
+  }
+
+  // Not a soft limitation: the upstream rejects a multimodal content array at
+  // the protocol level, so there is nothing to degrade to.
+  if (hadImage) {
+    logUsage(recordId, modelId, hadImage, wantStream, 400);
+    return err(`Model '${modelId}' does not accept image input.`, 400);
+  }
+
+  const toolsOn = hasTools(body);
+  const effMessages: OpenAIMessage[] = toolsOn
+    ? (preprocessToolMessages(messages, body.tools, body.tool_choice) as OpenAIMessage[])
+    : messages;
+
+  // Instant (none) unless asked otherwise: `reasoning_effort` for the full
+  // ladder, `enable_thinking: true` for the composer's Think mode.
+  let effort: string | null = null;
+  try {
+    effort = pickReasoningEffort(body, model.reasoningEffort);
+  } catch (msg: any) {
+    logUsage(recordId, modelId, hadImage, wantStream, 400);
+    return err(typeof msg === "string" ? msg : "Invalid reasoning_effort.", 400);
+  }
+
+  let run: Awaited<ReturnType<typeof openSolarCompletion>>;
+  try {
+    run = await openSolarCompletion({
+      model: modelId,
+      messages: effMessages,
+      reasoningEffort: effort || undefined,
+      enableThinking: typeof body.enable_thinking === "boolean" ? body.enable_thinking : undefined,
+    });
+  } catch (e: any) {
+    const status = e instanceof SolarError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, wantStream, status);
+    return err(e.message || "Upstream error", status, status === 400 ? "invalid_request_error" : "upstream_error");
+  }
+
+  const id = "chatcmpl-" + randomUUID();
+  const created = Math.floor(Date.now() / 1000);
+  const withReasoning = showReasoning();
+  const summary = emptySummary();
+  const zeroUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+
+  if (wantStream) {
+    const encoder = new TextEncoder();
+    let hb: ReturnType<typeof keepAlive> | null = null;
+    const registry = toolsOn ? buildRegistry(body.tools) : null;
+    const stream = new ReadableStream({
+      async start(controller) {
+        hb = keepAlive(controller, encoder);
+        const send = (delta: any, finish: string | null = null) => {
+          hb!.touch();
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
+            )
+          );
+        };
+        try {
+          send({ role: "assistant" });
+
+          const parser = registry ? new ToolStream(registry) : null;
+          let toolCalls: OAIToolCall[] = [];
+
+          try {
+            for await (const d of solarDeltas(run.frames, summary)) {
+              if (d.kind === "reasoning") {
+                if (withReasoning && d.text) send({ reasoning_content: d.text });
+                continue;
+              }
+              if (parser) {
+                const out = parser.push(d.text);
+                if (out) send({ content: out });
+              } else {
+                send({ content: d.text });
+              }
+            }
+            if (parser) {
+              const fin = parser.end();
+              if (fin.text) send({ content: fin.text });
+              toolCalls = applyToolPolicy(fin.toolCalls, body, registry!);
+            }
+          } catch (e: any) {
+            if (parser) {
+              try { toolCalls = applyToolPolicy(parser.end().toolCalls, body, registry!); } catch { /* nothing to salvage */ }
+            }
+            send({ content: `\n[error: ${e.message}]` });
+          }
+
+          hb.stop();
+          if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
+          send({}, toolCalls.length ? "tool_calls" : "stop");
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          logUsage(recordId, modelId, hadImage, true, 200);
+        } catch {
+          logUsage(recordId, modelId, hadImage, true, 499);
+        } finally {
+          hb.stop();
+          run.cancel();
+        }
+      },
+      cancel() {
+        hb?.stop();
+        run.cancel();
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  }
+
+  // Non-stream client: Solar only streams, so reassemble into one JSON body.
+  let content = "";
+  let reasoning = "";
+  try {
+    for await (const d of solarDeltas(run.frames, summary)) {
+      if (d.kind === "reasoning") reasoning += d.text;
+      else content += d.text;
+    }
+  } catch (e: any) {
+    const status = e instanceof SolarError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, false, status);
+    return err(e.message || "Upstream error", status, "upstream_error");
+  } finally {
+    run.cancel();
+  }
+  logUsage(recordId, modelId, hadImage, false, 200);
+
+  const { content: toolContent, toolCalls: parsed } = toolsOn
+    ? extractToolCalls(content, body.tools)
+    : { content, toolCalls: [] as OAIToolCall[] };
+  const toolCalls = toolsOn ? applyToolPolicy(parsed, body, buildRegistry(body.tools)) : [];
+
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: toolCalls.length ? toolContent : content,
+  };
+  if (toolCalls.length) message.tool_calls = toolCalls;
+  if (withReasoning && reasoning) message.reasoning_content = reasoning;
+
+  return NextResponse.json({
+    id,
+    object: "chat.completion",
+    created,
+    model: modelId,
+    choices: [
+      {
+        index: 0,
+        message,
+        finish_reason: toolCalls.length ? "tool_calls" : "stop",
+      },
+    ],
+    usage: summary.usage ?? zeroUsage,
   });
 }

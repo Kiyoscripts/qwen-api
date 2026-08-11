@@ -7,8 +7,15 @@
 //
 // Qwen remains a boolean (enable_thinking) and is not covered here.
 
-/** Canonical order for UI (low effort → high). */
+/**
+ * Canonical order for UI (low effort → high).
+ *
+ * "adaptive" leads because it is not a rung on the ladder: it hands the choice
+ * to the model, which is what Solar's composer calls Auto. Only providers that
+ * advertise it list it.
+ */
 export const REASONING_EFFORT_ORDER = [
+  "adaptive",
   "none",
   "minimal",
   "low",
@@ -22,6 +29,7 @@ export type ReasoningEffort = (typeof REASONING_EFFORT_ORDER)[number];
 
 /** Short labels for the effort picker. */
 export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
+  adaptive: "Auto",
   none: "None",
   minimal: "Min",
   low: "Low",

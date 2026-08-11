@@ -3,6 +3,7 @@ import { getModels } from "@/lib/qwen";
 import { ONECOMPILER_MODELS } from "@/lib/onecompiler";
 import { TOKENROUTER_MODELS, tokenRouterConfigured } from "@/lib/tokenrouter";
 import { OPENCODE_ZEN_MODELS, openCodeZenConfigured } from "@/lib/opencodezen";
+import { SOLAR_MODELS, solarConfigured } from "@/lib/solar";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 import { withTokenFailover } from "@/lib/tokens";
@@ -88,6 +89,26 @@ const openCodeZenEntries = openCodeZenConfigured()
       },
     }))
   : [];
+// Upstage's Solar Chat. Public rather than key-gated, so the flag is a kill
+// switch; text-only, because the upstream refuses image input outright.
+const solarEntries = solarConfigured()
+  ? SOLAR_MODELS.map((m) => ({
+      id: m.id,
+      object: "model" as const,
+      created: 0,
+      owned_by: "upstage",
+      display_name: m.name,
+      capabilities: {
+        vision: false,
+        thinking: Boolean(m.thinking),
+        chat_types: ["t2t"],
+        input: { text: true, image: false, document: false, video: false, audio: false },
+        ...(m.contextLength ? { context_length: m.contextLength } : {}),
+        ...(m.reasoningEffort?.length ? { reasoning_effort: [...m.reasoningEffort] } : {}),
+      },
+    }))
+  : [];
+
 export async function GET(req: NextRequest) {
   if (!(await authenticate(req))) {
     return NextResponse.json({ error: { message: "Invalid or missing API key.", type: "invalid_request_error" } }, { status: 401 });
@@ -124,7 +145,7 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({
       object: "list",
-      data: [...customEntries, ...mediaEntries, ...oneCompilerEntries, ...tokenRouterEntries, ...openCodeZenEntries, ...qwenEntries],
+      data: [...customEntries, ...mediaEntries, ...oneCompilerEntries, ...tokenRouterEntries, ...openCodeZenEntries, ...solarEntries, ...qwenEntries],
     });
   } catch (e: any) {
     return NextResponse.json({ error: { message: e.message, type: "upstream_error" } }, { status: 503 });

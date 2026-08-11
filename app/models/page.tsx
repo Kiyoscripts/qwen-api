@@ -5,6 +5,7 @@ import { VIRTUAL_MODELS } from "@/lib/media";
 import { ONECOMPILER_MODELS } from "@/lib/onecompiler";
 import { TOKENROUTER_MODELS, tokenRouterConfigured } from "@/lib/tokenrouter";
 import { OPENCODE_ZEN_MODELS, openCodeZenConfigured } from "@/lib/opencodezen";
+import { SOLAR_MODELS, solarConfigured } from "@/lib/solar";
 import { modelMaker } from "@/lib/modelIcons";
 import { Shell } from "../Shell";
 import { ModelBrowser } from "../ModelBrowser";
@@ -38,6 +39,18 @@ async function load(): Promise<{ rows: CardModel[]; degraded: boolean }> {
         name: m.name,
         owner: "opencode",
         maker: modelMaker(m.id, "opencode").key,
+        inputs: [],
+        thinking: Boolean(m.thinking),
+        context: m.contextLength,
+      });
+
+  if (solarConfigured())
+    for (const m of SOLAR_MODELS)
+      rows.push({
+        id: m.id,
+        name: m.name,
+        owner: "upstage",
+        maker: modelMaker(m.id, "upstage").key,
         inputs: [],
         thinking: Boolean(m.thinking),
         context: m.contextLength,
