@@ -39,7 +39,8 @@ STREAMING
 
 REASONING
 - enable_thinking: false skips the thinking phase on models that offer both modes.
-- qwen3.8-max-preview always reasons and ignores the flag.
+- Some models always reason and ignore the flag. GET /v1/models is authoritative: capabilities.thinking says whether a model reasons at all.
+- Model availability changes without notice. qwen3.8-max-preview was listed here until upstream withdrew it, so treat any id in prose as an example and /v1/models as the truth.
 
 TOOL CALLING
 - Send OpenAI function schemas in "tools"; calls come back in choices[0].message.tool_calls.
@@ -48,7 +49,7 @@ TOOL CALLING
 
 INPUTS
 - Read capabilities.input on any model rather than assuming.
-- qwen3.8-max accepts image, file, video and audio. qwen3.8-max-preview accepts all of those except audio, which is the only difference between them.
+- qwen3.8-max accepts image, file, video and audio. Other models differ, so read capabilities.input rather than assuming.
 - Images are sent as a content part: { type: "image_url", image_url: { url } }, where url may be a data: URL.
 
 MODELS

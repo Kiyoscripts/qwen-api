@@ -283,7 +283,14 @@ export async function POST(req: NextRequest) {
     if (!resumed) {
     const { token: usedToken, entryId: usedEntry, result } = await withTokenFailover(async (candidate) => {
       const model = await resolveModel(candidate, backendModel);
-      if (!model) throw new QwenError(`Model '${modelId}' is not available.`, 404);
+      if (!model)
+        throw new QwenError(
+          // Usually a model that existed when the caller wrote their config and
+          // has since been withdrawn upstream, so point at the live list rather
+          // than only reporting the miss.
+          `Model '${modelId}' is not available. GET /v1/models lists what this key can reach.`,
+          404
+        );
       const files = await uploadImages(candidate, imageUrlsIn(messages[messages.length - 1]));
 
       let cid: string | undefined;
