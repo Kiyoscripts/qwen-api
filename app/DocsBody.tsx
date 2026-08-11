@@ -395,14 +395,14 @@ for chunk in stream:
               <C>GET /v1/models</C> lists everything your key can reach. Each
               entry declares what it accepts under <C>capabilities.input</C>,
               which is worth reading rather than assuming: qwen3.8-max takes
-              image, file, video and audio, and others differ.
+              image, file, video and audio, while qwen3.8-max-preview takes
+              everything except audio.
             </P>
             <P>
               Read that endpoint rather than this page for what exists today.
-              The catalogue tracks upstream, so models arrive and are withdrawn
-              without notice — <C>qwen3.8-max-preview</C> was documented here
-              until it was withdrawn — and any id written in prose is an
-              example rather than a promise.
+              The catalogue tracks upstream, so ids arrive and change without
+              notice, and anything written in prose is an example rather than a
+              promise.
             </P>
           </Section>
 

@@ -148,6 +148,35 @@ export function qwenHeaders(
 let modelCache: { models: ModelInfo[]; at: number } | null = null;
 const MODEL_TTL = 5 * 60_000;
 
+/**
+ * Models the catalogue has stopped listing but the endpoint still answers.
+ *
+ * Upstream dropped qwen3.8-max-preview from /api/models while continuing to
+ * serve it: a request naming it returns a normal completion. Because this proxy
+ * validates the requested id against the listing, that silently turned into a
+ * 404 on our side for a model that works, and it disappeared from every picker.
+ *
+ * Pinning it keeps it reachable. Each entry is only added when the listing does
+ * not already contain it, so the moment upstream lists it again its own metadata
+ * wins and this becomes inert. If upstream genuinely retires it, the request
+ * fails upstream with a real error instead of being refused here on the
+ * strength of a catalogue that had already proven unreliable.
+ */
+const PINNED: ModelInfo[] = [
+  {
+    id: "qwen3.8-max-preview",
+    name: "Qwen3.8-Max-Preview",
+    chatTypes: ["t2t", "search", "t2i", "t2v"],
+    thinking: true,
+    vision: true,
+    document: true,
+    video: true,
+    // The one thing that separated it from qwen3.8-max while both were listed.
+    audio: false,
+    contextLength: 1_000_000,
+  },
+];
+
 export async function getModels(token: string): Promise<ModelInfo[]> {
   if (modelCache && Date.now() - modelCache.at < MODEL_TTL) return modelCache.models;
   const res = await fetch(`${QWEN_BASE}/api/models`, { headers: qwenHeaders(token) });
@@ -170,6 +199,11 @@ export async function getModels(token: string): Promise<ModelInfo[]> {
       contextLength: typeof meta.max_context_length === "number" ? meta.max_context_length : undefined,
     };
   });
+  // Only fills gaps: anything upstream lists keeps upstream's own metadata.
+  for (const pin of PINNED) {
+    if (!models.some((m) => m.id === pin.id)) models.push(pin);
+  }
+
   if (models.length) modelCache = { models, at: Date.now() };
   return models;
 }
