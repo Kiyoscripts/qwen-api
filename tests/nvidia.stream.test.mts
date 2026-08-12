@@ -59,7 +59,7 @@ async function collect(res: Response): Promise<{ text: string; reasoning: string
   check("plain stream concatenates", out.text === "Hello world", JSON.stringify(out));
 }
 
-// 2. Reasoning then content — GLM-5.2's shape with thinking on.
+// 2. Reasoning then content — the shape with thinking on.
 {
   const out = await collect(
     sse([reasonFrame("work"), reasonFrame("ing"), contentFrame("144"), "data: [DONE]\n\n"])
@@ -127,23 +127,24 @@ async function collect(res: Response): Promise<{ text: string; reasoning: string
 // `enable_thinking` is the key that works; `thinking` is ignored upstream. The
 // pairing with clear_thinking is what build.nvidia.com's playground sends.
 
-const glm = resolveNvidiaModel("z-ai/glm-5.2")!;
+// GLM-5.2 moved to lib/chatglm.ts, so Muse Glimmer is the reasoning model here.
+const muse = resolveNvidiaModel("meta/muse-glimmer-30b")!;
 
 // 9. Default is on, matching the playground.
 {
-  const k = thinkingKwargs(glm, undefined);
+  const k = thinkingKwargs(muse, undefined);
   check("default reasoning is on", k?.enable_thinking === true && k?.clear_thinking === false, JSON.stringify(k));
 }
 
 // 10. Explicitly on.
 {
-  const k = thinkingKwargs(glm, true);
+  const k = thinkingKwargs(muse, true);
   check("enable_thinking true", k?.enable_thinking === true && k?.clear_thinking === false, JSON.stringify(k));
 }
 
 // 11. Off flips both fields — clear_thinking is what actually suppresses it.
 {
-  const k = thinkingKwargs(glm, false);
+  const k = thinkingKwargs(muse, false);
   check("enable_thinking false clears too", k?.enable_thinking === false && k?.clear_thinking === true, JSON.stringify(k));
 }
 
@@ -160,7 +161,7 @@ const glm = resolveNvidiaModel("z-ai/glm-5.2")!;
   const m = resolveNvidiaModel("meta/muse-glimmer-30b");
   check("muse glimmer resolves", m?.name === "Muse Glimmer 30B", String(m?.name));
   check("public id is the upstream id", m?.id === "meta/muse-glimmer-30b");
-  check("both models reason", NVIDIA_MODELS.every((x) => x.thinking === true));
+  check("every listed model reasons", NVIDIA_MODELS.every((x) => x.thinking === true));
   check("no public id says free", !NVIDIA_MODELS.some((x) => /free/i.test(x.id) || /free/i.test(x.name)));
 }
 
@@ -170,10 +171,10 @@ const glm = resolveNvidiaModel("z-ai/glm-5.2")!;
   const configured = Boolean(process.env.NVIDIA_API_KEY);
   check(
     "isNvidiaModel follows configuration",
-    isNvidiaModel("z-ai/glm-5.2") === configured,
+    isNvidiaModel("meta/muse-glimmer-30b") === configured,
     `configured=${configured}`
   );
-  check("unknown ids are never routable", !isNvidiaModel("z-ai/glm-9.9"));
+  check("unknown ids are never routable", !isNvidiaModel("meta/muse-glimmer-99b"));
 }
 
 console.log(`nvidia.stream: ${passed} passed, ${failed} failed`);

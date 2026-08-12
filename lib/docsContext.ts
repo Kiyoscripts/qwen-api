@@ -53,10 +53,12 @@ INPUTS
 - Images are sent as a content part: { type: "image_url", image_url: { url } }, where url may be a data: URL.
 
 MODELS
-- Qwen ids look like qwen3.8-max. Other makers are prefixed: moonshotai/kimi-k3, openai/gpt-5.6-luna, deepseek/deepseek-v4-pro, deepseek/deepseek-v4-flash, xai/grok-4.3, google/gemma-3.12b, nvidia/nemotron-3-ultra, cohere/north-mini-code, opencode/big-pickle, upstage/solar-pro-4, upstage/solar-open-2, z-ai/glm-5.2, meta/muse-glimmer-30b. Public ids never include "free".
+- Qwen ids look like qwen3.8-max. Other makers are prefixed: moonshotai/kimi-k3, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash, xai/grok-4.3, google/gemma-3.12b, nvidia/nemotron-3-ultra, cohere/north-mini-code, opencode/big-pickle, upstage/solar-pro-4, upstage/solar-open-2, z-ai/glm-5.2, meta/muse-glimmer-30b. Public ids never include "free".
 - Media models: qwen-image-3.0, qwen-image-2.0 (both also edit), qwen-wan (video).
 - Flagship context is 1,000,000 tokens.
-- z-ai/glm-5.2 (GLM-5.2) and meta/muse-glimmer-30b (Muse Glimmer 30B) come from NVIDIA NIM and are listed only when NVIDIA_API_KEY is set. Both reason; the switch is enable_thinking (true/false), not reasoning_effort, and reasoning is ON by default. Cold starts can take a minute — stream to avoid a long silent wait.
+- z-ai/glm-5.2 (GLM-5.2) comes from chatglm.cn and accepts image input. Its thinking modes are reasoning_effort none|medium|high, which map to the site's Fast, Standard and Deep; enable_thinking:true is Standard. Default is Fast.
+- z-ai/glm-image (GLM Image) and z-ai/glm-image-fast (GLM Image Fast) generate images and reply with markdown media, like the Qwen image models. glm-image-fast also accepts a reference image; glm-image is text-to-image only. Both honour the watermark request field.
+- meta/muse-glimmer-30b (Muse Glimmer 30B) comes from NVIDIA NIM and is listed only when NVIDIA_API_KEY is set. It reasons; the switch is enable_thinking (true/false), not reasoning_effort, and reasoning is ON by default. Cold starts can take a minute — stream to avoid a long silent wait.
 - upstage/solar-pro-4 (Solar Pro 4) is Upstage's search agent: 512k context, text only, and it searches the web itself, appending the sources it cited. Its two headline modes are Instant (reasoning_effort "none", or enable_thinking false) and Thinking (reasoning_effort "xhigh", or enable_thinking true); "adaptive" lets the model pick. Default is Instant.
 
 CODING CLIS
@@ -64,7 +66,7 @@ CODING CLIS
 - Codex: in ~/.codex/config.toml set model_provider with base_url = "${CANONICAL_URL}/v1", env_key = "SYDE_API_KEY", and wire_api = "chat". Without wire_api it defaults to the Responses API, which this endpoint does not implement.
 - OpenCode: provider entry with npm "@ai-sdk/openai-compatible", baseURL "${CANONICAL_URL}/v1". Model id opencode/big-pickle is Big Pickle (only listed when OPENCODE_ZEN_API_KEY is set).
 - Aider and most others: OPENAI_BASE_URL="${CANONICAL_URL}/v1" and OPENAI_API_KEY, then a model like openai/qwen3.8-max.
-- reasoning_effort: multi-level effort when capabilities.reasoning_effort is present on /v1/models (e.g. deepseek/deepseek-v4-flash: low|high|max; opencode/laguna-s-2.1: low|medium|high; moonshotai/kimi-k3 via TokenRouter: low|high|max; upstage/solar-pro-4: adaptive|none|minimal|low|medium|high|xhigh|max). Omit or use enable_thinking only for models without that list.
+- reasoning_effort: multi-level effort when capabilities.reasoning_effort is present on /v1/models (e.g. deepseek/deepseek-v4-flash: low|high|max; opencode/laguna-s-2.1: low|medium|high; moonshotai/kimi-k3 via TokenRouter: low|high|max; upstage/solar-pro-4: adaptive|none|minimal|low|medium|high|xhigh|max; z-ai/glm-5.2: none|medium|high for Fast/Standard/Deep). Omit or use enable_thinking only for models without that list.
 
 
 ERRORS

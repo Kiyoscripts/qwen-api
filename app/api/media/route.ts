@@ -14,7 +14,9 @@ const ALLOWED_HOSTS = [
   "download.qwen.ai",
   "qwen-webui-prod.oss-accelerate.aliyuncs.com",
 ];
-const ALLOWED_SUFFIXES = [".aliyuncs.com", ".alicdn.com", ".qwenlm.ai", ".qwen.ai"];
+// .chatglm.cn covers the GLM image models: results land on sfile.chatglm.cn and
+// uploads on t1.chatglm.cn. Without it the watermark proxy 403s its own images.
+const ALLOWED_SUFFIXES = [".aliyuncs.com", ".alicdn.com", ".qwenlm.ai", ".qwen.ai", ".chatglm.cn"];
 
 function allowed(u: URL): boolean {
   const h = u.hostname.toLowerCase();

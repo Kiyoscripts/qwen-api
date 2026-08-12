@@ -7,6 +7,7 @@ import { TOKENROUTER_MODELS, tokenRouterConfigured } from "@/lib/tokenrouter";
 import { OPENCODE_ZEN_MODELS, openCodeZenConfigured } from "@/lib/opencodezen";
 import { SOLAR_MODELS, solarConfigured } from "@/lib/solar";
 import { NVIDIA_MODELS, nvidiaConfigured } from "@/lib/nvidia";
+import { CHATGLM_MODELS, chatglmConfigured } from "@/lib/chatglm";
 import { modelMaker } from "@/lib/modelIcons";
 import { Shell } from "../Shell";
 import { ModelBrowser } from "../ModelBrowser";
@@ -53,6 +54,18 @@ async function load(): Promise<{ rows: CardModel[]; degraded: boolean }> {
         owner: "upstage",
         maker: modelMaker(m.id, "upstage").key,
         inputs: [],
+        thinking: Boolean(m.thinking),
+        context: m.contextLength,
+      });
+
+  if (chatglmConfigured())
+    for (const m of CHATGLM_MODELS)
+      rows.push({
+        id: m.id,
+        name: m.name,
+        owner: "z-ai",
+        maker: modelMaker(m.id, "z-ai").key,
+        inputs: m.vision ? ["image"] : [],
         thinking: Boolean(m.thinking),
         context: m.contextLength,
       });

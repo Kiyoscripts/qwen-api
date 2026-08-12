@@ -129,11 +129,11 @@ const ANSWER = "## Counting\n\n1. one\n2. two\n";
 
 // --- registry ---------------------------------------------------------------
 // The routing guarantee: exact match only. A prefix test would let
-// "deepseek/deepseek-v4-pro" be claimed by the DeepSeek provider's
-// startsWith("deepseek") check before this one ever sees it.
+// "moonshotai/kimi-k2.6" be claimed by another provider's startsWith("moonshotai")
+// check before this one ever sees it.
 {
-  check("known free model is claimed", isOneCompilerModel("deepseek/deepseek-v4-pro"));
-  check("bare deepseek id is NOT claimed", !isOneCompilerModel("deepseek-v4-pro"));
+  check("known free model is claimed", isOneCompilerModel("moonshotai/kimi-k2.6"));
+  check("bare id is NOT claimed", !isOneCompilerModel("kimi-k2.6"));
   check("unknown id is not claimed", !isOneCompilerModel("openai/gpt-5.4-mini-turbo"));
 
   // Premium models must never appear in the registry: presence here is what makes
@@ -150,7 +150,7 @@ const ANSWER = "## Counting\n\n1. one\n2. two\n";
   check("no premium model is exposed", leaked.length === 0, leaked.join(", "));
   check("every id carries a maker prefix", ONECOMPILER_MODELS.every((m) => m.id.includes("/")));
   check("registry has no duplicate ids", new Set(ONECOMPILER_MODELS.map((m) => m.id)).size === ONECOMPILER_MODELS.length);
-  check("registry has the 10 free models", ONECOMPILER_MODELS.length === 10, String(ONECOMPILER_MODELS.length));
+  check("registry has the 9 free models", ONECOMPILER_MODELS.length === 9, String(ONECOMPILER_MODELS.length));
 }
 
 // --- open-time sentinel detection (what makes token failover possible) ------

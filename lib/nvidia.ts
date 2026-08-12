@@ -76,13 +76,11 @@ export interface NvidiaModel {
   thinking?: boolean;
 }
 
+// GLM-5.2 used to be served from here. It moved to lib/chatglm.ts, which gets
+// the Fast/Standard/Deep thinking switch, vision and image generation that this
+// endpoint does not expose. Moving the entry back here is the fallback if the
+// consumer site's anti-bot scheme changes and that provider stops working.
 export const NVIDIA_MODELS: NvidiaModel[] = [
-  {
-    id: "z-ai/glm-5.2",
-    name: "GLM-5.2",
-    contextLength: 200_000,
-    thinking: true,
-  },
   {
     id: "meta/muse-glimmer-30b",
     name: "Muse Glimmer 30B",

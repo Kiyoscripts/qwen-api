@@ -58,7 +58,6 @@ export const ONECOMPILER_MODELS: OneCompilerModel[] = [
   { id: "openai/gpt-5.4-nano", name: "GPT 5.4 Nano" },
   { id: "openai/gpt-5.6-luna", name: "GPT 5.6 Luna" },
   { id: "google/gemma-3.12b", name: "Gemma 3 12B" },
-  { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
   { id: "moonshotai/kimi-k2.6", name: "Kimi K2.6" },
   { id: "moonshotai/kimi-k2.7-code", name: "Kimi K2.7 Code" },
   { id: "qwen/qwen3-coder-480b", name: "Qwen3 Coder 480B" },

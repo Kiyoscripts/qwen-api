@@ -19,7 +19,9 @@ const OPTIONAL = ["QWEN_CLIENT_VERSION", "QWEN_USER_AGENT", "QWEN_EXTRA_COOKIES"
                   "TOKENROUTER_API_KEY", "TOKENROUTER_BASE",
                   "OPENCODE_ZEN_API_KEY", "OPENCODE_ZEN_BASE", "OPENCODE_ZEN_TIMEOUT_MS",
                   "SOLAR_DISABLED", "SOLAR_BASE", "SOLAR_TIMEOUT_MS", "SOLAR_IDLE_MS", "SOLAR_CITATIONS",
-                  "NVIDIA_API_KEY", "NVIDIA_BASE", "NVIDIA_TIMEOUT_MS", "NVIDIA_IDLE_MS"];
+                  "NVIDIA_API_KEY", "NVIDIA_BASE", "NVIDIA_TIMEOUT_MS", "NVIDIA_IDLE_MS",
+                  "CHATGLM_DISABLED", "CHATGLM_BASE", "CHATGLM_TIMEOUT_MS", "CHATGLM_IDLE_MS",
+                  "CHATGLM_SALT", "CHATGLM_EXP_GROUPS"];
 
 // The Discord bot ships in the same image, so its config belongs in the same
 // paste. Copied only when present rather than placeholdered like REQUIRED: a

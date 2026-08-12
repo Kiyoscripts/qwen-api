@@ -18,7 +18,7 @@ import {
 } from "@/lib/qwen";
 import { withTokenFailover, tokenById } from "@/lib/tokens";
 import { findSession, saveSession, forgetSession } from "@/lib/qwenSessions";
-import { virtualModel, generateImage, startVideo, type VirtualModel } from "@/lib/media";
+import { virtualModel, generateImage, startVideo, toRatio, type VirtualModel } from "@/lib/media";
 import { resolveWatermark, buildMediaUrl } from "@/lib/watermark";
 import { hasTools, preprocessToolMessages, buildRegistry, ToolStream, extractToolCalls, applyToolPolicy, type OAIToolCall } from "@/lib/tools";
 import { customModel, systemPromptFor } from "@/lib/customModels";
@@ -45,6 +45,19 @@ import {
   openCodeZenDeltas,
   OpenCodeZenError,
 } from "@/lib/opencodezen";
+import {
+  isChatGLMModel,
+  resolveChatGLMModel,
+  chatglmImageModel,
+  openCompletion as openChatGLMCompletion,
+  chatglmDeltas,
+  emptyChatGLMSummary,
+  toChatGLMMessages,
+  resolveChatMode,
+  uploadImage as chatglmUploadImage,
+  generateImage as chatglmGenerateImage,
+  ChatGLMError,
+} from "@/lib/chatglm";
 import {
   isNvidiaModel,
   resolveNvidiaModel,
@@ -197,7 +210,22 @@ export async function POST(req: NextRequest) {
     return handleOpenCodeZen({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
   }
 
-  // NVIDIA NIM (GLM-5.2, Muse Glimmer). Gated on NVIDIA_API_KEY inside
+  // chatglm.cn — GLM-5.2 with its Fast/Standard/Deep modes and vision, plus the
+  // two image models. Checked before NVIDIA because it now owns z-ai/glm-5.2.
+  if (isChatGLMModel(modelId)) {
+    return handleChatGLM({
+      messages,
+      modelId,
+      wantStream,
+      hadImage,
+      recordId: record.id,
+      body,
+      watermark: resolveWatermark(body.watermark),
+      origin: publicOrigin(req),
+    });
+  }
+
+  // NVIDIA NIM (Muse Glimmer). Gated on NVIDIA_API_KEY inside
   // isNvidiaModel, so an unconfigured deploy never routes here.
   if (isNvidiaModel(modelId)) {
     return handleNvidia({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
@@ -1294,7 +1322,270 @@ async function handleSolar(args: {
   });
 }
 
-// --- NVIDIA NIM (GLM-5.2, Muse Glimmer) -------------------------------------
+// --- chatglm.cn (GLM-5.2 + the GLM image models) ----------------------------
+//
+// Two shapes behind one entry point: the text model streams like any other
+// provider, while the image models generate a picture and hand back markdown
+// media — the same contract handleMedia uses for the Qwen image models, so a
+// client that can render one renders the other.
+//
+// Vision is real here, unlike on the NIM-backed GLM: image parts are uploaded
+// to chatglm.cn first and the returned handles ride along in the message. The
+// upstream takes bytes, not links, so a remote URL is fetched and re-uploaded.
+async function handleChatGLM(args: {
+  messages: OpenAIMessage[];
+  modelId: string;
+  wantStream: boolean;
+  hadImage: boolean;
+  recordId: string;
+  body: any;
+  watermark: string | null;
+  origin: string;
+}) {
+  const { messages, modelId, wantStream, hadImage, recordId, body, watermark, origin } = args;
+
+  const model = resolveChatGLMModel(modelId);
+  if (!model) {
+    logUsage(recordId, modelId, hadImage, wantStream, 404);
+    return err(`Model '${modelId}' is not available.`, 404, "model_not_found");
+  }
+  if (hadImage && !model.vision) {
+    logUsage(recordId, modelId, hadImage, wantStream, 400);
+    return err(`Model '${modelId}' does not accept image input.`, 400);
+  }
+
+  // Upload every referenced image once, keyed by the URL the message used, so
+  // toChatGLMMessages can swap each part for its upstream handle.
+  const uploads = new Map<string, { image_url: string; file_id?: string }>();
+  if (model.vision) {
+    const urls = new Set<string>();
+    for (const m of messages) for (const u of imageUrlsIn(m)) urls.add(u);
+    try {
+      await Promise.all(
+        [...urls].map(async (u) => uploads.set(u, await chatglmUploadImage(u)))
+      );
+    } catch (e: any) {
+      const status = e instanceof ChatGLMError ? e.status : 502;
+      logUsage(recordId, modelId, hadImage, wantStream, status);
+      return err(e.message || "Image upload failed", status, "upstream_error");
+    }
+  }
+
+  // --- image models: generate, then return markdown media ---
+  if (chatglmImageModel(modelId)) {
+    let glmMessages;
+    try {
+      glmMessages = toChatGLMMessages(messages, uploads);
+    } catch (e: any) {
+      logUsage(recordId, modelId, hadImage, wantStream, 400);
+      return err(e.message || "Invalid request", 400);
+    }
+    const prompt = messageText(messages[messages.length - 1]).trim();
+
+    let out;
+    try {
+      out = await chatglmGenerateImage({
+        model: modelId,
+        messages: glmMessages,
+        aspectRatio: toRatio(typeof body.size === "string" ? body.size : undefined),
+      });
+    } catch (e: any) {
+      const status = e instanceof ChatGLMError ? e.status : 502;
+      logUsage(recordId, modelId, hadImage, wantStream, status);
+      return err(e.message || "Image generation failed", status, "upstream_error");
+    }
+    logUsage(recordId, modelId, hadImage, wantStream, 200);
+
+    // rm_label_watermark strips chatglm's own corner label upstream, so the
+    // proxy's watermark is the only one on the result.
+    const alt = (out.prompt || prompt || "image").slice(0, 80).replace(/[\[\]]/g, "");
+    const markdown = out.images
+      .map((u) => `![${alt}](${watermark ? buildMediaUrl(origin, u, watermark) : u})`)
+      .join("\n\n");
+
+    return mediaReply({ markdown, modelId, wantStream });
+  }
+
+  // --- text model ---
+  let effort: string | null = null;
+  try {
+    effort = pickReasoningEffort(body, model.reasoningEffort);
+  } catch (msg: any) {
+    logUsage(recordId, modelId, hadImage, wantStream, 400);
+    return err(typeof msg === "string" ? msg : "Invalid reasoning_effort.", 400);
+  }
+
+  const toolsOn = hasTools(body);
+  const effMessages: OpenAIMessage[] = toolsOn
+    ? (preprocessToolMessages(messages, body.tools, body.tool_choice) as OpenAIMessage[])
+    : messages;
+
+  let glmRes: Response;
+  try {
+    glmRes = await openChatGLMCompletion({
+      model: modelId,
+      messages: toChatGLMMessages(effMessages, uploads),
+      chatMode: resolveChatMode({
+        reasoningEffort: effort || undefined,
+        enableThinking: typeof body.enable_thinking === "boolean" ? body.enable_thinking : undefined,
+      }),
+      networking: body.is_networking === true,
+    });
+  } catch (e: any) {
+    const status = e instanceof ChatGLMError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, wantStream, status);
+    return err(e.message || "Upstream error", status, status === 400 ? "invalid_request_error" : "upstream_error");
+  }
+
+  const id = "chatcmpl-" + randomUUID();
+  const created = Math.floor(Date.now() / 1000);
+  const withReasoning = showReasoning();
+  const summary = emptyChatGLMSummary();
+
+  // An image the text model decided to draw mid-answer still has to reach the
+  // caller, so it is folded into the text as markdown like the image models'.
+  const asMarkdown = (u: string) => `\n\n![image](${watermark ? buildMediaUrl(origin, u, watermark) : u})\n\n`;
+
+  if (wantStream) {
+    const encoder = new TextEncoder();
+    let hb: ReturnType<typeof keepAlive> | null = null;
+    const registry = toolsOn ? buildRegistry(body.tools) : null;
+    const stream = new ReadableStream({
+      async start(controller) {
+        hb = keepAlive(controller, encoder);
+        const send = (delta: any, finish: string | null = null) => {
+          hb!.touch();
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
+            )
+          );
+        };
+        try {
+          send({ role: "assistant" });
+          const parser = registry ? new ToolStream(registry) : null;
+          let toolCalls: OAIToolCall[] = [];
+          try {
+            for await (const d of chatglmDeltas(glmRes, summary)) {
+              if (d.kind === "reasoning") {
+                if (withReasoning && d.text) send({ reasoning_content: d.text });
+                continue;
+              }
+              const text = d.kind === "image" ? asMarkdown(d.text) : d.text;
+              if (parser && d.kind !== "image") {
+                const out = parser.push(text);
+                if (out) send({ content: out });
+              } else {
+                send({ content: text });
+              }
+            }
+            if (parser) {
+              const fin = parser.end();
+              if (fin.text) send({ content: fin.text });
+              toolCalls = applyToolPolicy(fin.toolCalls, body, registry!);
+            }
+          } catch (e: any) {
+            if (parser) {
+              try { toolCalls = applyToolPolicy(parser.end().toolCalls, body, registry!); } catch { /* nothing to salvage */ }
+            }
+            send({ content: `\n[error: ${e.message}]` });
+          }
+          hb.stop();
+          if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
+          send({}, toolCalls.length ? "tool_calls" : "stop");
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          logUsage(recordId, modelId, hadImage, true, 200);
+        } catch {
+          logUsage(recordId, modelId, hadImage, true, 499);
+        } finally {
+          hb.stop();
+          await glmRes.body?.cancel().catch(() => {});
+        }
+      },
+      async cancel() {
+        hb?.stop();
+        await glmRes.body?.cancel().catch(() => {});
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  }
+
+  let content = "";
+  let reasoning = "";
+  try {
+    for await (const d of chatglmDeltas(glmRes, summary)) {
+      if (d.kind === "reasoning") reasoning += d.text;
+      else if (d.kind === "image") content += asMarkdown(d.text);
+      else content += d.text;
+    }
+  } catch (e: any) {
+    const status = e instanceof ChatGLMError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, false, status);
+    return err(e.message || "Upstream error", status, "upstream_error");
+  } finally {
+    await glmRes.body?.cancel().catch(() => {});
+  }
+  logUsage(recordId, modelId, hadImage, false, 200);
+
+  const { content: toolContent, toolCalls: parsed } = toolsOn
+    ? extractToolCalls(content, body.tools)
+    : { content, toolCalls: [] as OAIToolCall[] };
+  const toolCalls = toolsOn ? applyToolPolicy(parsed, body, buildRegistry(body.tools)) : [];
+
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: toolCalls.length ? toolContent : content,
+  };
+  if (toolCalls.length) message.tool_calls = toolCalls;
+  if (withReasoning && reasoning) message.reasoning_content = reasoning;
+
+  return NextResponse.json({
+    id,
+    object: "chat.completion",
+    created,
+    model: modelId,
+    choices: [{ index: 0, message, finish_reason: toolCalls.length ? "tool_calls" : "stop" }],
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  });
+}
+
+/** A finished media answer, in both the streamed and buffered shapes. */
+function mediaReply(args: { markdown: string; modelId: string; wantStream: boolean }) {
+  const { markdown, modelId, wantStream } = args;
+  const id = "chatcmpl-" + randomUUID();
+  const created = Math.floor(Date.now() / 1000);
+
+  if (wantStream) {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        const send = (o: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(o)}\n\n`));
+        const chunk = (delta: any, finish: string | null = null) => ({
+          id, object: "chat.completion.chunk", created, model: modelId,
+          choices: [{ index: 0, delta, finish_reason: finish }],
+        });
+        send(chunk({ role: "assistant" }));
+        send(chunk({ content: markdown }));
+        send(chunk({}, "stop"));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  }
+
+  return NextResponse.json({
+    id,
+    object: "chat.completion",
+    created,
+    model: modelId,
+    choices: [{ index: 0, message: { role: "assistant", content: markdown }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  });
+}
+
+// --- NVIDIA NIM (Muse Glimmer) ----------------------------------------------
 //
 // A plain OpenAI-compatible upstream, so this is the Zen path with one
 // difference: reasoning is a two-state switch sent as chat_template_kwargs
