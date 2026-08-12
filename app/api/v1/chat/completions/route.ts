@@ -46,6 +46,13 @@ import {
   OpenCodeZenError,
 } from "@/lib/opencodezen";
 import {
+  isNvidiaModel,
+  resolveNvidiaModel,
+  openCompletion as openNvidiaCompletion,
+  nvidiaDeltas,
+  NvidiaError,
+} from "@/lib/nvidia";
+import {
   isSolarModel,
   resolveSolarModel,
   openCompletion as openSolarCompletion,
@@ -188,6 +195,12 @@ export async function POST(req: NextRequest) {
   // id is unknown and falls through rather than advertising a dead model.
   if (isOpenCodeZenModel(modelId)) {
     return handleOpenCodeZen({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
+  }
+
+  // NVIDIA NIM (GLM-5.2, Muse Glimmer). Gated on NVIDIA_API_KEY inside
+  // isNvidiaModel, so an unconfigured deploy never routes here.
+  if (isNvidiaModel(modelId)) {
+    return handleNvidia({ messages, modelId, wantStream, hadImage, recordId: record.id, body });
   }
 
   // Upstage's Solar Chat (Solar Pro 4). A public site with no key to hold, so
@@ -1278,5 +1291,174 @@ async function handleSolar(args: {
       },
     ],
     usage: summary.usage ?? zeroUsage,
+  });
+}
+
+// --- NVIDIA NIM (GLM-5.2, Muse Glimmer) -------------------------------------
+//
+// A plain OpenAI-compatible upstream, so this is the Zen path with one
+// difference: reasoning is a two-state switch sent as chat_template_kwargs
+// rather than a reasoning_effort level, which means `enable_thinking` is the
+// only knob and no effort list is advertised. See lib/nvidia.ts for why the key
+// is `enable_thinking` and not `thinking`.
+async function handleNvidia(args: {
+  messages: OpenAIMessage[];
+  modelId: string;
+  wantStream: boolean;
+  hadImage: boolean;
+  recordId: string;
+  body: any;
+}) {
+  const { messages, modelId, wantStream, hadImage, recordId, body } = args;
+
+  const model = resolveNvidiaModel(modelId);
+  if (!model) {
+    logUsage(recordId, modelId, hadImage, wantStream, 404);
+    return err(`Model '${modelId}' is not available.`, 404, "model_not_found");
+  }
+
+  // The models exposed here are text-only.
+  if (hadImage) {
+    logUsage(recordId, modelId, hadImage, wantStream, 400);
+    return err(`Model '${modelId}' does not accept image input.`, 400);
+  }
+
+  const toolsOn = hasTools(body);
+  const effMessages: OpenAIMessage[] = toolsOn
+    ? (preprocessToolMessages(messages, body.tools, body.tool_choice) as OpenAIMessage[])
+    : messages;
+
+  let nvRes: Response;
+  try {
+    nvRes = await openNvidiaCompletion({
+      model: modelId,
+      messages: effMessages,
+      stream: wantStream,
+      temperature: typeof body.temperature === "number" ? body.temperature : undefined,
+      max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : undefined,
+      top_p: typeof body.top_p === "number" ? body.top_p : undefined,
+      enableThinking: typeof body.enable_thinking === "boolean" ? body.enable_thinking : undefined,
+    });
+  } catch (e: any) {
+    const status = e instanceof NvidiaError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, wantStream, status);
+    return err(e.message || "Upstream error", status, "upstream_error");
+  }
+
+  const id = "chatcmpl-" + randomUUID();
+  const created = Math.floor(Date.now() / 1000);
+  const withReasoning = showReasoning();
+
+  if (wantStream) {
+    const encoder = new TextEncoder();
+    let hb: ReturnType<typeof keepAlive> | null = null;
+    const registry = toolsOn ? buildRegistry(body.tools) : null;
+    const stream = new ReadableStream({
+      async start(controller) {
+        hb = keepAlive(controller, encoder);
+        const send = (delta: any, finish: string | null = null) => {
+          hb!.touch();
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
+            )
+          );
+        };
+        try {
+          send({ role: "assistant" });
+
+          const parser = registry ? new ToolStream(registry) : null;
+          let toolCalls: OAIToolCall[] = [];
+
+          try {
+            for await (const d of nvidiaDeltas(nvRes)) {
+              if (d.kind === "reasoning") {
+                if (withReasoning && d.text) send({ reasoning_content: d.text });
+                continue;
+              }
+              if (parser) {
+                const out = parser.push(d.text);
+                if (out) send({ content: out });
+              } else {
+                send({ content: d.text });
+              }
+            }
+            if (parser) {
+              const fin = parser.end();
+              if (fin.text) send({ content: fin.text });
+              toolCalls = applyToolPolicy(fin.toolCalls, body, registry!);
+            }
+          } catch (e: any) {
+            if (parser) {
+              try { toolCalls = applyToolPolicy(parser.end().toolCalls, body, registry!); } catch { /* nothing to salvage */ }
+            }
+            send({ content: `\n[error: ${e.message}]` });
+          }
+
+          hb.stop();
+          if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
+          send({}, toolCalls.length ? "tool_calls" : "stop");
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          logUsage(recordId, modelId, hadImage, true, 200);
+        } catch {
+          logUsage(recordId, modelId, hadImage, true, 499);
+        } finally {
+          hb.stop();
+          await nvRes.body?.cancel().catch(() => {});
+        }
+      },
+      async cancel() {
+        hb?.stop();
+        await nvRes.body?.cancel().catch(() => {});
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  }
+
+  // Non-stream client: upstream always streams to us, so reassemble it here.
+  // Buffering our own stream is what keeps a cold model from hanging the
+  // request past the point NVIDIA would have returned a body at all.
+  let content = "";
+  let reasoning = "";
+  try {
+    for await (const d of nvidiaDeltas(nvRes)) {
+      if (d.kind === "reasoning") reasoning += d.text;
+      else content += d.text;
+    }
+  } catch (e: any) {
+    const status = e instanceof NvidiaError ? e.status : 502;
+    logUsage(recordId, modelId, hadImage, false, status);
+    return err(e.message || "Upstream error", status, "upstream_error");
+  } finally {
+    await nvRes.body?.cancel().catch(() => {});
+  }
+  logUsage(recordId, modelId, hadImage, false, 200);
+
+  const { content: toolContent, toolCalls: parsed } = toolsOn
+    ? extractToolCalls(content, body.tools)
+    : { content, toolCalls: [] as OAIToolCall[] };
+  const toolCalls = toolsOn ? applyToolPolicy(parsed, body, buildRegistry(body.tools)) : [];
+
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: toolCalls.length ? toolContent : content,
+  };
+  if (toolCalls.length) message.tool_calls = toolCalls;
+  if (withReasoning && reasoning) message.reasoning_content = reasoning;
+
+  return NextResponse.json({
+    id,
+    object: "chat.completion",
+    created,
+    model: modelId,
+    choices: [
+      {
+        index: 0,
+        message,
+        finish_reason: toolCalls.length ? "tool_calls" : "stop",
+      },
+    ],
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
 }

@@ -26,6 +26,14 @@ const COHERE_LOCKUP = '<svg fill="currentColor" fill-rule="evenodd" height="1em"
 const OPENROUTER_MONO = '<svg fill="currentColor" fill-rule="evenodd" height="1em" style="flex:none;line-height:1" viewBox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><title>OpenRouter</title><path d="M18.654 3.87a5.087 5.087 0 110 10.174L23.7 19.09c.64.641.187 1.737-.72 1.737H8.48a8.479 8.479 0 010-16.958h10.175zM8.479 7.26a5.087 5.087 0 100 10.176 5.087 5.087 0 000-10.175z"></path></svg>';
 const OPENROUTER_LOCKUP = '<svg fill="currentColor" fill-rule="evenodd" height="1em" style="flex:none;line-height:1" viewBox="0 0 120 24" xmlns="http://www.w3.org/2000/svg"><title>OpenRouter</title><path d="M8.472 5.521c3.499 0 6.403 2.699 6.403 6.29 0 3.613-2.835 6.38-6.426 6.38C4.927 18.19 2 15.47 2 11.856c0-3.613 2.927-6.335 6.472-6.335zm0 10.2c2.218 0 3.636-1.76 3.636-3.865 0-2.104-1.44-3.865-3.659-3.865-2.195 0-3.659 1.715-3.659 3.82 0 2.08 1.464 3.91 3.682 3.91zM22.613 18.169c-.937 0-2.995-.48-3.956-1.967V24h-2.721V5.774h2.653v1.898c1.029-1.67 3.018-2.127 4.093-2.127 3.75 0 5.992 3.224 5.992 6.289 0 3.316-2.447 6.335-6.06 6.335zm-.343-2.47c2.196 0 3.66-1.738 3.66-3.842s-1.441-3.865-3.66-3.865c-2.218 0-3.658 1.76-3.658 3.865 0 2.104 1.44 3.842 3.659 3.842zM32.426 12.68c.046 1.875 1.784 3.178 3.568 3.178 1.487 0 2.584-.549 3.293-1.898l1.967 1.304c-1.052 1.944-3.087 2.95-5.214 2.95-3.614 0-6.403-2.722-6.403-6.358 0-3.453 2.607-6.335 6.151-6.335 3.797 0 5.946 2.63 5.946 6.312 0 .115 0 .55-.046.847h-9.262zm.138-2.059h6.403c-.091-1.738-1.486-2.767-3.179-2.767-1.67 0-2.973 1.098-3.224 2.767zM51.344 11.147c0-1.738-.823-3.041-2.698-3.041-1.715 0-2.813 1.235-2.813 3.087v6.792h-2.721V5.773h2.652V7.42a4.586 4.586 0 013.728-1.899c3.11 0 4.574 2.173 4.574 4.94v7.524h-2.722v-6.838zM62.49 8.518a5.37 5.37 0 00-.777-.069c-2.081 0-3.18 1.235-3.18 3.34v6.197h-2.72V5.774h2.652v1.943C59.22 6.345 60.5 5.66 61.827 5.66c.16 0 .503.023.663.069v2.79zM69.283 5.521c3.498 0 6.403 2.699 6.403 6.29 0 3.613-2.836 6.38-6.426 6.38-3.522 0-6.45-2.721-6.45-6.335 0-3.613 2.928-6.335 6.473-6.335zm0 10.2c2.218 0 3.636-1.76 3.636-3.865 0-2.104-1.441-3.865-3.66-3.865-2.195 0-3.658 1.715-3.658 3.82 0 2.08 1.463 3.91 3.682 3.91zM79.693 12.611c0 1.738.823 3.042 2.699 3.042 1.715 0 2.813-1.235 2.813-3.088V5.774h2.721v12.212h-2.653V16.34a4.586 4.586 0 01-3.727 1.898c-3.065 0-4.574-2.173-4.574-4.963v-7.5h2.721v6.837zM94.376 13.617c0 1.51.754 2.036 2.104 2.036.251 0 .525-.023.868-.092v2.31c-.48.183-1.12.252-1.463.252-2.63 0-4.23-1.373-4.23-4.071V8.22h-2.242V5.773h2.241V2h2.722v3.773h2.995V8.22h-2.995v5.397zM100.578 12.68c.046 1.875 1.784 3.178 3.568 3.178 1.486 0 2.584-.549 3.293-1.898l1.967 1.304c-1.052 1.944-3.088 2.95-5.214 2.95-3.614 0-6.404-2.722-6.404-6.358 0-3.453 2.607-6.335 6.152-6.335 3.796 0 5.946 2.63 5.946 6.312 0 .115 0 .55-.046.847h-9.262zm.137-2.059h6.404c-.092-1.738-1.487-2.767-3.179-2.767-1.67 0-2.973 1.098-3.225 2.767zM117.759 8.518a5.357 5.357 0 00-.777-.069c-2.081 0-3.179 1.235-3.179 3.34v6.197h-2.721V5.774h2.653v1.943c.754-1.372 2.035-2.058 3.361-2.058.16 0 .503.023.663.069v2.79z"></path></svg>';
 
+/* Z.AI and Meta, taken from the AI-SVGS pack's `-mono` variants, which already
+ * ship fill="currentColor". Both stand in for their own lockups: the home page
+ * logo wall is a fixed six that lists neither, and Meta's lockup file is the
+ * Llama wordmark rather than the company one. */
+const ZAI_MONO = '<svg fill="currentColor" fill-rule="evenodd" style="flex:none;line-height:1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>Z.ai</title><path d="M12.105 2L9.927 4.953H.653L2.83 2h9.276zM23.254 19.048L21.078 22h-9.242l2.174-2.952h9.244zM24 2L9.264 22H0L14.736 2H24z"></path></svg>';
+
+const META_MONO = '<svg fill="currentColor" fill-rule="evenodd" style="flex:none;line-height:1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>Meta</title><path d="M6.897 4c1.915 0 3.516.932 5.43 3.376l.282-.373c.19-.246.383-.484.58-.71l.313-.35C14.588 4.788 15.792 4 17.225 4c1.273 0 2.469.557 3.491 1.516l.218.213c1.73 1.765 2.917 4.71 3.053 8.026l.011.392.002.25c0 1.501-.28 2.759-.818 3.7l-.14.23-.108.153c-.301.42-.664.758-1.086 1.009l-.265.142-.087.04a3.493 3.493 0 01-.302.118 4.117 4.117 0 01-1.33.208c-.524 0-.996-.067-1.438-.215-.614-.204-1.163-.56-1.726-1.116l-.227-.235c-.753-.812-1.534-1.976-2.493-3.586l-1.43-2.41-.544-.895-1.766 3.13-.343.592C7.597 19.156 6.227 20 4.356 20c-1.21 0-2.205-.42-2.936-1.182l-.168-.184c-.484-.573-.837-1.311-1.043-2.189l-.067-.32a8.69 8.69 0 01-.136-1.288L0 14.468c.002-.745.06-1.49.174-2.23l.1-.573c.298-1.53.828-2.958 1.536-4.157l.209-.34c1.177-1.83 2.789-3.053 4.615-3.16L6.897 4zm-.033 2.615l-.201.01c-.83.083-1.606.673-2.252 1.577l-.138.199-.01.018c-.67 1.017-1.185 2.378-1.456 3.845l-.004.022a12.591 12.591 0 00-.207 2.254l.002.188c.004.18.017.36.04.54l.043.291c.092.503.257.908.486 1.208l.117.137c.303.323.698.492 1.17.492 1.1 0 1.796-.676 3.696-3.641l2.175-3.4.454-.701-.139-.198C9.11 7.3 8.084 6.616 6.864 6.616zm10.196-.552l-.176.007c-.635.048-1.223.359-1.82.933l-.196.198c-.439.462-.887 1.064-1.367 1.807l.266.398c.18.274.362.56.55.858l.293.475 1.396 2.335.695 1.114c.583.926 1.03 1.6 1.408 2.082l.213.262c.282.326.529.54.777.673l.102.05c.227.1.457.138.718.138.176.002.35-.023.518-.073.338-.104.61-.32.813-.637l.095-.163.077-.162c.194-.459.29-1.06.29-1.785l-.006-.449c-.08-2.871-.938-5.372-2.2-6.798l-.176-.189c-.67-.683-1.444-1.074-2.27-1.074z"></path></svg>';
+
 /* Solar's rising-sun mark, recoloured to currentColor like the rest of the pack.
  * Upstage ships a "solar chat" lockup rather than a company wordmark, and the
  * logo wall on the home page is a fixed six that does not include it, so the
@@ -53,6 +61,10 @@ export const LOGO_SVG: Record<string, string> = {
   "opencode-mono": OPENROUTER_MONO,
   "solar-lockup": SOLAR_MARK,
   "solar-mono": SOLAR_MARK,
+  "zai-lockup": ZAI_MONO,
+  "zai-mono": ZAI_MONO,
+  "meta-lockup": META_MONO,
+  "meta-mono": META_MONO,
 };
 
 export const LOGOS: Record<string, { name: string; mono: string; lockup: string }> = {
@@ -66,4 +78,8 @@ export const LOGOS: Record<string, { name: string; mono: string; lockup: string 
   cohere: { name: "Cohere", mono: LOGO_SVG["cohere-mono"], lockup: LOGO_SVG["cohere-lockup"] },
   opencode: { name: "OpenCode Zen", mono: LOGO_SVG["opencode-mono"], lockup: LOGO_SVG["opencode-lockup"] },
   upstage: { name: "Solar", mono: LOGO_SVG["solar-mono"], lockup: LOGO_SVG["solar-lockup"] },
+  // Keyed on the maker prefix of the model id, which for NIM is NVIDIA's own
+  // namespace: `z-ai/glm-5.2`, `meta/muse-glimmer-30b`.
+  "z-ai": { name: "Z.AI", mono: LOGO_SVG["zai-mono"], lockup: LOGO_SVG["zai-lockup"] },
+  meta: { name: "Meta", mono: LOGO_SVG["meta-mono"], lockup: LOGO_SVG["meta-lockup"] },
 };

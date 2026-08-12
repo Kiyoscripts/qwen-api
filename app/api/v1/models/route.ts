@@ -4,6 +4,7 @@ import { ONECOMPILER_MODELS } from "@/lib/onecompiler";
 import { TOKENROUTER_MODELS, tokenRouterConfigured } from "@/lib/tokenrouter";
 import { OPENCODE_ZEN_MODELS, openCodeZenConfigured } from "@/lib/opencodezen";
 import { SOLAR_MODELS, solarConfigured } from "@/lib/solar";
+import { NVIDIA_MODELS, nvidiaConfigured } from "@/lib/nvidia";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 import { withTokenFailover } from "@/lib/tokens";
@@ -109,6 +110,25 @@ const solarEntries = solarConfigured()
     }))
   : [];
 
+// NVIDIA NIM. Reasoning is a two-state switch (enable_thinking) rather than an
+// effort ladder, so no reasoning_effort list is advertised for these.
+const nvidiaEntries = nvidiaConfigured()
+  ? NVIDIA_MODELS.map((m) => ({
+      id: m.id,
+      object: "model" as const,
+      created: 0,
+      owned_by: "nvidia",
+      display_name: m.name,
+      capabilities: {
+        vision: false,
+        thinking: Boolean(m.thinking),
+        chat_types: ["t2t"],
+        input: { text: true, image: false, document: false, video: false, audio: false },
+        ...(m.contextLength ? { context_length: m.contextLength } : {}),
+      },
+    }))
+  : [];
+
 export async function GET(req: NextRequest) {
   if (!(await authenticate(req))) {
     return NextResponse.json({ error: { message: "Invalid or missing API key.", type: "invalid_request_error" } }, { status: 401 });
@@ -145,7 +165,7 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({
       object: "list",
-      data: [...customEntries, ...mediaEntries, ...oneCompilerEntries, ...tokenRouterEntries, ...openCodeZenEntries, ...solarEntries, ...qwenEntries],
+      data: [...customEntries, ...mediaEntries, ...oneCompilerEntries, ...tokenRouterEntries, ...openCodeZenEntries, ...solarEntries, ...nvidiaEntries, ...qwenEntries],
     });
   } catch (e: any) {
     return NextResponse.json({ error: { message: e.message, type: "upstream_error" } }, { status: 503 });

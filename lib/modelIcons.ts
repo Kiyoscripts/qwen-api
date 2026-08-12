@@ -25,6 +25,10 @@ export const MAKER_ICONS: Record<string, string> = {
   cohere: "/cohere.svg",
   // Solar's own mark, which carries its gradient and so needs no theme handling.
   upstage: "/upstage.svg",
+  // NVIDIA NIM namespaces. zai.svg is pinned white for the same reason
+  // openai.svg and grok.svg are; meta.svg is the full-colour mark.
+  "z-ai": "/zai.svg",
+  meta: "/meta.svg",
   // OpenCode Zen free/stealth models without a dedicated brand mark.
   opencode: "/opencode.svg",
 };
@@ -53,6 +57,8 @@ export const MAKER_LABELS: Record<string, string> = {
   nvidia: "NVIDIA",
   cohere: "Cohere",
   upstage: "Upstage",
+  "z-ai": "Z.AI",
+  meta: "Meta",
   opencode: "OpenCode Zen",
 };
 

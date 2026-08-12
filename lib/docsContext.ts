@@ -53,9 +53,10 @@ INPUTS
 - Images are sent as a content part: { type: "image_url", image_url: { url } }, where url may be a data: URL.
 
 MODELS
-- Qwen ids look like qwen3.8-max. Other makers are prefixed: moonshotai/kimi-k3, openai/gpt-5.6-luna, deepseek/deepseek-v4-pro, deepseek/deepseek-v4-flash, xai/grok-4.3, google/gemma-3.12b, nvidia/nemotron-3-ultra, cohere/north-mini-code, opencode/big-pickle, upstage/solar-pro-4, upstage/solar-open-2. Public ids never include "free".
+- Qwen ids look like qwen3.8-max. Other makers are prefixed: moonshotai/kimi-k3, openai/gpt-5.6-luna, deepseek/deepseek-v4-pro, deepseek/deepseek-v4-flash, xai/grok-4.3, google/gemma-3.12b, nvidia/nemotron-3-ultra, cohere/north-mini-code, opencode/big-pickle, upstage/solar-pro-4, upstage/solar-open-2, z-ai/glm-5.2, meta/muse-glimmer-30b. Public ids never include "free".
 - Media models: qwen-image-3.0, qwen-image-2.0 (both also edit), qwen-wan (video).
 - Flagship context is 1,000,000 tokens.
+- z-ai/glm-5.2 (GLM-5.2) and meta/muse-glimmer-30b (Muse Glimmer 30B) come from NVIDIA NIM and are listed only when NVIDIA_API_KEY is set. Both reason; the switch is enable_thinking (true/false), not reasoning_effort, and reasoning is ON by default. Cold starts can take a minute — stream to avoid a long silent wait.
 - upstage/solar-pro-4 (Solar Pro 4) is Upstage's search agent: 512k context, text only, and it searches the web itself, appending the sources it cited. Its two headline modes are Instant (reasoning_effort "none", or enable_thinking false) and Thinking (reasoning_effort "xhigh", or enable_thinking true); "adaptive" lets the model pick. Default is Instant.
 
 CODING CLIS
