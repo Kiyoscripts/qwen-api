@@ -69,6 +69,28 @@ const CHATGLM_POOL = new ProxyPool(process.env.CHATGLM_PROXY);
 /** Signing salt, lifted from the site bundle. Rotating upstream breaks signing. */
 const SALT = process.env.CHATGLM_SALT || "8a1317a7468aa3ad86e997d08f3f31cb";
 
+/**
+ * Language instruction prepended to every chat run.
+ *
+ * chatglm.cn is a Chinese consumer product and the model drifts back to Chinese
+ * unprompted — "hi" answers in English, "whats your llm" answers in Chinese. It
+ * is not following the conversation's language, so it has to be told, firmly and
+ * every turn rather than once.
+ *
+ * It goes in ahead of the caller's own system prompt, so a caller who genuinely
+ * wants Chinese can simply say so and win — the same layering the Qwen persona
+ * path uses. Set CHATGLM_LANGUAGE_PROMPT="" to drop it entirely.
+ */
+const LANGUAGE_PROMPT =
+  process.env.CHATGLM_LANGUAGE_PROMPT ??
+  [
+    "Language rule, absolute and applies to every reply:",
+    "Answer in the same language the user wrote their message in.",
+    "If the user writes in English, answer only in English — every word, including any explanation of what you are.",
+    "Only answer in Chinese if the user actually wrote to you in Chinese.",
+    "Never switch language mid-conversation unless the user does first.",
+  ].join(" ");
+
 /** The main-chat assistant. Image generation rides the same one. */
 const ASSISTANT_ID = process.env.CHATGLM_ASSISTANT_ID || "65940acff94777010aa6b796";
 
@@ -366,9 +388,17 @@ export interface ChatGLMMessage {
  */
 export function toChatGLMMessages(
   messages: OpenAIMessage[],
-  uploads: Map<string, { image_url: string; file_id?: string }> = new Map()
+  uploads: Map<string, { image_url: string; file_id?: string }> = new Map(),
+  /**
+   * `languageRule` prepends the reply-language instruction. Chat wants it; image
+   * generation does not — there the prompt describes a picture, and a rule about
+   * what language to answer in has no business being folded into it.
+   */
+  opts: { languageRule?: boolean } = {}
 ): ChatGLMMessage[] {
   const system: string[] = [];
+  // Ahead of the caller's own system text, so theirs layers on top and wins.
+  if (opts.languageRule && LANGUAGE_PROMPT) system.push(LANGUAGE_PROMPT);
   const turns: ChatGLMMessage[] = [];
 
   for (const m of messages) {

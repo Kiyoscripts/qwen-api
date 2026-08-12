@@ -1425,7 +1425,7 @@ async function handleChatGLM(args: {
   // opens another if this one comes back carrying nothing.
   const glmOpts = {
     model: modelId,
-    messages: toChatGLMMessages(effMessages, uploads),
+    messages: toChatGLMMessages(effMessages, uploads, { languageRule: true }),
     chatMode: resolveChatMode({
       reasoningEffort: effort || undefined,
       enableThinking: typeof body.enable_thinking === "boolean" ? body.enable_thinking : undefined,

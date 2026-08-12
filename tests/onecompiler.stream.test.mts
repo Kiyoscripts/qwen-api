@@ -150,7 +150,7 @@ const ANSWER = "## Counting\n\n1. one\n2. two\n";
   check("no premium model is exposed", leaked.length === 0, leaked.join(", "));
   check("every id carries a maker prefix", ONECOMPILER_MODELS.every((m) => m.id.includes("/")));
   check("registry has no duplicate ids", new Set(ONECOMPILER_MODELS.map((m) => m.id)).size === ONECOMPILER_MODELS.length);
-  check("registry has the 9 free models", ONECOMPILER_MODELS.length === 9, String(ONECOMPILER_MODELS.length));
+  check("registry has the 10 free models", ONECOMPILER_MODELS.length === 10, String(ONECOMPILER_MODELS.length));
 }
 
 // --- open-time sentinel detection (what makes token failover possible) ------

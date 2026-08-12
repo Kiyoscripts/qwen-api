@@ -41,9 +41,6 @@ export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
 
 // --- Sets from OpenCode variants (Zen free models + TokenRouter Kimi) --------
 
-/** opencode/deepseek-v4-flash-free — variants: low, high, max */
-export const DEEPSEEK_FLASH_EFFORT: ReasoningEffort[] = ["low", "high", "max"];
-
 /** opencode/laguna-s-2.1-free, opencode/longcat-2.0-free — low, medium, high */
 export const LOW_MED_HIGH_EFFORT: ReasoningEffort[] = ["low", "medium", "high"];
 

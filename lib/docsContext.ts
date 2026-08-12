@@ -66,7 +66,7 @@ CODING CLIS
 - Codex: in ~/.codex/config.toml set model_provider with base_url = "${CANONICAL_URL}/v1", env_key = "SYDE_API_KEY", and wire_api = "chat". Without wire_api it defaults to the Responses API, which this endpoint does not implement.
 - OpenCode: provider entry with npm "@ai-sdk/openai-compatible", baseURL "${CANONICAL_URL}/v1". Model id opencode/big-pickle is Big Pickle (only listed when OPENCODE_ZEN_API_KEY is set).
 - Aider and most others: OPENAI_BASE_URL="${CANONICAL_URL}/v1" and OPENAI_API_KEY, then a model like openai/qwen3.8-max.
-- reasoning_effort: multi-level effort when capabilities.reasoning_effort is present on /v1/models (e.g. deepseek/deepseek-v4-flash: low|high|max; opencode/laguna-s-2.1: low|medium|high; moonshotai/kimi-k3 via TokenRouter: low|high|max; upstage/solar-pro-4: adaptive|none|minimal|low|medium|high|xhigh|max; z-ai/glm-5.2: none|medium|high for Fast/Standard/Deep). Omit or use enable_thinking only for models without that list.
+- reasoning_effort: multi-level effort when capabilities.reasoning_effort is present on /v1/models (e.g. opencode/laguna-s-2.1: low|medium|high; moonshotai/kimi-k3 via TokenRouter: low|high|max; upstage/solar-pro-4: adaptive|none|minimal|low|medium|high|xhigh|max; z-ai/glm-5.2: none|medium|high for Fast/Standard/Deep). Omit or use enable_thinking only for models without that list.
 
 
 ERRORS

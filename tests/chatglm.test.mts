@@ -255,6 +255,41 @@ async function collect(res: Response, summary = emptyChatGLMSummary()) {
   check("error frame throws ChatGLMError", threw);
 }
 
+// --- the language rule ------------------------------------------------------
+//
+// The model drifts to Chinese unprompted: "whats your llm" answered in Chinese
+// every time until it was told otherwise, and in English every time after.
+
+// 17b. Chat gets the rule, ahead of everything else in the turn.
+{
+  const out = toChatGLMMessages([{ role: "user", content: "hi" }], new Map(), { languageRule: true });
+  const text = out[0].content[0].text || "";
+  check("rule is present", /same language/i.test(text), text.slice(0, 80));
+  check("rule leads the turn", text.trim().startsWith("Language rule"), text.slice(0, 40));
+  check("the user's own words survive", text.trim().endsWith("hi"), text.slice(-30));
+}
+
+// 17c. The caller's system prompt layers on top, so anyone who actually wants
+//      another language can say so and win.
+{
+  const out = toChatGLMMessages(
+    [{ role: "system", content: "Always reply in French." }, { role: "user", content: "hi" }],
+    new Map(),
+    { languageRule: true }
+  );
+  const text = out[0].content[0].text || "";
+  check("rule comes first", text.indexOf("Language rule") < text.indexOf("French"), text.slice(0, 60));
+  check("caller's instruction is kept", text.includes("Always reply in French."));
+}
+
+// 17d. Image generation must NOT get it — there the prompt describes a picture,
+//      and a rule about what language to answer in has no place in it.
+{
+  const out = toChatGLMMessages([{ role: "user", content: "a red circle" }], new Map());
+  const text = out[0].content[0].text || "";
+  check("image prompt is untouched", text === "a red circle", JSON.stringify(text));
+}
+
 // --- empty runs -------------------------------------------------------------
 //
 // About one run in four from a host chatglm.cn serves poorly completes with no
