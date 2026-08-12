@@ -37,6 +37,7 @@
 import type { OpenAIMessage } from "./qwen";
 import { createHash, randomUUID } from "node:crypto";
 import type { ReasoningEffort } from "./reasoningEffort";
+import { withProxy } from "./egress";
 
 export const CHATGLM_BASE = (process.env.CHATGLM_BASE || "https://chatglm.cn").replace(/\/+$/, "");
 
@@ -54,6 +55,16 @@ export const CHATGLM_DISABLED = process.env.CHATGLM_DISABLED === "1";
  * models stop being advertised instead of 502-ing every call.
  */
 export const CHATGLM_IMAGES_DISABLED = process.env.CHATGLM_IMAGES_DISABLED === "1";
+
+/**
+ * Optional outbound proxy, e.g. http://user:pass@p.webshare.io:80.
+ *
+ * The alternative to CHATGLM_IMAGES_DISABLED: rather than withdrawing the image
+ * models on a host that cannot draw, send the traffic somewhere that can. Every
+ * call the provider makes — guest token, upload, stream — goes through it, so
+ * the session and the run it belongs to share one address. Unset means direct.
+ */
+const CHATGLM_PROXY = process.env.CHATGLM_PROXY || "";
 
 /** Signing salt, lifted from the site bundle. Rotating upstream breaks signing. */
 const SALT = process.env.CHATGLM_SALT || "8a1317a7468aa3ad86e997d08f3f31cb";
@@ -175,12 +186,18 @@ export async function guestSession(force = false): Promise<GuestSession> {
     const deviceId = hex32();
     let res: Response;
     try {
-      res = await fetch(`${CHATGLM_BASE}/chatglm/user-api/guest/access`, {
-        method: "POST",
-        headers: signedHeaders(deviceId),
-        body: "{}",
-        signal: AbortSignal.timeout(CHATGLM_TIMEOUT_MS),
-      });
+      res = await fetch(
+        `${CHATGLM_BASE}/chatglm/user-api/guest/access`,
+        withProxy(
+          {
+            method: "POST",
+            headers: signedHeaders(deviceId),
+            body: "{}",
+            signal: AbortSignal.timeout(CHATGLM_TIMEOUT_MS),
+          },
+          CHATGLM_PROXY
+        )
+      );
     } catch (e: any) {
       throw new ChatGLMError(`Could not reach ${CHATGLM_BASE}: ${e?.message || e}`, 502);
     }
@@ -417,12 +434,10 @@ export async function uploadImage(url: string): Promise<{ image_url: string; fil
   // FormData must set its own boundary.
   delete (headers as any)["Content-Type"];
 
-  const res = await fetch(`${CHATGLM_BASE}/chatglm/backend-api/assistant/file_upload`, {
-    method: "POST",
-    headers,
-    body: fd,
-    signal: AbortSignal.timeout(CHATGLM_TIMEOUT_MS),
-  });
+  const res = await fetch(
+    `${CHATGLM_BASE}/chatglm/backend-api/assistant/file_upload`,
+    withProxy({ method: "POST", headers, body: fd, signal: AbortSignal.timeout(CHATGLM_TIMEOUT_MS) }, CHATGLM_PROXY)
+  );
   const json = await res.json().catch(() => null);
   const file = json?.result;
   if (!res.ok || !file?.file_url) {
@@ -483,12 +498,18 @@ export async function openCompletion(opts: ChatGLMCompletionOpts): Promise<Respo
 
     let res: Response;
     try {
-      res = await fetch(`${CHATGLM_BASE}/chatglm/backend-api/assistant/stream`, {
-        method: "POST",
-        headers: { ...signedHeaders(s.deviceId, s.token), accept: "text/event-stream" },
-        body,
-        signal: AbortSignal.timeout(CHATGLM_TIMEOUT_MS),
-      });
+      res = await fetch(
+        `${CHATGLM_BASE}/chatglm/backend-api/assistant/stream`,
+        withProxy(
+          {
+            method: "POST",
+            headers: { ...signedHeaders(s.deviceId, s.token), accept: "text/event-stream" },
+            body,
+            signal: AbortSignal.timeout(CHATGLM_TIMEOUT_MS),
+          },
+          CHATGLM_PROXY
+        )
+      );
     } catch (e: any) {
       lastErr = new ChatGLMError(
         e?.name === "TimeoutError" || e?.name === "AbortError"

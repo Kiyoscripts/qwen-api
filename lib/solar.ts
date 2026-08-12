@@ -48,11 +48,22 @@
 import type { OpenAIMessage } from "./qwen";
 import { messageText } from "./qwen";
 import type { ReasoningEffort } from "./reasoningEffort";
+import { proxyDispatcher, withProxy } from "./egress";
 
 export const SOLAR_BASE = (process.env.SOLAR_BASE || "https://solar-chat.upstage.ai").replace(/\/+$/, "");
 
 /** Kill switch: the upstream is a public site, so there is no key to withhold. */
 export const SOLAR_DISABLED = process.env.SOLAR_DISABLED === "1";
+
+/**
+ * Optional outbound proxy, e.g. http://user:pass@p.webshare.io:80.
+ *
+ * Upstage refuses datacenter addresses outright: /api/session answers 403 from
+ * a cloud host while returning 200 to bare curl from a residential one, so no
+ * amount of header shaping helps. Point this at a residential proxy and both
+ * the session fetch and the socket leave through it. Unset means direct.
+ */
+const SOLAR_PROXY = process.env.SOLAR_PROXY || "";
 
 /** How long to wait for the socket to open and hand over its `ready` frame. */
 const SOLAR_TIMEOUT_MS = Number(process.env.SOLAR_TIMEOUT_MS || 45_000);
@@ -248,10 +259,16 @@ export async function solarSession(force = false): Promise<SolarSession> {
 
   let res: Response;
   try {
-    res = await fetch(`${SOLAR_BASE}/api/session`, {
-      headers: { "User-Agent": SOLAR_UA, Origin: SOLAR_BASE, Referer: `${SOLAR_BASE}/`, Accept: "application/json" },
-      signal: AbortSignal.timeout(SOLAR_TIMEOUT_MS),
-    });
+    res = await fetch(
+      `${SOLAR_BASE}/api/session`,
+      withProxy(
+        {
+          headers: { "User-Agent": SOLAR_UA, Origin: SOLAR_BASE, Referer: `${SOLAR_BASE}/`, Accept: "application/json" },
+          signal: AbortSignal.timeout(SOLAR_TIMEOUT_MS),
+        },
+        SOLAR_PROXY
+      )
+    );
   } catch (e: any) {
     throw new SolarError(`Could not reach ${SOLAR_BASE}: ${e?.message || e}`, 502);
   }
@@ -392,6 +409,9 @@ async function connect(request: unknown, freshSession: boolean): Promise<SolarRu
   // Node's WebSocket takes an options bag (undici's extension) that the DOM
   // typings do not describe — and the Cookie header is the whole handshake, so
   // the spec-shaped constructor cannot be used here.
+  // The socket must leave by the same route the session cookie was issued to:
+  // Upstage ties the two together, so a cookie fetched through the proxy and a
+  // socket opened directly is a mismatched pair and gets refused.
   const ws: WebSocket = new (WebSocket as any)(url, {
     protocols: [SOLAR_PROTOCOL],
     headers: {
@@ -400,6 +420,7 @@ async function connect(request: unknown, freshSession: boolean): Promise<SolarRu
       Cookie: session.cookie,
       ...(session.token ? { "x-csrf-token": session.token } : {}),
     },
+    ...(proxyDispatcher(SOLAR_PROXY) ? { dispatcher: proxyDispatcher(SOLAR_PROXY) } : {}),
   });
 
   const queue = new FrameQueue();

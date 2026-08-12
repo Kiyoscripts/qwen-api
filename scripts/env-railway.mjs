@@ -21,7 +21,8 @@ const OPTIONAL = ["QWEN_CLIENT_VERSION", "QWEN_USER_AGENT", "QWEN_EXTRA_COOKIES"
                   "SOLAR_DISABLED", "SOLAR_BASE", "SOLAR_TIMEOUT_MS", "SOLAR_IDLE_MS", "SOLAR_CITATIONS",
                   "NVIDIA_API_KEY", "NVIDIA_BASE", "NVIDIA_TIMEOUT_MS", "NVIDIA_IDLE_MS",
                   "CHATGLM_DISABLED", "CHATGLM_BASE", "CHATGLM_TIMEOUT_MS", "CHATGLM_IDLE_MS",
-                  "CHATGLM_SALT", "CHATGLM_EXP_GROUPS", "CHATGLM_IMAGES_DISABLED"];
+                  "CHATGLM_SALT", "CHATGLM_EXP_GROUPS", "CHATGLM_IMAGES_DISABLED",
+                  "SOLAR_PROXY", "CHATGLM_PROXY"];
 
 // The Discord bot ships in the same image, so its config belongs in the same
 // paste. Copied only when present rather than placeholdered like REQUIRED: a
