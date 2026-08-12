@@ -48,7 +48,7 @@
 import type { OpenAIMessage } from "./qwen";
 import { messageText } from "./qwen";
 import type { ReasoningEffort } from "./reasoningEffort";
-import { proxyDispatcher, withProxy } from "./egress";
+import { proxyDispatcher, withProxy, proxyLabel, ProxyPool } from "./egress";
 
 export const SOLAR_BASE = (process.env.SOLAR_BASE || "https://solar-chat.upstage.ai").replace(/\/+$/, "");
 
@@ -56,14 +56,16 @@ export const SOLAR_BASE = (process.env.SOLAR_BASE || "https://solar-chat.upstage
 export const SOLAR_DISABLED = process.env.SOLAR_DISABLED === "1";
 
 /**
- * Optional outbound proxy, e.g. http://user:pass@p.webshare.io:80.
+ * Optional outbound proxies. One per line (or comma-separated), in either
+ * `http://user:pass@host:port` or Webshare's `host:port:user:pass` form.
  *
- * Upstage refuses datacenter addresses outright: /api/session answers 403 from
- * a cloud host while returning 200 to bare curl from a residential one, so no
- * amount of header shaping helps. Point this at a residential proxy and both
- * the session fetch and the socket leave through it. Unset means direct.
+ * Upstage refuses datacenter addresses: /api/session answers 403 from a cloud
+ * host while returning 200 to bare curl from a residential one, so no amount of
+ * header shaping helps. GIVE THIS MORE THAN ONE PROXY — a third of a sampled
+ * Webshare pool was refused too, so a single address is a coin flip. The pool
+ * rotates past a refusal and sticks to whatever works. Unset means direct.
  */
-const SOLAR_PROXY = process.env.SOLAR_PROXY || "";
+const SOLAR_POOL = new ProxyPool(process.env.SOLAR_PROXY);
 
 /** How long to wait for the socket to open and hand over its `ready` frame. */
 const SOLAR_TIMEOUT_MS = Number(process.env.SOLAR_TIMEOUT_MS || 45_000);
@@ -244,6 +246,8 @@ interface SolarSession {
   cookie: string;
   token: string;
   at: number;
+  /** The proxy this cookie was issued to; the socket must use the same one. */
+  proxy?: string;
 }
 
 let cached: SolarSession | null = null;
@@ -257,31 +261,57 @@ let cached: SolarSession | null = null;
 export async function solarSession(force = false): Promise<SolarSession> {
   if (!force && cached && Date.now() - cached.at < SOLAR_SESSION_TTL_MS) return cached;
 
-  let res: Response;
-  try {
-    res = await fetch(
-      `${SOLAR_BASE}/api/session`,
-      withProxy(
-        {
-          headers: { "User-Agent": SOLAR_UA, Origin: SOLAR_BASE, Referer: `${SOLAR_BASE}/`, Accept: "application/json" },
-          signal: AbortSignal.timeout(SOLAR_TIMEOUT_MS),
-        },
-        SOLAR_PROXY
-      )
-    );
-  } catch (e: any) {
-    throw new SolarError(`Could not reach ${SOLAR_BASE}: ${e?.message || e}`, 502);
+  // A 403 here is the address being refused, not the request being wrong, so
+  // it is worth trying the next proxy rather than giving up. With no pool
+  // configured this runs exactly once and behaves as it always did.
+  let lastErr: SolarError | null = null;
+  for (let attempt = 0; attempt < SOLAR_POOL.attempts(); attempt++) {
+    const proxy = SOLAR_POOL.current();
+
+    let res: Response;
+    try {
+      res = await fetch(
+        `${SOLAR_BASE}/api/session`,
+        withProxy(
+          {
+            headers: { "User-Agent": SOLAR_UA, Origin: SOLAR_BASE, Referer: `${SOLAR_BASE}/`, Accept: "application/json" },
+            signal: AbortSignal.timeout(SOLAR_TIMEOUT_MS),
+          },
+          proxy
+        )
+      );
+    } catch (e: any) {
+      lastErr = new SolarError(`Could not reach ${SOLAR_BASE}: ${e?.message || e}`, 502);
+      SOLAR_POOL.rotate();
+      continue;
+    }
+
+    if (!res.ok) {
+      lastErr = new SolarError(
+        `Solar session request failed (${res.status})${SOLAR_POOL.size ? ` via ${proxyLabel(proxy)}` : ""}.`,
+        502
+      );
+      SOLAR_POOL.rotate();
+      continue;
+    }
+
+    const token = (await res.json().catch(() => null))?.token;
+    const setCookie = res.headers.getSetCookie?.() ?? [];
+    const raw = setCookie.length ? setCookie : [res.headers.get("set-cookie") || ""];
+    const cookie = raw.filter(Boolean).map((c) => c.split(";")[0]).join("; ");
+    if (!cookie) {
+      lastErr = new SolarError("Solar did not issue a session cookie.", 502);
+      SOLAR_POOL.rotate();
+      continue;
+    }
+
+    // Remember which proxy this cookie belongs to: the socket has to leave by
+    // the same address, and the pool may rotate before the run opens.
+    cached = { cookie, token: typeof token === "string" ? token : "", at: Date.now(), proxy };
+    return cached;
   }
-  if (!res.ok) throw new SolarError(`Solar session request failed (${res.status}).`, 502);
 
-  const token = (await res.json().catch(() => null))?.token;
-  const setCookie = res.headers.getSetCookie?.() ?? [];
-  const raw = setCookie.length ? setCookie : [res.headers.get("set-cookie") || ""];
-  const cookie = raw.filter(Boolean).map((c) => c.split(";")[0]).join("; ");
-  if (!cookie) throw new SolarError("Solar did not issue a session cookie.", 502);
-
-  cached = { cookie, token: typeof token === "string" ? token : "", at: Date.now() };
-  return cached;
+  throw lastErr || new SolarError("Solar session request failed.", 502);
 }
 
 /** Drop the cached session — used when the upstream rejects it mid-handshake. */
@@ -420,7 +450,7 @@ async function connect(request: unknown, freshSession: boolean): Promise<SolarRu
       Cookie: session.cookie,
       ...(session.token ? { "x-csrf-token": session.token } : {}),
     },
-    ...(proxyDispatcher(SOLAR_PROXY) ? { dispatcher: proxyDispatcher(SOLAR_PROXY) } : {}),
+    ...(proxyDispatcher(session.proxy) ? { dispatcher: proxyDispatcher(session.proxy) } : {}),
   });
 
   const queue = new FrameQueue();

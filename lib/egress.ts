@@ -61,6 +61,77 @@ export function withProxy<T extends Record<string, unknown>>(
   return dispatcher ? ({ ...init, dispatcher } as unknown as T) : init;
 }
 
+/**
+ * Parse a proxy setting into a list of URLs.
+ *
+ * Accepts one proxy or many, separated by newlines or commas, in either form:
+ *
+ *   http://user:pass@host:port     what undici wants
+ *   host:port:user:pass            what Webshare's dashboard exports
+ *   host:port                      no credentials
+ *
+ * The middle one is there because it is what a downloaded proxy list actually
+ * contains, and re-typing a hundred of them into URL form is how mistakes get
+ * made. Anything unparseable is skipped rather than failing the whole list.
+ */
+export function parseProxyList(raw: string | undefined | null): string[] {
+  const out: string[] = [];
+  for (const partRaw of (raw || "").split(/[\n,]+/)) {
+    const part = partRaw.trim();
+    if (!part) continue;
+
+    if (/^[a-z0-9+.-]+:\/\//i.test(part)) {
+      out.push(part);
+      continue;
+    }
+    const bits = part.split(":");
+    if (bits.length === 4) {
+      const [host, port, user, pass] = bits;
+      out.push(`http://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}`);
+    } else if (bits.length === 2) {
+      out.push(`http://${part}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * A rotating set of proxies.
+ *
+ * One proxy is not enough in practice: of a sample of Webshare's pool, a third
+ * were refused by Upstage and the rest were fine, so a single fixed address is
+ * a coin flip that looks like "proxies don't work". The pool sticks to whichever
+ * proxy last succeeded — rotating per request would waste the good ones — and
+ * only advances when the caller reports a failure.
+ */
+export class ProxyPool {
+  private readonly urls: string[];
+  private i = 0;
+
+  constructor(raw: string | undefined | null) {
+    this.urls = parseProxyList(raw);
+  }
+
+  get size(): number {
+    return this.urls.length;
+  }
+
+  /** The proxy in use, or undefined for direct egress. */
+  current(): string | undefined {
+    return this.urls[this.i];
+  }
+
+  /** Give up on the current proxy and move to the next. */
+  rotate(): void {
+    if (this.urls.length > 1) this.i = (this.i + 1) % this.urls.length;
+  }
+
+  /** How many attempts are worth making before concluding it is not the proxy. */
+  attempts(max = 5): number {
+    return Math.max(1, Math.min(this.urls.length || 1, max));
+  }
+}
+
 /** Host and port only — safe to log, unlike the credentials in the URL. */
 export function proxyLabel(proxyUrl: string | undefined | null): string {
   const url = (proxyUrl || "").trim();

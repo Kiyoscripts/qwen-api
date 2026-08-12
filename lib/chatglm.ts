@@ -37,7 +37,7 @@
 import type { OpenAIMessage } from "./qwen";
 import { createHash, randomUUID } from "node:crypto";
 import type { ReasoningEffort } from "./reasoningEffort";
-import { withProxy } from "./egress";
+import { withProxy, ProxyPool } from "./egress";
 
 export const CHATGLM_BASE = (process.env.CHATGLM_BASE || "https://chatglm.cn").replace(/\/+$/, "");
 
@@ -64,7 +64,7 @@ export const CHATGLM_IMAGES_DISABLED = process.env.CHATGLM_IMAGES_DISABLED === "
  * call the provider makes — guest token, upload, stream — goes through it, so
  * the session and the run it belongs to share one address. Unset means direct.
  */
-const CHATGLM_PROXY = process.env.CHATGLM_PROXY || "";
+const CHATGLM_POOL = new ProxyPool(process.env.CHATGLM_PROXY);
 
 /** Signing salt, lifted from the site bundle. Rotating upstream breaks signing. */
 const SALT = process.env.CHATGLM_SALT || "8a1317a7468aa3ad86e997d08f3f31cb";
@@ -155,6 +155,8 @@ interface GuestSession {
   deviceId: string;
   /** Unix seconds from the JWT, so we refresh before the server rejects us. */
   expiresAt: number;
+  /** The proxy this token was issued through; later calls reuse it. */
+  proxy?: string;
 }
 
 let session: GuestSession | null = null;
@@ -183,34 +185,48 @@ export async function guestSession(force = false): Promise<GuestSession> {
   if (!force && inflight) return inflight;
 
   inflight = (async () => {
-    const deviceId = hex32();
-    let res: Response;
-    try {
-      res = await fetch(
-        `${CHATGLM_BASE}/chatglm/user-api/guest/access`,
-        withProxy(
-          {
-            method: "POST",
-            headers: signedHeaders(deviceId),
-            body: "{}",
-            signal: AbortSignal.timeout(CHATGLM_TIMEOUT_MS),
-          },
-          CHATGLM_PROXY
-        )
-      );
-    } catch (e: any) {
-      throw new ChatGLMError(`Could not reach ${CHATGLM_BASE}: ${e?.message || e}`, 502);
+    // A refusal here can be the address rather than the request, so a pool is
+    // walked before giving up. Without one this runs once, as before.
+    let lastErr: ChatGLMError | null = null;
+    for (let attempt = 0; attempt < CHATGLM_POOL.attempts(); attempt++) {
+      const proxy = CHATGLM_POOL.current();
+      const deviceId = hex32();
+
+      let res: Response;
+      try {
+        res = await fetch(
+          `${CHATGLM_BASE}/chatglm/user-api/guest/access`,
+          withProxy(
+            {
+              method: "POST",
+              headers: signedHeaders(deviceId),
+              body: "{}",
+              signal: AbortSignal.timeout(CHATGLM_TIMEOUT_MS),
+            },
+            proxy
+          )
+        );
+      } catch (e: any) {
+        lastErr = new ChatGLMError(`Could not reach ${CHATGLM_BASE}: ${e?.message || e}`, 502);
+        CHATGLM_POOL.rotate();
+        continue;
+      }
+
+      const json = await res.json().catch(() => null);
+      const token = json?.result?.access_token;
+      if (!res.ok || typeof token !== "string" || !token) {
+        lastErr = new ChatGLMError(
+          `chatglm.cn refused a guest session (${res.status}${json?.message ? `: ${json.message}` : ""}).`,
+          res.status === 400 ? 502 : res.status || 502
+        );
+        CHATGLM_POOL.rotate();
+        continue;
+      }
+
+      session = { token, deviceId, expiresAt: jwtExpiry(token) || now + 3600, proxy };
+      return session;
     }
-    const json = await res.json().catch(() => null);
-    const token = json?.result?.access_token;
-    if (!res.ok || typeof token !== "string" || !token) {
-      throw new ChatGLMError(
-        `chatglm.cn refused a guest session (${res.status}${json?.message ? `: ${json.message}` : ""}).`,
-        res.status === 400 ? 502 : res.status || 502
-      );
-    }
-    session = { token, deviceId, expiresAt: jwtExpiry(token) || now + 3600 };
-    return session;
+    throw lastErr || new ChatGLMError("chatglm.cn refused a guest session.", 502);
   })();
 
   try {
@@ -436,7 +452,7 @@ export async function uploadImage(url: string): Promise<{ image_url: string; fil
 
   const res = await fetch(
     `${CHATGLM_BASE}/chatglm/backend-api/assistant/file_upload`,
-    withProxy({ method: "POST", headers, body: fd, signal: AbortSignal.timeout(CHATGLM_TIMEOUT_MS) }, CHATGLM_PROXY)
+    withProxy({ method: "POST", headers, body: fd, signal: AbortSignal.timeout(CHATGLM_TIMEOUT_MS) }, s.proxy)
   );
   const json = await res.json().catch(() => null);
   const file = json?.result;
@@ -507,7 +523,7 @@ export async function openCompletion(opts: ChatGLMCompletionOpts): Promise<Respo
             body,
             signal: AbortSignal.timeout(CHATGLM_TIMEOUT_MS),
           },
-          CHATGLM_PROXY
+          s.proxy
         )
       );
     } catch (e: any) {
