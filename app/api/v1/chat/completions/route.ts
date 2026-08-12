@@ -50,7 +50,7 @@ import {
   resolveChatGLMModel,
   chatglmImageModel,
   openCompletion as openChatGLMCompletion,
-  chatglmDeltas,
+  chatglmRun,
   emptyChatGLMSummary,
   toChatGLMMessages,
   resolveChatMode,
@@ -1420,17 +1420,22 @@ async function handleChatGLM(args: {
     ? (preprocessToolMessages(messages, body.tools, body.tool_choice) as OpenAIMessage[])
     : messages;
 
+  // Opened eagerly so a refusal is a clean HTTP status rather than an error
+  // mid-stream; chatglmRun reuses this response as its first attempt and only
+  // opens another if this one comes back carrying nothing.
+  const glmOpts = {
+    model: modelId,
+    messages: toChatGLMMessages(effMessages, uploads),
+    chatMode: resolveChatMode({
+      reasoningEffort: effort || undefined,
+      enableThinking: typeof body.enable_thinking === "boolean" ? body.enable_thinking : undefined,
+    }),
+    networking: body.is_networking === true,
+  };
+
   let glmRes: Response;
   try {
-    glmRes = await openChatGLMCompletion({
-      model: modelId,
-      messages: toChatGLMMessages(effMessages, uploads),
-      chatMode: resolveChatMode({
-        reasoningEffort: effort || undefined,
-        enableThinking: typeof body.enable_thinking === "boolean" ? body.enable_thinking : undefined,
-      }),
-      networking: body.is_networking === true,
-    });
+    glmRes = await openChatGLMCompletion(glmOpts);
   } catch (e: any) {
     const status = e instanceof ChatGLMError ? e.status : 502;
     logUsage(recordId, modelId, hadImage, wantStream, status);
@@ -1466,7 +1471,7 @@ async function handleChatGLM(args: {
           const parser = registry ? new ToolStream(registry) : null;
           let toolCalls: OAIToolCall[] = [];
           try {
-            for await (const d of chatglmDeltas(glmRes, summary)) {
+            for await (const d of chatglmRun(glmOpts, summary, glmRes)) {
               if (d.kind === "reasoning") {
                 if (withReasoning && d.text) send({ reasoning_content: d.text });
                 continue;
@@ -1514,7 +1519,7 @@ async function handleChatGLM(args: {
   let content = "";
   let reasoning = "";
   try {
-    for await (const d of chatglmDeltas(glmRes, summary)) {
+    for await (const d of chatglmRun(glmOpts, summary, glmRes)) {
       if (d.kind === "reasoning") reasoning += d.text;
       else if (d.kind === "image") content += asMarkdown(d.text);
       else content += d.text;

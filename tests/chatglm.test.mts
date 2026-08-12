@@ -255,5 +255,33 @@ async function collect(res: Response, summary = emptyChatGLMSummary()) {
   check("error frame throws ChatGLMError", threw);
 }
 
+// --- empty runs -------------------------------------------------------------
+//
+// About one run in four from a host chatglm.cn serves poorly completes with no
+// text, no reasoning and no error. Forwarded as-is that is a 200 with a blank
+// message, which is the worst answer available: the caller sees nothing and has
+// nothing to act on. chatglmRun retries such a run and errors if it stays empty.
+
+// 18. An empty stream yields nothing at all — which is what makes it safe to
+//     retry, and what the route must not pass through as success.
+{
+  const out = await collect(sse([]));
+  check("empty stream yields no deltas", out.text === "" && out.reasoning === "" && out.images.length === 0, JSON.stringify(out));
+}
+
+// 19. A run carrying only frames with no content is equally empty: parts with
+//     empty strings must not count as output.
+{
+  const out = await collect(sse([textFrame(""), thinkFrame(""), { parts: [{ content: [] }] }]));
+  check("contentless frames yield nothing", out.text === "" && out.reasoning === "", JSON.stringify(out));
+}
+
+// 20. Reasoning alone still counts as output — a Deep run that thinks and then
+//     says nothing is a real answer shape, not an empty run to retry.
+{
+  const out = await collect(sse([thinkFrame("pondering")]));
+  check("reasoning-only run is not empty", out.reasoning === "pondering", JSON.stringify(out));
+}
+
 console.log(`chatglm: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

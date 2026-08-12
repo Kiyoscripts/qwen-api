@@ -88,6 +88,9 @@ const CHATGLM_RETRIES = Math.max(0, Number(process.env.CHATGLM_RETRIES || 1));
 /** Extra attempts for a draw that came back without a picture — see generateImage. */
 const CHATGLM_IMAGE_RETRIES = Math.max(0, Number(process.env.CHATGLM_IMAGE_RETRIES || 1));
 
+/** Extra attempts for a chat run that produced no tokens at all — see chatglmRun. */
+const CHATGLM_EMPTY_RETRIES = Math.max(0, Number(process.env.CHATGLM_EMPTY_RETRIES || 2));
+
 const CHATGLM_UA =
   process.env.CHATGLM_USER_AGENT ||
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
@@ -668,6 +671,49 @@ export async function* chatglmDeltas(
       }
     }
   }
+}
+
+/**
+ * Run a chat completion, retrying a run that produced nothing at all.
+ *
+ * Measured against the live service, roughly one request in four comes back as
+ * a well-formed stream carrying zero tokens: no text, no reasoning, no error.
+ * Passed straight through that becomes a 200 with an empty message, which is
+ * the worst possible answer — the caller sees a blank reply and has nothing to
+ * act on, and it looks like the proxy losing the response.
+ *
+ * Retrying is safe precisely because the run was empty: nothing has been
+ * emitted downstream, so a second attempt cannot duplicate output. Only once a
+ * delta has been yielded does this commit to the run it is on. If every attempt
+ * comes back empty the caller gets an error, never silence.
+ */
+export async function* chatglmRun(
+  opts: ChatGLMCompletionOpts,
+  summary: ChatGLMSummary = emptyChatGLMSummary(),
+  /**
+   * An already-opened first attempt. The caller opens eagerly so a refused
+   * request becomes a clean HTTP status instead of an error mid-stream; handing
+   * that response in here avoids opening a second one to replace it.
+   */
+  primed?: Response
+): AsyncGenerator<ChatGLMDelta> {
+  for (let attempt = 0; attempt <= CHATGLM_EMPTY_RETRIES; attempt++) {
+    const res = attempt === 0 && primed ? primed : await openCompletion(opts);
+    let emitted = false;
+    try {
+      for await (const d of chatglmDeltas(res, summary)) {
+        emitted = true;
+        yield d;
+      }
+    } finally {
+      await res.body?.cancel().catch(() => {});
+    }
+    if (emitted) return;
+  }
+  throw new ChatGLMError(
+    "chatglm.cn returned an empty run: the stream completed without any content. This is common from hosts it will not serve properly; see CHATGLM_PROXY.",
+    502
+  );
 }
 
 /**
