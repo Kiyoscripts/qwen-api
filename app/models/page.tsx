@@ -7,7 +7,7 @@ import { TOKENROUTER_MODELS, tokenRouterConfigured } from "@/lib/tokenrouter";
 import { OPENCODE_ZEN_MODELS, openCodeZenConfigured } from "@/lib/opencodezen";
 import { SOLAR_MODELS, solarConfigured } from "@/lib/solar";
 import { NVIDIA_MODELS, nvidiaConfigured } from "@/lib/nvidia";
-import { CHATGLM_MODELS, chatglmConfigured } from "@/lib/chatglm";
+import { chatglmModels } from "@/lib/chatglm";
 import { modelMaker } from "@/lib/modelIcons";
 import { Shell } from "../Shell";
 import { ModelBrowser } from "../ModelBrowser";
@@ -58,8 +58,7 @@ async function load(): Promise<{ rows: CardModel[]; degraded: boolean }> {
         context: m.contextLength,
       });
 
-  if (chatglmConfigured())
-    for (const m of CHATGLM_MODELS)
+  for (const m of chatglmModels())
       rows.push({
         id: m.id,
         name: m.name,

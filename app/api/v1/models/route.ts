@@ -5,7 +5,7 @@ import { TOKENROUTER_MODELS, tokenRouterConfigured } from "@/lib/tokenrouter";
 import { OPENCODE_ZEN_MODELS, openCodeZenConfigured } from "@/lib/opencodezen";
 import { SOLAR_MODELS, solarConfigured } from "@/lib/solar";
 import { NVIDIA_MODELS, nvidiaConfigured } from "@/lib/nvidia";
-import { CHATGLM_MODELS, chatglmConfigured } from "@/lib/chatglm";
+import { chatglmModels } from "@/lib/chatglm";
 import { VIRTUAL_MODELS } from "@/lib/media";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 import { withTokenFailover } from "@/lib/tokens";
@@ -113,8 +113,7 @@ const solarEntries = solarConfigured()
 
 // chatglm.cn. The text model carries the Fast/Standard/Deep ladder and accepts
 // images; the image models are t2i, one of which also takes a reference image.
-const chatglmEntries = chatglmConfigured()
-  ? CHATGLM_MODELS.map((m) => ({
+const chatglmEntries = chatglmModels().map((m) => ({
       id: m.id,
       object: "model" as const,
       created: 0,
@@ -128,8 +127,7 @@ const chatglmEntries = chatglmConfigured()
         ...(m.contextLength ? { context_length: m.contextLength } : {}),
         ...(m.reasoningEffort?.length ? { reasoning_effort: [...m.reasoningEffort] } : {}),
       },
-    }))
-  : [];
+    }));
 
 // NVIDIA NIM. Reasoning is a two-state switch (enable_thinking) rather than an
 // effort ladder, so no reasoning_effort list is advertised for these.

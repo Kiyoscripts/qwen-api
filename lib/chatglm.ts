@@ -43,6 +43,18 @@ export const CHATGLM_BASE = (process.env.CHATGLM_BASE || "https://chatglm.cn").r
 /** Kill switch: the upstream is a public site, so there is no key to withhold. */
 export const CHATGLM_DISABLED = process.env.CHATGLM_DISABLED === "1";
 
+/**
+ * Withdraw just the image models, keeping the text one.
+ *
+ * They are gated differently upstream: chat answers fine from a datacenter IP,
+ * but a draw from one comes back with no image AND no text — an empty run
+ * rather than the "tool call printed as prose" failure seen from a residential
+ * connection. Nothing in the response says why, so a host that cannot draw has
+ * to be told rather than detected. Set this on such a deploy so the image
+ * models stop being advertised instead of 502-ing every call.
+ */
+export const CHATGLM_IMAGES_DISABLED = process.env.CHATGLM_IMAGES_DISABLED === "1";
+
 /** Signing salt, lifted from the site bundle. Rotating upstream breaks signing. */
 const SALT = process.env.CHATGLM_SALT || "8a1317a7468aa3ad86e997d08f3f31cb";
 
@@ -269,8 +281,14 @@ export function chatglmConfigured(): boolean {
   return !CHATGLM_DISABLED;
 }
 
+/** The models this deployment can actually serve. */
+export function chatglmModels(): ChatGLMModel[] {
+  if (!chatglmConfigured()) return [];
+  return CHATGLM_IMAGES_DISABLED ? CHATGLM_MODELS.filter((m) => m.kind !== "image") : CHATGLM_MODELS;
+}
+
 export function isChatGLMModel(id: string): boolean {
-  return chatglmConfigured() && CHATGLM_MODELS.some((m) => m.id === id);
+  return chatglmModels().some((m) => m.id === id);
 }
 
 export function resolveChatGLMModel(id: string): ChatGLMModel | null {
@@ -663,8 +681,15 @@ export async function generateImage(opts: {
     if (summary.images.length) return { images: summary.images, prompt: summary.imagePrompt, text };
   }
 
+  // Two distinct failures, and the difference is the whole diagnosis. Text
+  // present means the model printed its tool call instead of drawing — bad
+  // luck, and the retry above already had a go. Nothing at all means the run
+  // came back empty, which is what a host that is not allowed to draw sees; a
+  // deploy hitting that wants CHATGLM_IMAGES_DISABLED rather than more retries.
   throw new ChatGLMError(
-    text.trim() ? `No image was produced: ${text.trim().slice(0, 200)}` : "No image was produced.",
+    text.trim()
+      ? `No image was produced: ${text.trim().slice(0, 200)}`
+      : "No image was produced: the upstream returned an empty run, which usually means this host is not permitted to generate images. Set CHATGLM_IMAGES_DISABLED=1 to stop advertising them here.",
     502
   );
 }

@@ -14,6 +14,7 @@ import {
   toChatGLMMessages,
   resolveChatMode,
   isChatGLMModel,
+  chatglmModels,
   resolveChatGLMModel,
   chatglmImageModel,
   ChatGLMError,
@@ -105,6 +106,21 @@ function check(name: string, cond: boolean, detail = "") {
   check("glm-image does NOT advertise vision", resolveChatGLMModel("z-ai/glm-image")?.vision === false);
   check("glm-image-fast DOES advertise vision", resolveChatGLMModel("z-ai/glm-image-fast")?.vision === true);
   check("no public id says free", !CHATGLM_MODELS.some((x) => /free/i.test(x.id) || /free/i.test(x.name)));
+}
+
+// 6b. The image models can be withdrawn on their own. Datacenter hosts get an
+//     empty run from every draw while chat keeps working, so a deploy has to be
+//     able to drop the image models without losing GLM-5.2 with them.
+{
+  const served = chatglmModels();
+  const imagesOff = process.env.CHATGLM_IMAGES_DISABLED === "1";
+  check(
+    "image models follow CHATGLM_IMAGES_DISABLED",
+    served.some((m) => m.kind === "image") === !imagesOff,
+    `disabled=${imagesOff} served=${served.map((m) => m.id).join(",")}`
+  );
+  check("the text model is always served", served.some((m) => m.id === "z-ai/glm-5.2"));
+  check("routing follows the served list", isChatGLMModel("z-ai/glm-image") === !imagesOff);
 }
 
 // --- message conversion -----------------------------------------------------
