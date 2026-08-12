@@ -24,6 +24,7 @@
 
 import type { OpenAIMessage } from "./qwen";
 import {
+  DEEPSEEK_FLASH_EFFORT,
   LOW_MED_HIGH_EFFORT,
   NORTH_MINI_EFFORT,
   defaultEffort,
@@ -97,10 +98,23 @@ export const OPENCODE_ZEN_MODELS: OpenCodeZenModel[] = [
     // Reasons, but OpenCode variants is empty — no effort switch.
     thinking: true,
   },
-  // DeepSeek V4 Flash used to be served here on Zen's free tier. OneCompiler
-  // now carries it, and that pool does not need a Zen key, so the id moved to
-  // lib/onecompiler.ts. It loses the effort ladder in the process — OneCompiler
-  // exposes no reasoning_effort — which is the trade for it always being listed.
+  {
+    // The second route to DeepSeek V4 Flash. OneCompiler serves the same model
+    // as deepseek/deepseek-v4-flash and needs no Zen key, so that one is the
+    // default — but its pool runs into a daily cap ("You have reached the daily
+    // limit for AI interactions"), and this is what you switch to when it does.
+    //
+    // The id says which pool serves it because that is the only thing that
+    // distinguishes the two, and it is exactly what you need to know when one
+    // of them is spent. This side also keeps the effort ladder, which the
+    // OneCompiler route has no way to express.
+    id: "deepseek/deepseek-v4-flash-zen",
+    name: "DeepSeek V4 Flash (Zen)",
+    upstreamId: "deepseek-v4-flash-free",
+    thinking: true,
+    // opencode/deepseek-v4-flash-free variants: low, high, max
+    reasoningEffort: DEEPSEEK_FLASH_EFFORT,
+  },
   {
     id: "opencode/mimo-v2.5",
     name: "MiMo v2.5",

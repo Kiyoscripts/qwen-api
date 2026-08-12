@@ -4,7 +4,12 @@
 // The parser must surface both kinds, survive frame splits, and not die on a
 // single malformed keepalive.
 
-import { openCodeZenDeltas, openCodeZenText, OpenCodeZenError } from "../lib/opencodezen.ts";
+import {
+  openCodeZenDeltas,
+  openCodeZenText,
+  OpenCodeZenError,
+  OPENCODE_ZEN_MODELS,
+} from "../lib/opencodezen.ts";
 
 let passed = 0;
 let failed = 0;
@@ -108,6 +113,23 @@ async function collect(res: Response): Promise<{ text: string; reasoning: string
   });
   check("openCodeZenText content", content === "hi");
   check("openCodeZenText reasoning", reasoning === "why");
+}
+
+// 9. DeepSeek V4 Flash has two routes, because OneCompiler's runs into a daily
+//    cap and Zen's is what you switch to when it does. They must stay distinct
+//    ids — one registry claiming the other's id would make the fallback
+//    unreachable, which is the entire point of having it.
+{
+  const zen = OPENCODE_ZEN_MODELS.find((m) => m.id === "deepseek/deepseek-v4-flash-zen");
+  check("the Zen route exists", Boolean(zen), JSON.stringify(OPENCODE_ZEN_MODELS.map((m) => m.id)));
+  check("it points at Zen's free slug", zen?.upstreamId === "deepseek-v4-flash-free", String(zen?.upstreamId));
+  check("it keeps the effort ladder", zen?.reasoningEffort?.length === 3, JSON.stringify(zen?.reasoningEffort));
+  check(
+    "it does not claim OneCompiler's id",
+    !OPENCODE_ZEN_MODELS.some((m) => m.id === "deepseek/deepseek-v4-flash"),
+    "Zen must not shadow the OneCompiler route"
+  );
+  check("no public id says free", !OPENCODE_ZEN_MODELS.some((m) => /free/i.test(m.id) || /free/i.test(m.name)));
 }
 
 console.log(`opencodezen.stream: ${passed} passed, ${failed} failed`);
