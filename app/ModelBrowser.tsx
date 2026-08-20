@@ -11,6 +11,8 @@ export function ModelBrowser({ rows }: { rows: CardModel[] }) {
   const t = useT();
   const [query, setQuery] = useState("");
   const [maker, setMaker] = useState<string | null>(null);
+  const [capability, setCapability] = useState<string | null>(null);
+  const [sort, setSort] = useState("name");
 
   const labels = {
     reasoning: t("tag_reasoning"),
@@ -31,10 +33,12 @@ export function ModelBrowser({ rows }: { rows: CardModel[] }) {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
       if (maker && r.maker !== maker) return false;
+      if (capability === "reasoning" && !r.thinking) return false;
+      if (capability && capability !== "reasoning" && !r.inputs.includes(capability)) return false;
       if (!q) return true;
       return r.id.toLowerCase().includes(q) || r.name.toLowerCase().includes(q);
-    });
-  }, [rows, query, maker]);
+    }).sort((a,b)=>sort==="provider"?a.maker.localeCompare(b.maker)||a.name.localeCompare(b.name):sort==="context"?(b.context||0)-(a.context||0):a.name.localeCompare(b.name));
+  }, [rows, query, maker, capability, sort]);
 
   return (
     <>
@@ -54,14 +58,14 @@ export function ModelBrowser({ rows }: { rows: CardModel[] }) {
               {key} {n}
             </Chip>
           ))}
-        </div>
+        </div><select value={capability||""} onChange={e=>setCapability(e.target.value||null)} className="h-10 border border-rule bg-transparent px-3 font-mono text-xs text-ink" aria-label="Filter by capability"><option value="">All capabilities</option><option value="reasoning">Reasoning</option><option value="image">Image</option><option value="file">Files</option><option value="video">Video</option><option value="audio">Audio</option></select><select value={sort} onChange={e=>setSort(e.target.value)} className="h-10 border border-rule bg-transparent px-3 font-mono text-xs text-ink" aria-label="Sort models"><option value="name">Sort: name</option><option value="provider">Sort: provider</option><option value="context">Sort: context</option></select>
       </div>
 
       {shown.length === 0 ? (
         <div className="mt-8 border border-dashed border-rule-strong px-6 py-16 text-center"
              style={{ borderRadius: "var(--r-sm)" }}>
           <p className="h3 text-ink">{t("models_none")}</p>
-          <button onClick={() => { setQuery(""); setMaker(null); }} className="btn btn-ghost mt-5">
+          <button onClick={() => { setQuery(""); setMaker(null); setCapability(null); setSort("name"); }} className="btn btn-ghost mt-5">
             {t("models_reset")}
           </button>
         </div>

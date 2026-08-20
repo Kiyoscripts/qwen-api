@@ -4,6 +4,7 @@ export const ja: Partial<Dict> = {
   nav_models: "モデル",
   nav_playground: "プレイグラウンド",
   nav_chat: "チャット",
+  nav_status: "Status",
   nav_docs: "ドキュメント",
   nav_login: "ログイン",
   nav_dashboard: "ダッシュボード",

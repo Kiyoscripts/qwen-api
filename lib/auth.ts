@@ -1,145 +1,76 @@
-// Discord-based auth. Identity comes from Discord (via the /link bot flow). We
-// store a high-entropy "login key" (hashed) per account; the user logs in with it.
-// Sessions are signed (AES-GCM) cookies — no session table.
-
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
 import { admin } from "./supabase";
 import { seal, unseal } from "./secureToken";
+import { recordSecurityEvent } from "./securityEvents";
 
+const scrypt = promisify(scryptCallback);
 const COOKIE = "qwen_session";
-const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+const MAX_AGE = 60 * 60 * 24 * 30;
+export type Role = "admin" | "user";
+export interface User { id: string; username: string; role: Role; disabled: boolean; created_at: string; }
+const USER_COLS = "id, username, role, disabled, created_at";
 
-export type Role = "owner" | "admin" | "member";
-
-export interface User {
-  id: string;
-  discord_id: string | null;
-  discord_username: string | null;
-  discord_global_name: string | null;
-  discord_avatar: string | null;
-  discord_role: Role | null;
-  created_at: string;
+export async function hashPassword(password: string): Promise<string> {
+  if (password.length < 10) throw new Error("Password must be at least 10 characters.");
+  const salt = randomBytes(16).toString("hex");
+  const key = await scrypt(password, salt, 64) as Buffer;
+  return `scrypt:${salt}:${key.toString("hex")}`;
 }
-
-// --- login keys -------------------------------------------------------------
-export function newLoginKey(): string {
-  return "qkey_" + randomBytes(20).toString("hex");
+export async function verifyPassword(password: string, encoded: string): Promise<boolean> {
+  const [kind, salt, expectedHex] = String(encoded).split(":");
+  if (kind !== "scrypt" || !salt || !expectedHex) return false;
+  const expected = Buffer.from(expectedHex, "hex");
+  const actual = await scrypt(password, salt, expected.length) as Buffer;
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
-export function hashLoginKey(key: string): string {
-  return createHash("sha256").update(key.trim()).digest("hex");
+export function normalizeUsername(value: string): string {
+  const username = value.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_.-]{2,31}$/.test(username)) throw new Error("Username must be 3-32 letters, numbers, dots, dashes, or underscores.");
+  return username;
 }
-
-// --- session cookie ---------------------------------------------------------
-interface Session {
-  uid: string;
-  iat: number;
+export interface Session { uid: string; iat: number; sid?: string; }
+export const RECENT_LOGIN_MS = 15 * 60_000;
+export function isRecentLogin(session: Session | null, now = Date.now()) {
+  return Boolean(session && now >= session.iat && now - session.iat <= RECENT_LOGIN_MS);
 }
-export function sessionCookie(user: { id: string }): string {
-  const token = seal({ uid: user.id, iat: Date.now() });
+export function sessionCookie(user: { id: string }, sid?: string): string {
   const secure = process.env.NODE_ENV === "production" ? " Secure;" : "";
-  return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE};${secure}`;
+  return `${COOKIE}=${seal({ uid: user.id, iat: Date.now(), sid })}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE};${secure}`;
 }
 export function clearSessionCookie(): string {
   const secure = process.env.NODE_ENV === "production" ? " Secure;" : "";
   return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0;${secure}`;
 }
-function readSession(req: Request): Session | null {
-  const cookie = req.headers.get("cookie") || "";
-  const m = cookie.match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
-  if (!m) return null;
-  const s = unseal<Session>(m[1]);
-  return s && typeof s.uid === "string" ? s : null;
+export function readSession(req: Request): Session | null {
+  const match = (req.headers.get("cookie") || "").match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
+  const value = match ? unseal<Session>(match[1]) : null;
+  return value && typeof value.uid === "string" ? value : null;
 }
-
-const USER_COLS = "id, discord_id, discord_username, discord_global_name, discord_avatar, discord_role, created_at";
-
-// --- users ------------------------------------------------------------------
 export async function getUserById(id: string): Promise<User | null> {
   const { data } = await admin().from("users").select(USER_COLS).eq("id", id).maybeSingle();
-  return (data as any) || null;
+  return data && !data.disabled ? data as User : null;
 }
-
 export async function currentUser(req: Request): Promise<User | null> {
-  const s = readSession(req);
-  if (!s) return null;
-  return getUserById(s.uid);
+  const session = readSession(req);
+  return session ? getUserById(session.uid) : null;
 }
-
-// --- authorization ----------------------------------------------------------
-
-/** Roles allowed into the admin dashboard and its API routes. */
-export function isAdminRole(role: Role | null | undefined): boolean {
-  return role === "owner" || role === "admin";
-}
-
-/**
- * Gate an admin-only route on the caller's account rather than a shared secret.
- *
- * A shared password is one credential for everyone: it cannot say who acted, it
- * cannot be revoked for one person, and it leaks permanently once pasted
- * anywhere. Roles come from the Discord link flow, so access follows the account
- * and disappears the moment the role is downgraded.
- *
- * Returns the user when authorised, otherwise the Response to send back:
- * 401 when nobody is signed in (the client should redirect to /login) and 403
- * when a real account simply lacks the role — collapsing those into one status
- * makes a permissions problem look like a broken session.
- */
-export async function requireAdmin(
-  req: Request
-): Promise<{ user: User; response?: undefined } | { user?: undefined; response: Response }> {
+export function isAdminRole(role: Role | null | undefined) { return role === "admin"; }
+export async function requireAdmin(req: Request): Promise<{ user: User; response?: undefined } | { user?: undefined; response: Response }> {
   const user = await currentUser(req);
-  if (!user) {
-    return {
-      response: Response.json({ error: "Not signed in.", type: "unauthenticated" }, { status: 401 }),
-    };
-  }
-  if (!isAdminRole(user.discord_role)) {
-    return {
-      response: Response.json({ error: "Admin access required.", type: "forbidden" }, { status: 403 }),
-    };
-  }
+  const target = new URL(req.url).pathname;
+  if (!user) { await Promise.allSettled([audit(null, "admin.access.denied", "route", target, { reason: "not_signed_in" }),recordSecurityEvent({type:"admin_access_denied",category:"authorization",severity:"medium",sourceIp:req.headers.get("x-client-ip"),requestId:req.headers.get("x-request-id"),route:target,details:{reason:"not_signed_in"}})]); return { response: Response.json({ error: "Not signed in." }, { status: 401 }) }; }
+  if (user.role !== "admin") { await Promise.allSettled([audit(user.id, "admin.access.denied", "route", target, { reason: "insufficient_role" }),recordSecurityEvent({type:"admin_access_denied",category:"authorization",severity:"high",actorId:user.id,sourceIp:req.headers.get("x-client-ip"),requestId:req.headers.get("x-request-id"),route:target,details:{reason:"insufficient_role"}})]); return { response: Response.json({ error: "Admin access required." }, { status: 403 }) }; }
   return { user };
 }
-
-// Find the account whose login key matches (for login).
-export async function getUserByLoginKey(key: string): Promise<User | null> {
-  const { data } = await admin().from("users").select(USER_COLS).eq("login_key_hash", hashLoginKey(key)).maybeSingle();
-  return (data as any) || null;
+export async function authenticate(username: string, password: string): Promise<User | null> {
+  let clean: string;
+  try { clean = normalizeUsername(username); } catch { return null; }
+  const { data } = await admin().from("users").select(`${USER_COLS}, password_hash`).eq("username", clean).maybeSingle();
+  if (!data || data.disabled || !(await verifyPassword(password, data.password_hash))) return null;
+  const { password_hash: _passwordHash, ...user } = data;
+  return user as User;
 }
-
-export interface DiscordProfile {
-  discord_id: string;
-  discord_username?: string;
-  discord_global_name?: string;
-  discord_avatar?: string;
-  discord_role?: Role;
-}
-
-// Create the account if new / refresh Discord fields if it exists, then set a
-// fresh login key. Returns the account plus the RAW key (to DM once).
-export async function linkDiscordAndIssueKey(p: DiscordProfile): Promise<{ user: User; loginKey: string }> {
-  const loginKey = newLoginKey();
-  const fields = {
-    discord_id: p.discord_id,
-    discord_username: p.discord_username ?? null,
-    discord_global_name: p.discord_global_name ?? null,
-    discord_avatar: p.discord_avatar ?? null,
-    discord_role: (p.discord_role as string) ?? "member",
-    login_key_hash: hashLoginKey(loginKey),
-    updated_at: new Date().toISOString(),
-  };
-
-  const existing = await admin().from("users").select("id").eq("discord_id", p.discord_id).maybeSingle();
-  let id: string;
-  if (existing.data?.id) {
-    id = existing.data.id;
-    await admin().from("users").update(fields).eq("id", id);
-  } else {
-    const { data, error } = await admin().from("users").insert(fields).select("id").single();
-    if (error) throw error;
-    id = data.id;
-  }
-  const user = (await getUserById(id))!;
-  return { user, loginKey };
+export async function audit(actorId: string | null, action: string, targetType?: string, targetId?: string | null, details?: unknown) {
+  await admin().from("admin_audit_logs").insert({ actor_id: actorId, action, target_type: targetType || null, target_id: targetId || null, details: details || {} });
 }

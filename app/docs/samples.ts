@@ -1,7 +1,8 @@
 // Code samples for the docs, kept out of the page so the page stays readable.
 // Every one is written to run as-is once SYDE_API_KEY is set.
 
-export const BASE = "https://syde.up.railway.app";
+// Legacy sample module; callers should replace this placeholder with the active request origin.
+export const BASE = "${BASE_URL}";
 
 export const quickstart = [
   {

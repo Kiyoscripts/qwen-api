@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+import { Check, Copy } from "@phosphor-icons/react";
 import { Logo } from "./Logo";
 
 export interface CardModel {
@@ -11,6 +15,12 @@ export interface CardModel {
 }
 
 export function ModelCard({ m, labels }: { m: CardModel; labels: Record<string, string> }) {
+  const [copied, setCopied] = useState(false);
+  async function copyId() {
+    await navigator.clipboard.writeText(m.id);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
   return (
     <article
       className="group flex h-full flex-col justify-between border border-rule bg-[var(--paper)] p-5
@@ -27,7 +37,7 @@ export function ModelCard({ m, labels }: { m: CardModel; labels: Record<string, 
             <span className="shrink-0 font-mono text-[10.5px] text-signal">{labels.reasoning}</span>
           )}
         </div>
-        <p className="mt-1.5 font-mono text-[11.5px] break-all text-ink-3">{m.id}</p>
+        <div className="mt-1.5 flex items-start gap-2"><p className="min-w-0 flex-1 break-all font-mono text-[11.5px] text-ink-3">{m.id}</p><button type="button" onClick={copyId} className="shrink-0 p-1 text-ink-3 transition-colors hover:text-signal" aria-label={`Copy model ID ${m.id}`}>{copied?<Check size={15} weight="bold"/>:<Copy size={15}/>}</button></div>
       </div>
       <div className="mt-6">
         <div className="flex flex-wrap gap-1.5">

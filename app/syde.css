@@ -54,6 +54,8 @@
 @source "../lib/**/*.{ts,tsx}";
 
 :root {
+  --font-sans: "Trebuchet MS";
+  --font-mono: "Courier New";
   /* surface */
   --paper: #f6f7f9;
   --paper-2: #eceef2;

@@ -18,7 +18,7 @@ export async function Footer() {
           <Reveal className="grid items-center gap-8 md:grid-cols-12">
             <h2 className="h2 text-ink md:col-span-7">{t("cta_title")}</h2>
             <div className="flex flex-wrap gap-3 md:col-span-5 md:justify-end">
-              <Link href="/login" className="btn btn-primary">{t("cta_key")}</Link>
+              <Link href="/keys" className="btn btn-primary">{t("cta_key")}</Link>
               <Link href="/docs" className="btn btn-ghost">{t("cta_docs")}</Link>
             </div>
           </Reveal>

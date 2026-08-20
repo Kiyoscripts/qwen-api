@@ -1,28 +1,16 @@
-# Keep secrets and local build state out of the image and the Cloud Build upload.
+.git
+.github
+.next
+.next.*
+node_modules
 .env
 .env.*
 !.env.example
-
-.git
-.github
-node_modules
-.next
-out
-dist
-
-npm-debug.log*
-yarn-error.log*
-.DS_Store
-*.pem
-
-.vercel
-tsconfig.tsbuildinfo
-
-# Not needed at runtime.
-tests
-README.md
-
-# The redesign is a separate Vite app with its own toolchain and its own
-# node_modules. It is not part of the Next build, and shipping it would put a
-# second application into the runtime image for no reason.
-redesign
+*.log
+*.pid
+.runtime.env
+cloudflared*
+coverage
+media
+.edit*.py
+railway.env.json

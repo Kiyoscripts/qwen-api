@@ -4,6 +4,7 @@ export const ru: Partial<Dict> = {
   nav_models: "Модели",
   nav_playground: "Playground",
   nav_chat: "Чат",
+  nav_status: "Status",
   nav_docs: "Документация",
   nav_login: "Войти",
   nav_dashboard: "Панель",

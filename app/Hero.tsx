@@ -25,7 +25,7 @@ export function Hero() {
             </h1>
             <p className="lede rise mt-7" style={{ ["--i" as string]: 1 }}>{t("hero_sub")}</p>
             <div className="rise mt-9 flex flex-wrap items-center gap-3" style={{ ["--i" as string]: 2 }}>
-              <Link href="/login" className="btn btn-primary">{t("cta_key")}</Link>
+              <Link href="/keys" className="btn btn-primary">{t("cta_key")}</Link>
               <Link href="/docs" className="btn btn-ghost">{t("cta_docs")}</Link>
             </div>
           </div>

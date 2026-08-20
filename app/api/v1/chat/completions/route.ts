@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiError } from "@/lib/apiErrors";
+import { modelEnabled, capabilityEnabled } from "@/lib/settings";
 import {
   buildMessage,
   createChat,
@@ -74,8 +76,9 @@ import {
   SolarError,
 } from "@/lib/solar";
 import { pickReasoningEffort, defaultEffort } from "@/lib/reasoningEffort";
-import { logUsage } from "@/lib/supabase";
-import { authenticate } from "@/lib/apiAuth";
+import { logUsage as persistUsage } from "@/lib/supabase";
+import { authenticate, modelAllowed } from "@/lib/apiAuth";
+import { CustomProviderError, customModel as customProviderModel, proxyCustomChat } from "@/lib/customProviders";
 import { publicOrigin } from "@/lib/canonicalHost";
 import { randomUUID } from "node:crypto";
 
@@ -159,8 +162,22 @@ function keepAlive(controller: ReadableStreamDefaultController, encoder: TextEnc
   };
 }
 
-function err(message: string, status: number, type = "invalid_request_error") {
-  return NextResponse.json({ error: { message, type } }, { status });
+function usageProvider(model:string) {
+  if (isOneCompilerModel(model)) return "onecompiler";
+  if (isTokenRouterModel(model)) return "tokenrouter";
+  if (isOpenCodeZenModel(model)) return "opencodezen";
+  if (isChatGLMModel(model)) return "chatglm";
+  if (isNvidiaModel(model)) return "nvidia";
+  if (isSolarModel(model)) return "solar";
+  return "qwen";
+}
+function logUsage(apiKeyId:string, model:string, hadImage:boolean, streamed:boolean, status:number, details:Parameters<typeof persistUsage>[5]={}) {
+  return persistUsage(apiKeyId, model, hadImage, streamed, status, { provider: usageProvider(model), ...details });
+}
+
+function err(message: string, status: number, type = "invalid_request_error", req?: Request) {
+  const code = type === "model_not_found" ? "model_not_found" : type === "service_unavailable" ? "service_unavailable" : type === "upstream_error" ? "provider_unavailable" : status === 401 ? "invalid_api_key" : status === 403 ? "model_not_allowed" : "invalid_request";
+  return apiError(req, message, status, code, type);
 }
 
 // Tool calls in an OpenAI streaming chunk. Shared by every provider path so a
@@ -188,8 +205,41 @@ export async function POST(req: NextRequest) {
   const toolsOn = hasTools(body);
   const wantStream = body.stream === true;
   const modelId = typeof body.model === "string" && body.model ? body.model : DEFAULT_MODEL;
+  const capability = await capabilityEnabled("chat");
+  if (!capability.enabled) return err(capability.message, 503, "service_unavailable");
+  if (!(await modelEnabled(modelId))) return err("The requested model is disabled.", 404, "model_not_found");
+  if (!modelAllowed(record, modelId)) return err("This API key is not permitted to use the requested model.", 403);
 
   const hadImage = imageUrlsIn(messages[messages.length - 1]).length > 0;
+
+  const configuredProviderModel = await customProviderModel(modelId);
+  if (configuredProviderModel) {
+    if (hadImage) return err("This custom provider model supports text input only.", 400);
+    const started = Date.now();
+    const requestId = req.headers.get("x-request-id") || undefined;
+    try {
+      const { response, attempts } = await proxyCustomChat(configuredProviderModel, body, req.signal);
+      const headers = new Headers({ "content-type": response.headers.get("content-type") || (wantStream ? "text/event-stream" : "application/json") });
+      if (requestId) headers.set("X-Request-ID", requestId);
+      if (!wantStream) {
+        void logUsage(record.id, modelId, false, false, response.status, { provider: configuredProviderModel.provider_slug, providerAttempts: attempts, latencyMs: Date.now() - started, requestId });
+        return new Response(response.body, { status: response.status, headers });
+      }
+      if (!response.body) throw new CustomProviderError("Provider returned an empty stream.", 502, "invalid_response", attempts);
+      const reader = response.body.getReader();
+      let finalized = false;
+      const finalize = (status:number, category?:string) => { if (finalized) return; finalized = true; void logUsage(record.id, modelId, false, true, status, { provider: configuredProviderModel.provider_slug, providerAttempts: attempts, latencyMs: Date.now() - started, requestId, failureCategory: category }); };
+      const stream = new ReadableStream({
+        async pull(controller) { try { const chunk = await reader.read(); if (chunk.done) { finalize(200); controller.close(); } else controller.enqueue(chunk.value); } catch { finalize(502, "stream_error"); controller.error(new Error("Provider stream failed.")); } },
+        async cancel(reason) { finalize(499, "client_cancelled"); await reader.cancel(reason).catch(() => undefined); },
+      });
+      return new Response(stream, { status: response.status, headers });
+    } catch (error) {
+      const providerError = error instanceof CustomProviderError ? error : new CustomProviderError("Custom provider is unavailable.", 503, "provider_error");
+      void logUsage(record.id, modelId, false, wantStream, providerError.status, { provider: configuredProviderModel.provider_slug, providerAttempts: providerError.attempts, latencyMs: Date.now() - started, requestId, failureCategory: providerError.category });
+      return err(providerError.status >= 500 ? "Custom provider is unavailable." : providerError.message, providerError.status, "upstream_error", req);
+    }
+  }
 
   // OneCompiler's free-tier models, served from their own account pool rather
   // than the Qwen one. Exact registry match, so an unknown id falls through to

@@ -4,6 +4,7 @@ export const zh: Partial<Dict> = {
   nav_models: "模型",
   nav_playground: "Playground",
   nav_chat: "对话",
+  nav_status: "Status",
   nav_docs: "文档",
   nav_login: "登录",
   nav_dashboard: "控制台",

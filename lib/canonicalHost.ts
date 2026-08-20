@@ -22,6 +22,8 @@ export function isAllowedHost(hostHeader: string | null | undefined): boolean {
 
   if (host === CANONICAL_HOST) return true;
   if (host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1") return true;
+  // Cloudflare Quick Tunnels use a random subdomain during local development.
+  if (host.endsWith(".trycloudflare.com")) return true;
   if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
   if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
   if (/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;

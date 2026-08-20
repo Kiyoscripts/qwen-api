@@ -1,7 +1,8 @@
 import { getT } from "@/lib/i18nServer";
 import { Reveal } from "./Reveal";
 import { CodeTabs } from "./CodeTabs";
-import { BASE } from "./docs/samples";
+import { headers } from "next/headers";
+import { getSetting } from "@/lib/settings";
 
 /**
  * Full-width single column, deliberately unlike every other section: the code
@@ -9,6 +10,11 @@ import { BASE } from "./docs/samples";
  */
 export async function Quickstart() {
   const t = await getT();
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") || requestHeaders.get("host") || "localhost:3000";
+  const protocol = requestHeaders.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https");
+  const configured = await getSetting("documentation");
+  const BASE = configured.base_url.trim().replace(/\/$/, "") || `${protocol}://${host}`;
   return (
     <section className="border-b border-rule bg-[var(--paper-2)] py-20 md:py-28">
       <div className="field">

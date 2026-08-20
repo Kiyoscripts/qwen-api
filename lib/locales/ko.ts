@@ -4,6 +4,7 @@ export const ko: Partial<Dict> = {
   nav_models: "모델",
   nav_playground: "플레이그라운드",
   nav_chat: "채팅",
+  nav_status: "Status",
   nav_docs: "문서",
   nav_login: "로그인",
   nav_dashboard: "대시보드",

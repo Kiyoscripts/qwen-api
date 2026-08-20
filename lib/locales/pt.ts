@@ -4,6 +4,7 @@ export const pt: Partial<Dict> = {
   nav_models: "Modelos",
   nav_playground: "Playground",
   nav_chat: "Chat",
+  nav_status: "Status",
   nav_docs: "Docs",
   nav_login: "Entrar",
   nav_dashboard: "Painel",

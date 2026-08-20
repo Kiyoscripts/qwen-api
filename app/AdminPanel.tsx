@@ -1,188 +1,130 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus, Warning } from "@phosphor-icons/react";
-import { useT } from "./I18n";
 
+type Tab = "users" | "invites" | "tokens" | "providers" | "blacklist" | "settings" | "analytics" | "security" | "incidents" | "bulk" | "audit" | "exports";
+type TabGroup = { label: string; tabs: { id: Tab; label: string }[] };
+const tabGroups: TabGroup[] = [
+  { label: "Access", tabs: [{ id: "users", label: "Users" }, { id: "invites", label: "Invites" }, { id: "bulk", label: "Bulk actions" }] },
+  { label: "Infrastructure", tabs: [{ id: "tokens", label: "Qwen pool" }, { id: "providers", label: "Custom providers" }, { id: "settings", label: "Settings" }] },
+  { label: "Operations", tabs: [{ id: "analytics", label: "Analytics" }, { id: "incidents", label: "Incidents" }, { id: "exports", label: "Exports" }] },
+  { label: "Security", tabs: [{ id: "security", label: "Security events" }, { id: "blacklist", label: "IP blacklist" }, { id: "audit", label: "Audit log" }] },
+];
+const tabs = tabGroups.flatMap(group => group.tabs);
+const field = "w-full border border-rule bg-transparent px-3 py-2.5 text-sm text-ink outline-none focus:border-signal";
+const card = "border border-rule p-4 md:p-5";
+async function json(url: string, options?: RequestInit) { const r = await fetch(url, options); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || "Request failed"); return j; }
 
-type Pool = "qwen" | "onecompiler";
-
-/**
- * When a pooled token stops being valid, read from the JWT itself.
- *
- * Deliberately a local copy rather than an import from lib/tokens: that module
- * reaches the Supabase admin client and node:crypto, and pulling it into a
- * client component drags all of it into the browser bundle. This is the only
- * part the browser needs, and it is pure string work.
- */
-function tokenExpiry(token: string): number | null {
-  const parts = (token || "").split(".");
-  if (parts.length !== 3) return null;
-  try {
-    const json = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
-    const exp = JSON.parse(json)?.exp;
-    return typeof exp === "number" ? exp * 1000 : null;
-  } catch {
-    return null;
-  }
-}
-interface Tok {
-  id: string; label?: string | null; token?: string; active: boolean;
-  error_count?: number; last_used_at?: string | null;
-}
-
-/**
- * Account pools.
- *
- * Expiry is a first-class column because it is the question an operator
- * actually has: Qwen session tokens are JWTs with a roughly two week life, and
- * a pool that quietly ages out all at once looks exactly like a ban.
- */
 export function AdminPanel() {
-  const t = useT();
-  const [me, setMe] = useState<any>(undefined);
-  const [pool, setPool] = useState<Pool>("qwen");
-  const [tokens, setTokens] = useState<Tok[] | null>(null);
-  const [paste, setPaste] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-
+  const [me, setMe] = useState<any>(undefined); const [tab, setTab] = useState<Tab>("users");
+  useEffect(() => { json("/api/auth/me").then(j => setMe(j.user || null)).catch(() => setMe(null)); }, []);
   useEffect(() => {
-    fetch("/api/auth/me").then((r) => (r.ok ? r.json() : { user: null })).then((j) => setMe(j.user ?? null));
+    const readTab = () => {
+      const candidate = new URLSearchParams(window.location.search).get("tab");
+      setTab(tabs.some(item => item.id === candidate) ? candidate as Tab : "users");
+    };
+    readTab();
+    window.addEventListener("popstate", readTab);
+    return () => window.removeEventListener("popstate", readTab);
   }, []);
-
-  const load = () => {
-    setTokens(null);
-    const url = pool === "qwen" ? "/api/admin/tokens" : "/api/admin/onecompiler-tokens";
-    fetch(url).then((r) => (r.ok ? r.json() : { tokens: [] })).then((j) => setTokens(j.tokens ?? []));
-  };
-  useEffect(load, [pool]);
-
-  if (me === undefined) return null;
-
-  const role = me?.role;
-  if (!me || (role !== "owner" && role !== "admin"))
-    return (
-      <div className="py-20 text-center">
-        <h1 className="h2 text-ink">{t("admin_need_role")}</h1>
-        <Link href="/" className="btn btn-ghost mt-6">{t("admin_back_dashboard")}</Link>
-      </div>
-    );
-
-  const add = async () => {
-    const rows = paste.split("\n").map((s) => s.trim()).filter(Boolean);
-    if (!rows.length) return;
-    setBusy(true); setNote(null);
-    try {
-      const url = pool === "qwen" ? "/api/admin/tokens" : "/api/admin/onecompiler-tokens";
-      const r = await fetch(url, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tokens: rows }),
-      });
-      const j = await r.json();
-      setNote(r.ok ? `${j.added ?? rows.length} added` : j.error || t("error"));
-      if (r.ok) { setPaste(""); load(); }
-    } catch { setNote(t("error")); } finally { setBusy(false); }
-  };
-
-  const live = tokens?.filter((x) => x.active).length ?? 0;
-  const soon = (tokens ?? []).filter((x) => {
-    const exp = x.token ? tokenExpiry(x.token) : null;
-    return exp !== null && exp - Date.now() < 3 * 86400_000;
-  }).length;
-
-  return (
-    <>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="h2 text-ink">{t("admin_title")}</h1>
-          <p className="body mt-3 text-[14px]">{t("admin_subtitle")}</p>
-        </div>
-        <div className="flex gap-1" role="tablist" aria-label="Pool">
-          {([["qwen", t("admin_qwen_pool")], ["onecompiler", t("admin_oc_pool")]] as const).map(([id, label]) => (
-            <button key={id} role="tab" aria-selected={pool === id} onClick={() => setPool(id as Pool)}
-              className={`h-9 border px-3 font-mono text-[12px] transition-colors duration-200 ${
-                pool === id ? "border-ink bg-ink text-[var(--paper)]"
-                            : "border-rule text-ink-2 hover:border-ink hover:text-ink"}`}
-              style={{ borderRadius: "var(--r-sm)" }}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <dl className="mt-8 grid gap-4 sm:grid-cols-3">
-        {[[String(tokens?.length ?? "-"), t("admin_tokens_count")],
-          [String(live), t("admin_active")],
-          [String(soon), "expiring within 3 days"]].map(([f, l]) => (
-          <div key={l} className="border border-rule px-4 py-4" style={{ borderRadius: "var(--r-sm)" }}>
-            <dd className="num text-[1.7rem] leading-none font-medium text-ink">{f}</dd>
-            <dt className="mt-2 text-[12.5px] text-ink-2">{l}</dt>
-          </div>
-        ))}
-      </dl>
-
-      <div className="mt-8">
-        <label htmlFor="paste" className="mb-2 block font-mono text-[11px] tracking-wide text-ink-3 uppercase">
-          {t("admin_add")}
-        </label>
-        <textarea id="paste" rows={3} value={paste} onChange={(e) => setPaste(e.target.value)}
-          placeholder={t("admin_bulk_placeholder")}
-          className="w-full resize-y border border-rule bg-transparent px-3 py-2.5 font-mono text-[12.5px]
-                     text-ink outline-none placeholder:text-ink-3 focus:border-signal"
-          style={{ borderRadius: "var(--r-sm)" }} />
-        <button onClick={add} disabled={busy || !paste.trim()} className="btn btn-primary mt-3 disabled:opacity-40">
-          <Plus size={13} weight="bold" />{busy ? t("loading") : t("admin_add_all")}
-        </button>
-        {note && <p className="mt-3 flex items-center gap-2 text-[13px] text-signal"><Warning size={14} weight="bold" />{note}</p>}
-      </div>
-
-      <div className="mt-8">
-        {!tokens ? (
-          <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-12 animate-pulse border border-rule bg-[var(--paper-2)]" style={{ borderRadius: "var(--r-sm)" }} />
-            ))}
-          </div>
-        ) : (
-          <div className="overflow-x-auto border border-rule" style={{ borderRadius: "var(--r-sm)" }}>
-            <table className="w-full min-w-[620px] text-left">
-              <thead>
-                <tr className="border-b border-rule">
-                  {[t("admin_label"), t("admin_active"), t("admin_errors"), t("admin_last_used"), "expires"].map((h) => (
-                    <th key={h} className="px-4 py-2.5 font-mono text-[11px] tracking-wide text-ink-3 uppercase">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {tokens.map((x) => {
-                  const exp = x.token ? tokenExpiry(x.token) : null;
-                  const days = exp === null ? null : Math.round((exp - Date.now()) / 86400_000);
-                  return (
-                    <tr key={x.id} className="border-b border-rule last:border-0">
-                      <td className="px-4 py-3 font-mono text-[12.5px] text-ink">{x.label || x.id.slice(0, 8)}</td>
-                      <td className="px-4 py-3 text-[12.5px]">
-                        <span className={x.active ? "text-ink-2" : "text-signal"}>
-                          {x.active ? t("admin_active") : t("admin_disabled")}
-                        </span>
-                      </td>
-                      <td className="num px-4 py-3 text-[12.5px] text-ink-2">{x.error_count ?? 0}</td>
-                      <td className="num px-4 py-3 text-[12.5px] text-ink-3">
-                        {x.last_used_at ? new Date(x.last_used_at).toLocaleDateString() : t("keys_never")}
-                      </td>
-                      <td className="num px-4 py-3 text-[12.5px]">
-                        {days === null ? <span className="text-ink-3">-</span>
-                          : <span className={days < 3 ? "text-signal" : "text-ink-2"}>{days}d</span>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </>
-  );
+  function selectTab(next: Tab) {
+    setTab(next);
+    const url = new URL(window.location.href);
+    if (next === "users") url.searchParams.delete("tab"); else url.searchParams.set("tab", next);
+    window.history.pushState({}, "", url);
+  }
+  if (me === undefined) return <p className="body py-20 text-center">Loading...</p>;
+  if (!me || me.role !== "admin") return <div className="py-20 text-center"><h1 className="h2 text-ink">Admin access required</h1><Link href="/" className="btn btn-ghost mt-6">Back home</Link></div>;
+  return <div><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">Control room</p><h1 className="h2 text-ink">Administration</h1><p className="body mt-2 text-sm">Signed in as {me.username}</p></div><Link href="/keys" className="btn btn-ghost">My API keys</Link></div>
+    <div className="mt-8 md:hidden"><label htmlFor="admin-section" className="mb-2 block font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">Admin section</label><select id="admin-section" className={`${field} bg-[var(--paper)] font-mono`} value={tab} onChange={e => selectTab(e.target.value as Tab)}>{tabGroups.map(group => <optgroup key={group.label} label={group.label}>{group.tabs.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</optgroup>)}</select></div>
+    <nav aria-label="Admin sections" className="mt-8 hidden gap-2 overflow-x-auto border-b border-rule pb-3 md:flex">{tabs.map(x => <button key={x.id} type="button" aria-current={tab === x.id ? "page" : undefined} onClick={() => selectTab(x.id)} className={`shrink-0 px-3 py-2 font-mono text-xs ${tab === x.id ? "bg-ink text-[var(--paper)]" : "border border-rule text-ink-2"}`}>{x.label}</button>)}</nav>
+    <div className="mt-7">{tab === "users" && <Users />}{tab === "invites" && <Invites />}{tab === "tokens" && <Tokens />}{tab === "providers" && <CustomProviders />}{tab === "blacklist" && <Blacklist />}{tab === "settings" && <Settings />}{tab === "analytics" && <Analytics />}{tab === "security" && <Security />}{tab === "incidents" && <Incidents />}{tab === "bulk" && <BulkActions />}{tab === "audit" && <Audit />}{tab === "exports" && <Exports />}</div>
+  </div>;
 }
+
+function Users() {
+  const [rows, setRows] = useState<any[]>([]); const [query, setQuery] = useState(""); const [username, setUsername] = useState(""); const [password, setPassword] = useState(""); const [role, setRole] = useState("user"); const [note, setNote] = useState("");
+  const load = () => json("/api/admin/users").then(j => setRows(j.users)); useEffect(() => { load().catch(console.error); }, []);
+  async function create(e: React.FormEvent) { e.preventDefault(); try { await json("/api/admin/users", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({username,password,role}) }); setUsername(""); setPassword(""); setNote("User created."); load(); } catch(e:any){setNote(e.message);} }
+  async function patch(id:string, body:any){ try { await json("/api/admin/users", {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,...body})}); load(); } catch(e:any){alert(e.message);} }
+  async function remove(id:string){ if(!confirm("Delete this user and their keys?")) return; await json(`/api/admin/users?id=${id}`,{method:"DELETE"}); load(); }
+  const shown=rows.filter(x=>x.username?.includes(query.toLowerCase()));
+  return <section><h2 className="h3 text-ink">Users</h2><form onSubmit={create} className={`${card} mt-4 grid gap-3 md:grid-cols-4`}><input className={field} placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} required/><input className={field} type="password" minLength={10} placeholder="Temporary password" value={password} onChange={e=>setPassword(e.target.value)} required/><select className={field} value={role} onChange={e=>setRole(e.target.value)}><option value="user">User</option><option value="admin">Admin</option></select><button className="btn btn-primary">Create user</button>{note&&<p className="text-sm text-signal md:col-span-4">{note}</p>}</form><input className={`${field} mt-5 max-w-md`} placeholder="Search users" value={query} onChange={e=>setQuery(e.target.value)}/><div className="mt-4 overflow-x-auto border border-rule"><table className="w-full min-w-[700px] text-left text-sm"><thead><tr className="border-b border-rule">{["Username","Role","Status","Created","Actions"].map(x=><th key={x} className="px-4 py-3 font-mono text-xs text-ink-3">{x}</th>)}</tr></thead><tbody>{shown.map(x=><tr key={x.id} className="border-b border-rule"><td className="px-4 py-3 text-ink">{x.username}</td><td className="px-4 py-3"><select value={x.role} onChange={e=>patch(x.id,{role:e.target.value})} className="bg-transparent text-ink"><option value="user">user</option><option value="admin">admin</option></select></td><td className="px-4 py-3 text-ink-2">{x.disabled?"disabled":"active"}</td><td className="px-4 py-3 text-ink-3">{new Date(x.created_at).toLocaleDateString()}</td><td className="px-4 py-3 space-x-2"><button className="btn btn-ghost" onClick={()=>patch(x.id,{disabled:!x.disabled})}>{x.disabled?"Enable":"Disable"}</button><button className="btn btn-ghost" onClick={()=>{const p=prompt("New password (10+ characters)");if(p)patch(x.id,{password:p});}}>Reset password</button><button className="btn btn-ghost" onClick={()=>remove(x.id)}>Delete</button></td></tr>)}</tbody></table></div></section>;
+}
+
+function Invites(){const [rows,setRows]=useState<any[]>([]);const [days,setDays]=useState("7");const [fresh,setFresh]=useState("");const load=()=>json("/api/admin/invites").then(j=>setRows(j.invites));useEffect(() => { load().catch(console.error); }, []);async function create(){const j=await json("/api/admin/invites",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({days:Number(days)})});setFresh(j.code);load();}return <section><h2 className="h3 text-ink">Invitations</h2><div className={`${card} mt-4 flex flex-wrap gap-3`}><input type="number" min="1" max="365" className={`${field} max-w-36`} value={days} onChange={e=>setDays(e.target.value)}/><button className="btn btn-primary" onClick={create}>Generate invite</button>{fresh&&<div className="w-full rounded bg-[var(--paper-2)] p-3 font-mono text-sm text-ink"><span className="break-all">{fresh}</span><button className="btn btn-ghost ml-3" onClick={()=>navigator.clipboard.writeText(fresh)}>Copy</button><p className="mt-2 text-xs text-ink-3">Shown once. Send it securely.</p></div>}</div><div className="mt-5 space-y-2">{rows.map(x=><div key={x.id} className={`${card} flex flex-wrap items-center justify-between gap-3 text-sm`}><div><b className="font-mono text-ink">{x.code_prefix}</b><p className="mt-1 text-ink-3">{x.used_at?"Used":x.revoked?"Revoked":x.expires_at?`Expires ${new Date(x.expires_at).toLocaleString()}`:"No expiry"}</p></div>{!x.used_at&&!x.revoked&&<button className="btn btn-ghost" onClick={()=>json(`/api/admin/invites?id=${x.id}`,{method:"DELETE"}).then(load)}>Revoke</button>}</div>)}</div></section>}
+
+function Tokens(){
+ const [rows,setRows]=useState<any[]>([]),[capacity,setCapacity]=useState<any>({}),[paste,setPaste]=useState(""),[busy,setBusy]=useState(""),[note,setNote]=useState("");
+ const load=()=>json("/api/admin/tokens").then(j=>{setRows(j.tokens);setCapacity(j.capacity||{});}); useEffect(()=>{void load();},[]);
+ async function test(id:string){try{setBusy(id);await json("/api/admin/tokens/health",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});setNote("Health check passed.");}catch(e:any){setNote(`Health check failed: ${e.message}`);}finally{setBusy("");await load();}}
+ async function testAll(){try{setBusy("all");const j=await json("/api/admin/tokens/health",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({all:true})});setNote(`Tested ${j.tested}; ${j.failed} failed.`);}catch(e:any){setNote(e.message);}finally{setBusy("");await load();}}
+ async function add(){try{setBusy("add");await json("/api/admin/tokens",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tokens:paste})});setPaste("");await load();}finally{setBusy("");}}
+ const tone=(x:string)=>x==="healthy"?"bg-emerald-700 text-white":x==="degraded"||x==="unknown"?"bg-amber-300 text-black":x==="disabled"?"bg-[var(--paper-2)] text-ink-3":"bg-red-700 text-white";
+ return <section><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="h3 text-ink">Qwen provider pool</h2><p className="body mt-2 text-sm">Capacity, health, parking, and account expiry.</p></div><button className="btn btn-primary" disabled={!!busy} onClick={testAll}>{busy==="all"?"Testing pool...":"Test all"}</button></div>{capacity.usable===0&&<div className="mt-4 border border-red-700 bg-red-50 p-4 text-sm text-red-900">No usable Qwen accounts. Readiness will fail until capacity is restored.</div>}<div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">{[["Usable",capacity.usable],["Healthy",capacity.healthy],["Degraded",capacity.degraded],["Parked",(capacity.parked||0)+(capacity.rate_limited||0)+(capacity.challenged||0)],["Total",capacity.total]].map(([k,v])=><div className={card} key={String(k)}><p className="eyebrow">{k}</p><p className="mt-2 text-2xl text-ink">{v??0}</p></div>)}</div><div className={`${card} mt-4`}><textarea rows={3} className={field} placeholder="One token per line" value={paste} onChange={e=>setPaste(e.target.value)}/><button className="btn btn-primary mt-3" disabled={!paste.trim()||!!busy} onClick={add}>{busy==="add"?"Adding...":"Add tokens"}</button>{note&&<p className="mt-3 text-sm text-ink-2">{note}</p>}</div><div className="mt-5 space-y-3">{rows.map(x=><article className={card} key={x.id}><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><b className="text-ink">{x.label||x.id.slice(0,8)}</b><span className={`px-2 py-1 font-mono text-[10px] uppercase ${tone(x.state)}`}>{x.state.replaceAll("_"," ")}</span></div><p className="mt-2 font-mono text-xs text-ink-3">{x.masked}</p></div><div className="flex gap-2"><button className="btn btn-ghost" disabled={!!busy} onClick={()=>test(x.id)}>{busy===x.id?"Testing...":"Test"}</button><button className="btn btn-ghost" disabled={!!busy} onClick={()=>json("/api/admin/tokens",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:x.id,active:!x.active})}).then(load)}>{x.active?"Disable":"Enable"}</button></div></div><div className="mt-4 grid gap-2 text-xs text-ink-3 md:grid-cols-3"><p>Latency: {x.latency_ms==null?"—":`${x.latency_ms} ms`}</p><p>Health failures: {x.consecutive_failures||0}</p><p>Routing failures: {x.consecutive_routing_failures||0}</p><p>Last health: {x.last_health_at?new Date(x.last_health_at).toLocaleString():"Never"}</p><p>Parked until: {x.parked_until?new Date(x.parked_until).toLocaleString():"—"}</p><p>Expires: {x.expires_at?new Date(x.expires_at).toLocaleString():"Unknown"}</p></div>{x.last_error&&<p className="mt-3 break-words bg-[var(--paper-2)] p-3 text-xs text-ink-2">{x.last_failure_code?`${x.last_failure_code}: `:""}{x.last_error}</p>}</article>)}</div></section>;
+}
+
+function CustomProviders(){
+ const [providers,setProviders]=useState<any[]>([]),[models,setProviderModels]=useState<any[]>([]),[credentialRows,setCredentialRows]=useState<any[]>([]),[name,setName]=useState(""),[slug,setSlug]=useState(""),[baseUrl,setBaseUrl]=useState(""),[credentials,setCredentials]=useState<Record<string,string>>({}),[note,setNote]=useState(""),[selected,setSelected]=useState(""),[selectedModels,setSelectedModels]=useState<string[]>([]),[query,setQuery]=useState(""),[filter,setFilter]=useState("all"),[showCreate,setShowCreate]=useState(false),[busy,setBusy]=useState("");
+ const load=()=>json("/api/admin/custom-providers").then(j=>{setProviders(j.providers);setProviderModels(j.models);setCredentialRows(j.credentials||[]);setSelected((x:string)=>x&&j.providers.some((p:any)=>p.id===x)?x:j.providers[0]?.id||"");});useEffect(()=>{void load();},[]);
+ async function create(){try{setBusy("create");await json("/api/admin/custom-providers",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,slug,base_url:baseUrl})});setName("");setSlug("");setBaseUrl("");setShowCreate(false);setNote("Provider created.");await load();}catch(e:any){setNote(e.message);}finally{setBusy("");}}
+ async function action(body:any,method="POST",message="Provider updated."){try{setBusy(body.model_id||body.action||body.id);await json("/api/admin/custom-providers",{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});setNote(message);await load();}catch(e:any){setNote(e.message);}finally{setBusy("");}}
+ const provider=providers.find(p=>p.id===selected),providerCredentials=credentialRows.filter(c=>c.provider_id===selected),all=models.filter(m=>m.provider_id===selected),visible=all.filter(m=>(filter==="all"||(filter==="enabled"?m.active:!m.active))&&(!query||`${m.public_model_id} ${m.display_name}`.toLowerCase().includes(query.toLowerCase())));
+ return <section><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="h3 text-ink">Custom OpenAI providers</h2><p className="body mt-2 text-sm">Choose a provider, then search and filter its models.</p></div><button className="btn btn-primary" onClick={()=>setShowCreate(!showCreate)}>{showCreate?"Close":"New provider"}</button></div>
+ {showCreate&&<div className={`${card} mt-4 grid gap-3 md:grid-cols-4`}><input className={field} value={name} onChange={e=>setName(e.target.value)} placeholder="Provider name"/><input className={field} value={slug} onChange={e=>setSlug(e.target.value)} placeholder="slug"/><input className={field} value={baseUrl} onChange={e=>setBaseUrl(e.target.value)} placeholder="https://api.example.com/v1"/><button className="btn btn-primary" disabled={!name||!slug||!baseUrl||!!busy} onClick={create}>{busy==="create"?"Creating...":"Create"}</button></div>}{note&&<p role="status" className={`${card} mt-4 text-sm text-ink-2`}>{note}</p>}
+ <div className="mt-5 grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]"><aside className={`${card} h-fit lg:sticky lg:top-5`}><div className="flex justify-between"><b className="text-ink">Providers</b><span className="font-mono text-xs text-ink-3">{providers.length}</span></div><div className="mt-3 max-h-[60vh] space-y-2 overflow-y-auto">{providers.map(p=><button key={p.id} onClick={()=>{setSelected(p.id);setSelectedModels([]);setQuery("");setFilter("all");}} className={`w-full border p-3 text-left ${selected===p.id?"border-ink bg-ink text-[var(--paper)]":"border-rule hover:border-ink"}`}><span className="flex justify-between gap-2"><b className="truncate">{p.name}</b><i className={`mt-1 h-2 w-2 shrink-0 rounded-full ${p.active?"bg-emerald-500":"bg-ink-3"}`}/></span><span className={`mt-1 block font-mono text-[10px] ${selected===p.id?"opacity-70":"text-ink-3"}`}>{p.slug}</span><span className={`mt-2 block text-xs ${selected===p.id?"opacity-80":"text-ink-3"}`}>{p.enabled_models}/{p.models} enabled</span></button>)}</div></aside>
+ <div className="min-w-0">{provider?<article className={card}><div className="flex flex-wrap justify-between gap-3 border-b border-rule pb-4"><div><div className="flex items-center gap-2"><h3 className="text-xl text-ink">{provider.name}</h3><span className={`px-2 py-1 font-mono text-[10px] uppercase ${provider.active?"bg-emerald-700 text-white":"bg-[var(--paper-2)] text-ink-3"}`}>{provider.active?"Active":"Disabled"}</span></div><p className="mt-1 break-all font-mono text-xs text-ink-3">{provider.base_url}</p></div><button className="btn btn-ghost" disabled={!!busy} onClick={()=>action({id:provider.id,active:!provider.active},"PATCH")}>{provider.active?"Disable":"Enable"}</button></div>
+ <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]"><input type="password" className={`${field} min-w-0 sm:col-auto`} value={credentials[provider.id]||""} onChange={e=>setCredentials({...credentials,[provider.id]:e.target.value})} placeholder="Replace encrypted API credential"/><button className="btn btn-ghost w-full sm:w-auto" disabled={!credentials[provider.id]?.trim()||!!busy} onClick={async()=>{await action({action:"credential",provider_id:provider.id,credential:credentials[provider.id]},"POST","Credential replaced.");setCredentials({...credentials,[provider.id]:""});}}>Replace key</button><button className="btn btn-ghost w-full sm:w-auto" disabled={!!busy} onClick={async()=>{try{setBusy("queue");await json("/api/admin/jobs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"custom_provider.health",provider_id:provider.id})});setNote("Health check queued.");}catch(e:any){setNote(e.message);}finally{setBusy("");}}}>{busy==="queue"?"Queueing...":"Queue health"}</button><button className="btn btn-ghost w-full sm:w-auto" disabled={!!busy} onClick={async()=>{try{setBusy("test");const result=await json("/api/admin/custom-providers",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"test",provider_id:provider.id})});setNote(`Connection healthy · ${result.latency_ms} ms · ${result.models} models`);await load();}catch(e:any){setNote(`Connection failed: ${e.message}`);}finally{setBusy("");}}}>{busy==="test"?"Testing...":"Test connection"}</button><button className="btn btn-primary w-full sm:w-auto" disabled={!!busy} onClick={()=>action({action:"discover",provider_id:provider.id},"POST","Discovery completed.")}>{busy==="discover"?"Discovering...":"Discover"}</button><button className="btn btn-ghost w-full sm:w-auto" disabled={!!busy} onClick={async()=>{try{setBusy("queue-discover");await json("/api/admin/jobs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"custom_provider.discover",provider_id:provider.id})});setNote("Discovery queued.");}catch(e:any){setNote(e.message);}finally{setBusy("");}}}>{busy==="queue-discover"?"Queueing...":"Queue discovery"}</button></div>
+ <div className="mt-6 border-t border-rule pt-5"><div className="flex items-end justify-between gap-3"><div><b className="text-ink">Credentials</b><p className="mt-1 text-xs text-ink-3">Masked operational state. Secret values are never returned.</p></div><span className="font-mono text-xs text-ink-3">{providerCredentials.length}</span></div><div className="mt-3 space-y-2">{providerCredentials.map(c=><div key={c.id} className="border border-rule p-3"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><b className="font-mono text-sm text-ink">{c.secret_prefix}...</b><span className={`px-2 py-1 font-mono text-[10px] uppercase ${c.active?"bg-emerald-700 text-white":"bg-[var(--paper-2)] text-ink-3"}`}>{c.active?"Active":"Disabled"}</span>{c.parked_until&&new Date(c.parked_until)>new Date()&&<span className="bg-amber-300 px-2 py-1 font-mono text-[10px] uppercase text-black">Parked</span>}</div><p className="mt-2 text-xs text-ink-3">Last success: {c.last_success_at?new Date(c.last_success_at).toLocaleString():"Never"} · Failures: {c.consecutive_failures||0} · Latency: {c.latency_ms==null?"—":`${c.latency_ms} ms`}</p>{c.last_failure_code&&<p className="mt-1 font-mono text-xs text-red-700">{c.last_failure_code}</p>}</div><div className="flex flex-wrap gap-2"><label className="flex items-center gap-2 text-xs text-ink-3">Priority <input aria-label="Credential priority" type="number" min="-1000" max="1000" defaultValue={c.priority} className="w-20 border border-rule bg-transparent px-2 py-1 text-ink" onBlur={e=>action({action:"credential_priority",provider_id:provider.id,credential_id:c.id,priority:Number(e.target.value)},"PATCH","Credential priority updated.")}/></label><button type="button" className="btn btn-ghost" disabled={!!busy} onClick={()=>action({provider_id:provider.id,credential_id:c.id,active:!c.active},"PATCH")}>{c.active?"Disable":"Enable"}</button>{c.parked_until&&new Date(c.parked_until)>new Date()&&<button type="button" className="btn btn-ghost" disabled={!!busy} onClick={()=>action({action:"credential_unpark",provider_id:provider.id,credential_id:c.id},"PATCH","Credential unparked.")}>Unpark</button>}<button type="button" className="btn btn-ghost" disabled={!!busy} onClick={()=>confirm("Delete this credential? This cannot be undone.")&&action({provider_id:provider.id,credential_id:c.id},"DELETE","Credential deleted.")}>Delete</button></div></div></div>)}{!providerCredentials.length&&<p className="border border-dashed border-rule p-5 text-center text-sm text-ink-3">No credentials configured.</p>}</div></div>
+ <div className="mt-6"><div><b className="text-ink">Models</b><p className="mt-1 text-xs text-ink-3">{visible.length} shown · {provider.enabled_models} enabled · {provider.models} discovered</p></div><div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem]"><input className={field} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search model ID or name"/><select className={field} value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">All models</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></div>{visible.length>0&&<div className="mt-3 flex flex-wrap items-center gap-2"><button type="button" className="btn btn-ghost" onClick={()=>setSelectedModels(visible.map(m=>m.id))}>Select shown</button><button type="button" className="btn btn-ghost" disabled={!selectedModels.length} onClick={()=>setSelectedModels([])}>Clear</button><button type="button" className="btn btn-primary" disabled={!selectedModels.length||!!busy} onClick={()=>action({provider_id:provider.id,model_ids:selectedModels,active:true},"PATCH",`${selectedModels.length} models enabled.`).then(()=>setSelectedModels([]))}>Enable selected</button><button type="button" className="btn btn-ghost" disabled={!selectedModels.length||!!busy} onClick={()=>action({provider_id:provider.id,model_ids:selectedModels,active:false},"PATCH",`${selectedModels.length} models disabled.`).then(()=>setSelectedModels([]))}>Disable selected</button><span className="text-xs text-ink-3">{selectedModels.length} selected</span></div>}</div>
+ <div className="mt-3 max-h-[55vh] overflow-y-auto border border-rule"><div className="divide-y divide-rule">{visible.map(m=><label className="flex cursor-pointer items-center gap-3 p-3 hover:bg-[var(--paper-2)]" key={m.id}><input aria-label={`Select ${m.public_model_id}`} className="h-5 w-5 shrink-0" type="checkbox" checked={selectedModels.includes(m.id)} onChange={e=>setSelectedModels(e.target.checked?[...selectedModels,m.id]:selectedModels.filter(id=>id!==m.id))}/><span className="min-w-0 flex-1"><b className="block break-all text-sm text-ink">{m.public_model_id}</b><small className="block truncate text-ink-3">{m.display_name}</small>{m.stale_at&&<small className="mt-1 block text-amber-700">Missing upstream since {new Date(m.stale_at).toLocaleDateString()}{m.disabled_reason==="missing_upstream"?" · automatically disabled":" · grace period active"}</small>}</span><span className="flex shrink-0 items-center gap-2"><small className={m.active?"text-emerald-700":"text-ink-3"}>{m.active?"Enabled":"Disabled"}</small><input className="h-5 w-5" type="checkbox" checked={m.active} disabled={!!busy} onChange={e=>action({model_id:m.id,active:e.target.checked},"PATCH")}/></span></label>)}{!visible.length&&<p className="p-10 text-center text-sm text-ink-3">No models match this view.</p>}</div></div></article>:<div className={`${card} py-16 text-center text-ink-3`}>Select or create a provider.</div>}</div></div></section>;
+}
+
+function Blacklist(){const [rows,setRows]=useState<any[]>([]);const [ip,setIp]=useState("");const load=()=>json("/api/admin/blacklist").then(j=>setRows(j.blacklist));useEffect(() => { load().catch(console.error); }, []);return <section><h2 className="h3 text-ink">IP blacklist</h2><div className={`${card} mt-4 flex gap-3`}><input className={field} placeholder="IP address" value={ip} onChange={e=>setIp(e.target.value)}/><button className="btn btn-primary" onClick={()=>json("/api/admin/blacklist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ip})}).then(()=>{setIp("");load();})}>Block</button></div><div className="mt-5 space-y-2">{rows.map(x=><div className={`${card} flex justify-between text-sm`} key={x.ip}><div><b className="font-mono text-ink">{x.ip}</b><p className="text-ink-3">{x.reason||"manual"}</p></div><button className="btn btn-ghost" onClick={()=>json(`/api/admin/blacklist?ip=${encodeURIComponent(x.ip)}`,{method:"DELETE"}).then(load)}>Unblock</button></div>)}</div></section>}
+
+function Settings(){
+ const [inviteOnly,setInviteOnly]=useState(true),[quota,setQuota]=useState(0),[models,setModels]=useState(""),[docsBaseUrl,setDocsBaseUrl]=useState(""),[maintenance,setMaintenance]=useState({enabled:false,message:"Service maintenance is in progress.",chat:true,images:true,video:true,audio:true}),[note,setNote]=useState(""),[saving,setSaving]=useState(false);
+ useEffect(()=>{json("/api/admin/settings").then(j=>{const v=Object.fromEntries(j.settings.map((x:any)=>[x.key,x.value]));setInviteOnly(v.registration?.invite_only??true);setQuota(v.defaults?.quota??0);setModels((v.models?.enabled||[]).join("\n"));setDocsBaseUrl(v.documentation?.base_url||"");setMaintenance(m=>({...m,...(v.maintenance||{})}));}).catch(e=>setNote(e.message));},[]);
+ async function save(){try{setSaving(true);const enabled=models.split(/[\n,]+/).map(x=>x.trim()).filter(Boolean);await Promise.all([["registration",{invite_only:inviteOnly}],["defaults",{quota}],["models",{enabled}],["documentation",{base_url:docsBaseUrl.trim().replace(/\/$/,"")}],["maintenance",maintenance]].map(([key,value])=>json("/api/admin/settings",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({key,value})})));setNote("Settings saved.");}catch(e:any){setNote(e.message);}finally{setSaving(false);}}
+ const capability=(key:"chat"|"images"|"video"|"audio",label:string,description:string)=><label className={`${card} flex items-center justify-between gap-5`}><div><b className="text-ink">{label}</b><p className="mt-1 text-sm text-ink-3">{description}</p></div><input type="checkbox" className="h-5 w-5 accent-[var(--signal)]" checked={maintenance[key]} onChange={e=>setMaintenance({...maintenance,[key]:e.target.checked})}/></label>;
+ return <section><h2 className="h3 text-ink">Application settings</h2><p className="body mt-2 text-sm">Control access policy, model visibility, maintenance, and provider capabilities.</p><div className="mt-5 grid gap-4 lg:grid-cols-2"><label className={`${card} flex items-center justify-between gap-5`}><div><b className="text-ink">Invite-only registration</b><p className="mt-1 text-sm text-ink-3">When disabled, anyone can register without a code.</p></div><input type="checkbox" className="h-5 w-5 accent-[var(--signal)]" checked={inviteOnly} onChange={e=>setInviteOnly(e.target.checked)}/></label><label className={card}><b className="text-ink">Default request quota</b><p className="mt-1 text-sm text-ink-3">Zero means unlimited.</p><input type="number" min="0" step="1" className={`${field} mt-3`} value={quota} onChange={e=>setQuota(Math.max(0,Number(e.target.value)||0))}/></label><label className={`${card} lg:col-span-2`}><b className="text-ink">Documentation base URL</b><p className="mt-1 text-sm text-ink-3">Optional HTTPS origin used by docs, cURL examples, the API explorer, and homepage quickstarts. Leave empty to use the current website origin.</p><input type="url" className={`${field} mt-3 font-mono`} value={docsBaseUrl} onChange={e=>setDocsBaseUrl(e.target.value)} placeholder="https://api.example.com"/></label><label className={`${card} lg:col-span-2`}><b className="text-ink">Enabled Qwen models</b><p className="mt-1 text-sm text-ink-3">One exact model ID per line. Empty exposes every model returned by Qwen.</p><textarea rows={6} className={`${field} mt-3 font-mono`} value={models} onChange={e=>setModels(e.target.value)}/></label></div><div className="mt-8 flex flex-wrap items-end justify-between gap-3"><div><p className="eyebrow">Operations</p><h3 className="mt-1 text-xl text-ink">Maintenance and capabilities</h3></div><span className={`px-3 py-2 font-mono text-xs uppercase ${maintenance.enabled?"bg-red-700 text-white":"bg-emerald-700 text-white"}`}>{maintenance.enabled?"Maintenance active":"Service online"}</span></div><div className="mt-4 grid gap-4 lg:grid-cols-2"><label className={`${card} flex items-center justify-between gap-5 lg:col-span-2`}><div><b className="text-ink">Global maintenance mode</b><p className="mt-1 text-sm text-ink-3">Immediately blocks all generation capabilities with HTTP 503.</p></div><input type="checkbox" className="h-5 w-5 accent-[var(--signal)]" checked={maintenance.enabled} onChange={e=>setMaintenance({...maintenance,enabled:e.target.checked})}/></label><label className={`${card} lg:col-span-2`}><b className="text-ink">Client-facing maintenance message</b><p className="mt-1 text-sm text-ink-3">Returned when global maintenance or a capability switch blocks a request.</p><textarea rows={3} maxLength={500} className={`${field} mt-3`} value={maintenance.message} onChange={e=>setMaintenance({...maintenance,message:e.target.value})}/><p className="mt-2 text-right font-mono text-xs text-ink-3">{maintenance.message.length}/500</p></label>{capability("chat","Chat completions","OpenAI and Anthropic-compatible text requests.")}{capability("images","Image generation","Image generation and editing requests.")}{capability("video","Video generation","Video creation and rendering requests.")}{capability("audio","Text to speech","Voice synthesis requests.")}</div><div className="mt-4 flex items-center gap-4"><button className="btn btn-primary" disabled={saving||!maintenance.message.trim()} onClick={save}>{saving?"Saving...":"Save settings"}</button>{note&&<p className="text-sm text-signal">{note}</p>}</div></section>;
+}
+
+function Analytics(){
+ const [days,setDays]=useState(30),[model,setModel]=useState(""),[key,setKey]=useState(""),[data,setData]=useState<any>(null),[error,setError]=useState("");
+ const load=()=>json(`/api/admin/analytics?days=${days}&model=${encodeURIComponent(model)}&key=${encodeURIComponent(key)}`).then(x=>{setData(x);setError("");}).catch(e=>setError(e.message));
+ useEffect(()=>{void load();},[]); const max=Math.max(1,...(data?.series||[]).map((x:any)=>x.count));
+ return <section><h2 className="h3 text-ink">Usage analytics</h2><div className={`${card} mt-4 grid gap-3 md:grid-cols-4`}><select className={field} value={days} onChange={e=>setDays(Number(e.target.value))}><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">365 days</option></select><input className={field} value={model} onChange={e=>setModel(e.target.value)} placeholder="Exact model ID"/><input className={field} value={key} onChange={e=>setKey(e.target.value)} placeholder="Exact API key ID"/><button className="btn btn-primary" onClick={load}>Apply filters</button></div>{error&&<p className="mt-3 text-sm text-signal">{error}</p>}{data&&<><div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">{[["Requests",data.total],["Successful",data.success],["Errors",data.errors],["Error rate",`${(data.errorRate*100).toFixed(1)}%`]].map(([label,value])=><div className={card} key={String(label)}><p className="font-mono text-xs text-ink-3">{label}</p><b className="mt-2 block text-2xl text-ink">{value}</b></div>)}</div><div className={`${card} mt-4`}><b className="text-ink">Daily traffic</b><div className="mt-4 flex h-32 items-end gap-1">{data.series.map((x:any)=><div key={x.date} title={`${x.date}: ${x.count}`} className="min-w-[3px] flex-1 bg-signal" style={{height:`${Math.max(2,x.count/max*100)}%`}}/>)}</div></div><div className="mt-4 grid gap-4 lg:grid-cols-3">{[["Models",data.byModel,"model"],["Users",data.perUser,"username"],["API keys",data.perKey,"name"]].map(([title,rows,label]:any)=><div className={card} key={title}><b className="text-ink">{title}</b><div className="mt-3 space-y-2">{rows.slice(0,15).map((x:any,i:number)=><div className="flex justify-between gap-3 text-sm" key={`${x[label]}-${i}`}><span className="truncate text-ink-2">{x[label]}</span><span className="font-mono text-ink">{x.count}</span></div>)}</div></div>)}</div><AnalyticsProviders data={data}/></>}</section>;
+}
+function AnalyticsProviders({data}:{data:any}){return <><div className="mt-4 grid gap-4 lg:grid-cols-2"><div className={card}><b className="text-ink">Provider performance</b><div className="mt-3 space-y-3">{data.providers.map((x:any)=><div className="border-b border-rule pb-3" key={x.provider}><div className="flex justify-between gap-3"><span className="font-mono text-sm text-ink">{x.provider}</span><span className="text-sm text-ink-3">{x.count?`${(x.success/x.count*100).toFixed(1)}% success`:"—"}</span></div><p className="mt-1 text-xs text-ink-3">{x.count} requests · {x.avg_latency_ms} ms avg · {x.p95_latency_ms} ms p95 · {Number(x.avg_attempts).toFixed(2)} attempts</p></div>)}</div></div><div className={card}><b className="text-ink">Failure categories</b><div className="mt-3 space-y-2">{data.failures.map((x:any)=><div key={x.category} className="flex justify-between gap-3 text-sm"><span className="font-mono text-ink-2">{x.category}</span><span className="font-mono text-ink">{x.count}</span></div>)}{!data.failures.length&&<p className="text-sm text-ink-3">No failures in this period.</p>}</div></div></div><div className={`${card} mt-4`}><div className="flex justify-between gap-3"><div><b className="text-ink">Recent provider requests</b><p className="mt-1 text-xs text-ink-3">Sanitized telemetry; credentials and request bodies are excluded.</p></div><span className="font-mono text-xs text-ink-3">Latest 100</span></div><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[780px] text-left text-xs"><thead><tr>{["Time","Request ID","Provider","Model","Status","Latency","Attempts","Failure"].map(x=><th className="px-2 py-2 font-mono text-ink-3" key={x}>{x}</th>)}</tr></thead><tbody>{data.recentRequests.map((x:any,i:number)=><tr className="border-t border-rule" key={`${x.request_id}-${i}`}><td className="whitespace-nowrap px-2 py-2 text-ink-3">{new Date(x.created_at).toLocaleString()}</td><td className="max-w-40 truncate px-2 py-2 font-mono" title={x.request_id||""}>{x.request_id||"—"}</td><td className="px-2 py-2">{x.provider}</td><td className="max-w-44 truncate px-2 py-2" title={x.model||""}>{x.model||"—"}</td><td className={x.status>=400?"px-2 py-2 text-red-700":"px-2 py-2 text-emerald-700"}>{x.status}</td><td className="px-2 py-2">{x.latency_ms==null?"—":`${x.latency_ms} ms`}</td><td className="px-2 py-2">{x.provider_attempts}</td><td className="px-2 py-2 font-mono text-ink-3">{x.failure_category||"—"}</td></tr>)}{!data.recentRequests.length&&<tr><td colSpan={8} className="p-8 text-center text-ink-3">No requests match these filters.</td></tr>}</tbody></table></div></div></>}
+
+function Incidents(){
+ const [rows,setRows]=useState<any[]>([]),[title,setTitle]=useState(""),[message,setMessage]=useState(""),[severity,setSeverity]=useState("major"),[components,setComponents]=useState<string[]>(["provider"]),[note,setNote]=useState(""),[updateTarget,setUpdateTarget]=useState<any>(null),[updateStatus,setUpdateStatus]=useState(""),[updateMessage,setUpdateMessage]=useState(""),[updating,setUpdating]=useState(false);
+ const load=()=>json("/api/admin/incidents").then(j=>setRows(j.incidents));useEffect(()=>{void load();},[]);
+ async function create(){try{await json("/api/admin/incidents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title,message,severity,status:"investigating",components})});setTitle("");setMessage("");setNote("Incident published.");await load();}catch(e:any){setNote(e.message);}}
+ function openUpdate(incident:any,status:string){setUpdateTarget(incident);setUpdateStatus(status);setUpdateMessage("");setNote("");}
+ async function update(){if(!updateTarget||!updateMessage.trim())return;setUpdating(true);try{await json("/api/admin/incidents",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:updateTarget.id,status:updateStatus,message:updateMessage})});setUpdateTarget(null);setNote("Incident timeline updated.");await load();}catch(e:any){setNote(e.message);}finally{setUpdating(false);}}
+ const toggle=(name:string)=>setComponents(components.includes(name)?components.filter(x=>x!==name):[...components,name]);
+ return <section>{updateTarget&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="incident-update-title" onKeyDown={e=>{if(e.key==="Escape"&&!updating)setUpdateTarget(null);}}><div className={`${card} w-full max-w-xl bg-[var(--paper)]`}><h3 id="incident-update-title" className="h3 text-ink">Publish {updateStatus} update</h3><p className="mt-2 text-sm text-ink-2">{updateTarget.title}</p><label className="mt-4 block"><b className="text-sm text-ink">Public timeline message</b><textarea autoFocus className={`${field} mt-2`} rows={5} maxLength={2000} value={updateMessage} onChange={e=>setUpdateMessage(e.target.value)}/></label>{note&&<p role="alert" className="mt-3 text-sm text-signal">{note}</p>}<div className="mt-4 flex justify-end gap-2"><button className="btn btn-ghost" disabled={updating} onClick={()=>setUpdateTarget(null)}>Cancel</button><button className="btn btn-primary" disabled={updating||!updateMessage.trim()} onClick={update}>{updating?"Publishing...":"Publish update"}</button></div></div></div>}<div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="h3 text-ink">Incident command</h2><p className="body mt-2 text-sm">Publish operational incidents and maintain a public timeline.</p></div><Link href="/status" className="btn btn-ghost">View public status</Link></div><div className={`${card} mt-4 grid gap-4 lg:grid-cols-2`}><label><b className="text-sm text-ink">Incident title</b><input className={`${field} mt-2`} maxLength={160} value={title} onChange={e=>setTitle(e.target.value)} placeholder="Elevated image generation failures"/></label><label><b className="text-sm text-ink">Severity</b><select className={`${field} mt-2`} value={severity} onChange={e=>setSeverity(e.target.value)}><option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option></select></label><label className="lg:col-span-2"><b className="text-sm text-ink">Initial public update</b><textarea className={`${field} mt-2`} rows={4} maxLength={2000} value={message} onChange={e=>setMessage(e.target.value)}/></label><div className="lg:col-span-2"><b className="text-sm text-ink">Affected components</b><div className="mt-2 flex flex-wrap gap-2">{["chat","images","video","audio","provider"].map(x=><label className="border border-rule px-3 py-2 text-sm text-ink" key={x}><input type="checkbox" className="mr-2 accent-[var(--signal)]" checked={components.includes(x)} onChange={()=>toggle(x)}/>{x}</label>)}</div></div><div className="lg:col-span-2 flex items-center gap-4"><button className="btn btn-primary" disabled={!title.trim()||!message.trim()} onClick={create}>Publish incident</button>{note&&<p className="text-sm text-ink-2">{note}</p>}</div></div><div className="mt-5 space-y-4">{rows.map(i=><article className={card} key={i.id}><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap gap-2"><b className="text-ink">{i.title}</b><span className="bg-[var(--paper-2)] px-2 py-1 font-mono text-[10px] uppercase text-ink-2">{i.severity}</span><span className="bg-ink px-2 py-1 font-mono text-[10px] uppercase text-[var(--paper)]">{i.status}</span></div><p className="mt-2 text-sm text-ink-2">{i.message}</p><p className="mt-2 font-mono text-xs text-ink-3">{i.components.join(", ")||"general"}</p></div><time className="text-xs text-ink-3">{new Date(i.updated_at).toLocaleString()}</time></div>{i.status!=="resolved"&&<div className="mt-4 flex flex-wrap gap-2">{i.status!=="identified"&&<button className="btn btn-ghost" onClick={()=>openUpdate(i,"identified")} aria-label={`Mark incident identified: ${i.title}`}>Mark identified</button>}{i.status!=="monitoring"&&<button className="btn btn-ghost" onClick={()=>openUpdate(i,"monitoring")} aria-label={`Monitor incident: ${i.title}`}>Monitor</button>}<button className="btn btn-primary" onClick={()=>openUpdate(i,"resolved")} aria-label={`Resolve incident: ${i.title}`}>Resolve</button></div>}<details className="mt-4"><summary className="cursor-pointer text-sm text-ink-2">Timeline ({i.updates.length})</summary><div className="mt-3 space-y-3 border-l border-rule pl-4">{i.updates.map((u:any)=><div key={u.id}><p className="font-mono text-xs uppercase text-ink-3">{u.status} · {new Date(u.created_at).toLocaleString()}</p><p className="mt-1 text-sm text-ink-2">{u.message}</p></div>)}</div></details></article>)}</div></section>;
+}
+
+function BulkActions(){
+ const [kind,setKind]=useState<"users"|"keys"|"tokens">("users"),[rows,setRows]=useState<any[]>([]),[selected,setSelected]=useState<string[]>([]),[action,setAction]=useState("disable"),[note,setNote]=useState("");
+ const actions={users:["enable","disable","promote","demote","delete"],keys:["revoke","delete"],tokens:["enable","disable","unpark","delete"]};
+ const load=async(next=kind)=>{const j=await json(`/api/admin/${next}`);setRows(j[next]||[]);setSelected([]);};useEffect(()=>{void load();},[]);
+ function switchKind(next:"users"|"keys"|"tokens"){setKind(next);setAction(actions[next][0]);void load(next);}
+ async function apply(){if(!selected.length)return;const destructive=action==="delete"||action==="disable"||action==="demote"||action==="revoke";if(destructive&&!confirm(`${action} ${selected.length} selected ${kind}?`))return;try{const j=await json(`/api/admin/${kind}/bulk`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:selected,action})});setNote(`${j.affected} ${kind} updated.`);await load();}catch(e:any){setNote(e.message);}}
+ const label=(x:any)=>kind==="users"?`${x.username} · ${x.role}${x.disabled?" · disabled":""}`:kind==="keys"?`${x.name||"Untitled"} · ${x.key_prefix||x.prefix||""}`:`${x.label||x.id.slice(0,8)} · ${x.state||(!x.active?"disabled":"active")}`;
+ return <section><h2 className="h3 text-ink">Bulk administration</h2><p className="body mt-2 text-sm">Select records explicitly. Every operation is bounded, validated, and audited.</p><div className="mt-4 flex flex-wrap gap-2">{(["users","keys","tokens"] as const).map(x=><button key={x} className={kind===x?"btn btn-primary":"btn btn-ghost"} onClick={()=>switchKind(x)}>{x}</button>)}</div><div className={`${card} mt-4 flex flex-wrap items-center gap-3`}><select className={`${field} max-w-48`} value={action} onChange={e=>setAction(e.target.value)}>{actions[kind].map(x=><option key={x}>{x}</option>)}</select><button className="btn btn-primary" disabled={!selected.length} onClick={apply}>Apply to {selected.length}</button><button className="btn btn-ghost" onClick={()=>setSelected(selected.length===rows.length?[]:rows.map(x=>x.id))}>{selected.length===rows.length&&rows.length?"Clear all":"Select all"}</button>{note&&<p className="text-sm text-ink-2">{note}</p>}</div><div className="mt-4 max-h-[34rem] space-y-2 overflow-auto">{rows.map(x=><label className={`${card} flex cursor-pointer items-center gap-3 text-sm`} key={x.id}><input type="checkbox" className="h-4 w-4 accent-[var(--signal)]" checked={selected.includes(x.id)} onChange={e=>setSelected(e.target.checked?[...selected,x.id]:selected.filter(id=>id!==x.id))}/><span className="text-ink">{label(x)}</span></label>)}</div></section>;
+}
+
+function Security(){
+ const [rows,setRows]=useState<any[]>([]),[status,setStatus]=useState("open"),[severity,setSeverity]=useState(""),[category,setCategory]=useState(""),[error,setError]=useState("");
+ const load=()=>json(`/api/admin/security?status=${encodeURIComponent(status)}&severity=${encodeURIComponent(severity)}&category=${encodeURIComponent(category)}`).then(j=>{setRows(j.events);setError("");}).catch(e=>setError(e.message)); useEffect(()=>{void load();},[]);
+ async function change(id:number,next:string){try{await json("/api/admin/security",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,status:next})});await load();}catch(e:any){setError(e.message);}}
+ const tone=(value:string)=>value==="critical"?"bg-red-700 text-white":value==="high"?"bg-orange-600 text-white":value==="medium"?"bg-amber-300 text-black":"bg-[var(--paper-2)] text-ink-2";
+ return <section><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="h3 text-ink">Security events</h2><p className="body mt-2 text-sm">Investigate authentication anomalies and operational security alerts.</p></div><button className="btn btn-ghost" onClick={load}>Refresh</button></div><div className={`${card} mt-4 grid gap-3 md:grid-cols-4`}><select className={field} value={status} onChange={e=>setStatus(e.target.value)}><option value="">All states</option><option value="open">Open</option><option value="acknowledged">Acknowledged</option><option value="resolved">Resolved</option></select><select className={field} value={severity} onChange={e=>setSeverity(e.target.value)}><option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select><input className={field} value={category} onChange={e=>setCategory(e.target.value)} placeholder="Exact category"/><button className="btn btn-primary" onClick={load}>Apply filters</button></div>{error&&<p className="mt-3 text-sm text-signal">{error}</p>}<div className="mt-5 space-y-3">{rows.length===0&&<div className={`${card} text-sm text-ink-3`}>No security events match these filters.</div>}{rows.map(x=><article className={card} key={x.id}><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`px-2 py-1 font-mono text-[10px] uppercase ${tone(x.severity)}`}>{x.severity}</span><b className="font-mono text-sm text-ink">{x.event_type}</b><span className="text-xs text-ink-3">x{x.occurrence_count}</span></div><p className="mt-2 text-sm text-ink-2">{x.category} · {x.status}{x.source_ip?` · ${x.source_ip}`:""}{x.route?` · ${x.route}`:""}</p></div><time className="text-xs text-ink-3">Last seen {new Date(x.last_seen_at).toLocaleString()}</time></div><div className="mt-3 grid gap-2 text-xs text-ink-3 md:grid-cols-2"><p>First seen: {new Date(x.first_seen_at).toLocaleString()}</p><p>Request ID: <span className="font-mono">{x.request_id||"—"}</span></p><p>Target: {x.target_type||"system"} {x.target_id||""}</p><p>Actor: {x.actor_id||"anonymous"}</p></div>{x.details&&<pre className="mt-3 max-h-32 overflow-auto bg-[var(--paper-2)] p-3 text-xs text-ink-3">{JSON.stringify(x.details,null,2)}</pre>}<div className="mt-4 flex flex-wrap gap-2">{x.status!=="acknowledged"&&<button className="btn btn-ghost" onClick={()=>change(x.id,"acknowledged")}>Acknowledge</button>}{x.status!=="resolved"&&<button className="btn btn-primary" onClick={()=>change(x.id,"resolved")}>Resolve</button>}{x.status!=="open"&&<button className="btn btn-ghost" onClick={()=>change(x.id,"open")}>Reopen</button>}</div></article>)}</div></section>;
+}
+
+function Audit(){const [rows,setRows]=useState<any[]>([]);useEffect(() => { json("/api/admin/audit").then(j => setRows(j.logs)).catch(console.error); }, []);return <section><h2 className="h3 text-ink">Audit log</h2><div className="mt-5 space-y-2">{rows.map(x=><div className={card} key={x.id}><div className="flex justify-between gap-3"><b className="font-mono text-sm text-ink">{x.action}</b><time className="text-xs text-ink-3">{new Date(x.created_at).toLocaleString()}</time></div><p className="mt-2 text-xs text-ink-2">{x.target_type||"system"} {x.target_id||""}</p><pre className="mt-2 overflow-auto text-xs text-ink-3">{JSON.stringify(x.details)}</pre></div>)}</div></section>}
+function Exports(){return <section><h2 className="h3 text-ink">Exports</h2><p className="body mt-2 text-sm">Download up to 50,000 records as CSV.</p><div className={`${card} mt-5 flex flex-wrap gap-3`}><a className="btn btn-primary" href="/api/admin/export?type=users">Download users CSV</a><a className="btn btn-ghost" href="/api/admin/export?type=usage">Download usage CSV</a></div></section>}

@@ -6,6 +6,7 @@ export const ar: Partial<Dict> = {
   nav_models: "النماذج",
   nav_playground: "ساحة التجربة",
   nav_chat: "المحادثة",
+  nav_status: "Status",
   nav_docs: "التوثيق",
   nav_login: "تسجيل الدخول",
   nav_dashboard: "لوحة التحكم",

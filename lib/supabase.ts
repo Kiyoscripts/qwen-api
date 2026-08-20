@@ -1,29 +1,16 @@
 // Supabase-backed API key management (server-side only, uses the service role).
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { postgresAdmin, transaction } from "./postgres";
 import { createHash, randomBytes } from "node:crypto";
 
-let _client: SupabaseClient | null = null;
-
-export function admin(): SupabaseClient {
-  if (_client) return _client;
-  const url = process.env.SUPABASE_URL;
-  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRole) {
-    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
-  }
-  _client = createClient(url, serviceRole, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  return _client;
-}
+export const admin = postgresAdmin;
 
 export function hashKey(key: string): string {
   return createHash("sha256").update(key).digest("hex");
 }
 
-function supabaseConfigured(): boolean {
-  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+function databaseConfigured(): boolean {
+  return Boolean(process.env.DATABASE_URL);
 }
 
 export interface ApiKeyRecord {
@@ -32,6 +19,11 @@ export interface ApiKeyRecord {
   key_hash: string;
   key_prefix: string;
   revoked: boolean;
+  expires_at?: string | null;
+  request_limit?: number | null;
+  request_count?: number;
+  allowed_models?: string[] | null;
+  allowed_ips?: string[] | null;
 }
 
 // Pull the API key from an Authorization: Bearer <key> header (or x-api-key).
@@ -42,25 +34,19 @@ export function extractApiKey(headers: Headers): string | null {
   return x ? x.trim() : null;
 }
 
-// Validate a key against Supabase. Returns the record or null. Bumps usage.
+// Validate a key against PostgreSQL. Returns the record or null. Bumps usage.
 export async function validateApiKey(key: string): Promise<ApiKeyRecord | null> {
   // Local-dev bypass: if DEV_MASTER_KEY is set (never set it in production) and
-  // matches, accept without Supabase. Lets you test the proxy with no DB set up.
+  // matches, accept without PostgreSQL. Lets you test the proxy with no DB set up.
   const devKey = process.env.DEV_MASTER_KEY;
   if (devKey && key === devKey) {
     return { id: "dev", name: "dev", key_hash: "", key_prefix: "dev", revoked: false };
   }
-  if (!supabaseConfigured()) return null;
+  if (!databaseConfigured()) return null;
   const key_hash = hashKey(key);
-  const { data, error } = await admin()
-    .from("api_keys")
-    .select("id, name, key_hash, key_prefix, revoked")
-    .eq("key_hash", key_hash)
-    .maybeSingle();
-  if (error || !data || data.revoked) return null;
-  // Best-effort usage bump (don't block the request on it).
-  admin().rpc("touch_api_key", { p_key_hash: key_hash }).then(() => {}, () => {});
-  return data as ApiKeyRecord;
+  const { data, error } = await admin().rpc("consume_api_key", { p_key_hash: key_hash });
+  if (error || !data?.length) return null;
+  return data[0] as ApiKeyRecord;
 }
 
 // Generate a new key, store its hash, return the raw key ONCE. Pass userId to
@@ -82,6 +68,35 @@ export async function createApiKey(
   return { id: data.id, key, key_prefix };
 }
 
+export async function createRestrictedApiKey(input: { name: string | null; userId: string; requestLimit: number | null; expiresAt: string | null; allowedModels: string[] | null; allowedIps: string[] | null }) {
+  const key = "syde_sk_" + randomBytes(24).toString("hex");
+  const keyHash = hashKey(key);
+  const keyPrefix = key.slice(0, 16) + "...";
+  const id = await transaction(async (client) => {
+    const result = await client.query(
+      `insert into api_keys(name,key_hash,key_prefix,user_id,request_limit,expires_at,allowed_models,allowed_ips) values($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
+      [input.name,keyHash,keyPrefix,input.userId,input.requestLimit,input.expiresAt,input.allowedModels,input.allowedIps],
+    );
+    return result.rows[0].id as string;
+  });
+  return { id, key, key_prefix: keyPrefix };
+}
+
+export async function rotateApiKey(userId: string, oldId: string, overlapMinutes: number) {
+  const key = "syde_sk_" + randomBytes(24).toString("hex");
+  const keyHash = hashKey(key), keyPrefix = key.slice(0, 16) + "...";
+  return transaction(async (client) => {
+    const current = await client.query(`select * from api_keys where id=$1 and user_id=$2 and not revoked for update`, [oldId,userId]);
+    if (!current.rows[0]) throw new Error("Key not found or revoked.");
+    if (current.rows[0].rotated_to) throw new Error("This key has already been rotated.");
+    const row=current.rows[0];
+    const created=await client.query(`insert into api_keys(name,key_hash,key_prefix,user_id,request_limit,expires_at,allowed_models,allowed_ips) values($1,$2,$3,$4,$5,$6,$7,$8) returning id`,[row.name,keyHash,keyPrefix,userId,row.request_limit,row.expires_at,row.allowed_models,row.allowed_ips]);
+    const revokeAt=new Date(Date.now()+overlapMinutes*60_000);
+    await client.query(`update api_keys set revoke_at=$2,rotated_to=$3,revoked=case when $2<=now() then true else revoked end where id=$1`,[oldId,revokeAt,created.rows[0].id]);
+    return { id:created.rows[0].id,key,key_prefix:keyPrefix,old_key_revoke_at:revokeAt.toISOString() };
+  });
+}
+
 // --- account-scoped key management -----------------------------------------
 
 export interface UserKey {
@@ -92,12 +107,16 @@ export interface UserKey {
   last_used_at: string | null;
   request_count: number;
   revoked: boolean;
+  expires_at?: string | null;
+  request_limit?: number | null;
+  allowed_models?: string[] | null;
+  allowed_ips?: string[] | null;
 }
 
 export async function listUserKeys(userId: string): Promise<UserKey[]> {
   const { data } = await admin()
     .from("api_keys")
-    .select("id, name, key_prefix, created_at, last_used_at, request_count, revoked")
+    .select("id, name, key_prefix, created_at, last_used_at, request_count, revoked, expires_at, request_limit, allowed_models, allowed_ips")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   return (data as UserKey[]) || [];
@@ -246,7 +265,7 @@ export async function listApiKeys() {
  * which is exactly what a "most used" list wants. Empty when no DB is configured.
  */
 export async function getTopModels(limit = 3): Promise<{ model: string; requests: number }[]> {
-  if (!supabaseConfigured()) return [];
+  if (!databaseConfigured()) return [];
   const { data } = await admin().from("usage_logs").select("model").limit(50000);
   if (!data) return [];
   const counts = new Map<string, number>();
@@ -260,12 +279,12 @@ export async function getTopModels(limit = 3): Promise<{ model: string; requests
     .slice(0, limit);
 }
 
-export async function logUsage(apiKeyId: string, model: string, hadImage: boolean, streamed: boolean, status: number) {
-  if (!supabaseConfigured()) return; // no DB in local-dev / bypass mode
-  admin()
+export async function logUsage(apiKeyId: string, model: string, hadImage: boolean, streamed: boolean, status: number, details: { requestId?: string; latencyMs?: number; providerAttempts?: number; failureCategory?: string; provider?: string } = {}) {
+  if (!databaseConfigured()) return;
+  const { error } = await admin()
     .from("usage_logs")
-    .insert({ api_key_id: apiKeyId, model, had_image: hadImage, streamed, status })
-    .then(() => {}, () => {});
+    .insert({ api_key_id: apiKeyId, model, had_image: hadImage, streamed, status, request_id: details.requestId || null, latency_ms: details.latencyMs ?? null, provider_attempts: details.providerAttempts || 1, failure_category: details.failureCategory || (status >= 500 ? "provider_error" : status >= 400 ? "client_error" : null), provider: details.provider || "qwen" });
+  if (error) throw new Error(error.message);
 }
 
 // --- Qwen token pool (admin-managed) ---------------------------------------
@@ -292,16 +311,19 @@ export async function addQwenTokens(rows: { label: string | null; token: string 
 export async function listQwenTokens() {
   const { data, error } = await admin()
     .from("qwen_tokens")
-    .select("id, label, token, active, created_at, last_used_at, error_count")
+    .select("id, label, token, active, created_at, last_used_at, error_count, last_health_at, last_success_at, last_failure_at, last_error, latency_ms, expires_at, consecutive_failures, parked_until, last_failure_code, consecutive_routing_failures")
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data || []).map((t) => ({
+  return (data || []).map((t: any) => ({
     id: t.id,
     label: t.label,
     active: t.active,
     created_at: t.created_at,
     last_used_at: t.last_used_at,
     error_count: t.error_count,
+    last_health_at: t.last_health_at, last_success_at: t.last_success_at, last_failure_at: t.last_failure_at,
+    last_error: t.last_error, latency_ms: t.latency_ms, expires_at: t.expires_at, consecutive_failures: t.consecutive_failures,
+    parked_until: t.parked_until, last_failure_code: t.last_failure_code, consecutive_routing_failures: t.consecutive_routing_failures,
     masked: (t.token || "").slice(0, 6) + "…" + (t.token || "").slice(-4),
   }));
 }
@@ -343,16 +365,19 @@ export async function addOneCompilerTokens(rows: { label: string | null; token: 
 export async function listOneCompilerTokens() {
   const { data, error } = await admin()
     .from("onecompiler_tokens")
-    .select("id, label, token, active, created_at, last_used_at, error_count")
+    .select("id, label, token, active, created_at, last_used_at, error_count, last_health_at, last_success_at, last_failure_at, last_error, latency_ms, expires_at, consecutive_failures, parked_until, last_failure_code, consecutive_routing_failures")
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data || []).map((t) => ({
+  return (data || []).map((t: any) => ({
     id: t.id,
     label: t.label,
     active: t.active,
     created_at: t.created_at,
     last_used_at: t.last_used_at,
     error_count: t.error_count,
+    last_health_at: t.last_health_at, last_success_at: t.last_success_at, last_failure_at: t.last_failure_at,
+    last_error: t.last_error, latency_ms: t.latency_ms, expires_at: t.expires_at, consecutive_failures: t.consecutive_failures,
+    parked_until: t.parked_until, last_failure_code: t.last_failure_code, consecutive_routing_failures: t.consecutive_routing_failures,
     masked: (t.token || "").slice(0, 6) + "…" + (t.token || "").slice(-4),
   }));
 }

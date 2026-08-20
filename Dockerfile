@@ -1,72 +1,39 @@
-# Container image for Cloud Run (or any host that runs a real server).
-#
-# The point of moving off serverless is the request ceiling: a function is capped
-# at 300s, which severs long generations mid-reply. A container has no such cap —
-# Cloud Run allows up to 60 minutes per request.
-#
-# Debian slim rather than Alpine on purpose: `sharp` (image watermarking) ships
-# prebuilt glibc binaries, and musl would force a slow source build.
-
-# ---- dependencies ----------------------------------------------------------
-FROM node:22-slim AS deps
+# syntax=docker/dockerfile:1.7
+FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci
 
-# ---- build -----------------------------------------------------------------
-FROM node:22-slim AS builder
+FROM node:22-bookworm-slim AS builder
 WORKDIR /app
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production NODE_OPTIONS=--max-old-space-size=4096
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# No secrets are needed here: every server module reads its env lazily at request
-# time, so the build works with none set. Do not add ARG/ENV secrets — they would
-# be baked into the image layers.
 RUN npm run build
 
-# ---- production dependencies ----------------------------------------------
-# Next's output tracing only follows what the *site* imports, so the Discord bot's
-# dependencies (discord.js, dotenv) are absent from the standalone bundle. This
-# stage resolves the same lockfile without dev packages, and the runner overlays
-# it on the bundle. Versions are therefore identical to the ones the site was
-# built against, so overlaying cannot introduce a second copy of anything.
-FROM node:22-slim AS proddeps
+FROM node:22-bookworm-slim AS runner
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
-
-# ---- run -------------------------------------------------------------------
-FROM node:22-slim AS runner
-WORKDIR /app
-
-ENV NODE_ENV=production \
-    NEXT_TELEMETRY_DISABLED=1 \
-    HOSTNAME=0.0.0.0 \
-    PORT=8080
-
-RUN groupadd --system --gid 1001 nodejs \
- && useradd --system --uid 1001 --gid nodejs nextjs
-
-# public/ and .next/static are not part of the standalone bundle.
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
+RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nextjs
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-# lib/watermark.ts reads this via process.cwd(), which output tracing cannot see,
-# so it has to be copied explicitly or image watermarking throws at runtime.
-COPY --from=builder --chown=nextjs:nodejs /app/assets ./assets
-
-# The Discord link bot ships in the same image and is started alongside the site
-# by the supervisor, so a deploy can never leave the site up with the bot down.
-# The overlay lands after the standalone bundle so the bot's dependencies are
-# present; identical lockfile versions mean nothing the site uses is displaced.
-COPY --from=proddeps --chown=nextjs:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=nextjs:nodejs /app/linkbot ./linkbot
-COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
-
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/migrations ./migrations
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.mjs ./scripts/migrate.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pg ./node_modules/pg
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pg-cloudflare ./node_modules/pg-cloudflare
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pg-connection-string ./node_modules/pg-connection-string
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pg-pool ./node_modules/pg-pool
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pg-protocol ./node_modules/pg-protocol
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pg-types ./node_modules/pg-types
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pgpass ./node_modules/pgpass
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/postgres-array ./node_modules/postgres-array
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/postgres-bytea ./node_modules/postgres-bytea
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/postgres-date ./node_modules/postgres-date
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/postgres-interval ./node_modules/postgres-interval
+COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod 755 docker-entrypoint.sh
 USER nextjs
-EXPOSE 8080
-
-# Cloud Run and Railway inject PORT; the standalone server honours PORT and
-# HOSTNAME. The supervisor detects server.js and boots it rather than `next
-# start`, which cannot serve a standalone bundle.
-CMD ["node", "scripts/supervise.mjs", "start"]
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+ENTRYPOINT ["./docker-entrypoint.sh"]

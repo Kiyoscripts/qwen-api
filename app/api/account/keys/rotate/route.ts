@@ -1,0 +1,4 @@
+import { NextResponse } from "next/server";
+import { currentUser, audit } from "@/lib/auth";
+import { rotateApiKey } from "@/lib/supabase";
+export async function POST(req:Request){const user=await currentUser(req);if(!user)return NextResponse.json({error:"Not signed in."},{status:401});const body=await req.json().catch(()=>({})),id=String(body.id||""),overlap=Number(body.overlap_minutes??60);if(!id)return NextResponse.json({error:"id is required."},{status:400});if(!Number.isInteger(overlap)||overlap<0||overlap>10080)return NextResponse.json({error:"Overlap must be between 0 and 10080 minutes."},{status:400});try{const rotated=await rotateApiKey(user.id,id,overlap);await audit(user.id,"api_key.rotate","api_key",id,{replacement_id:rotated.id,overlap_minutes:overlap});return NextResponse.json(rotated);}catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Could not rotate key."},{status:400});}}

@@ -4,6 +4,7 @@ export const hi: Partial<Dict> = {
   nav_models: "मॉडल",
   nav_playground: "प्लेग्राउंड",
   nav_chat: "चैट",
+  nav_status: "Status",
   nav_docs: "दस्तावेज़",
   nav_login: "लॉग इन",
   nav_dashboard: "डैशबोर्ड",

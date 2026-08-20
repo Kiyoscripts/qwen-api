@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { CodeTabs } from "./CodeTabs";
 import { Reveal } from "./Reveal";
-import { BASE } from "./docs/samples";
+
 
 /**
  * The full reference, same seventeen sections and same ids as the live docs, so
@@ -106,8 +106,9 @@ function Params({ rows }: { rows: [string, string][] }) {
   );
 }
 
-export function DocsBody() {
+export function DocsBody({ baseUrl }: { baseUrl: string }) {
   const [active, setActive] = useState(IDS[0]);
+  const BASE = baseUrl;
 
   // Highlight the section being read. IntersectionObserver rather than a scroll
   // listener, so this costs nothing per frame.

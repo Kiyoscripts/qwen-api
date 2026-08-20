@@ -5,9 +5,7 @@ import { useT } from "./I18n";
 
 export interface Me {
   id: string;
-  username: string | null;
-  discord_id: string | null;
-  avatar: string | null;
+  username: string;
   role: string;
 }
 
@@ -33,21 +31,13 @@ export function useMe(): Me | null | undefined {
   return me;
 }
 
-/** Discord sends a full URL these days, but older rows hold a bare hash. */
-export function avatarUrl(me: Me): string | null {
-  if (!me.avatar) return null;
-  if (me.avatar.startsWith("http")) return me.avatar;
-  return `https://cdn.discordapp.com/avatars/${me.discord_id}/${me.avatar}.png`;
-}
-
-/** Small avatar + name, used in navs and rails. */
+/** Small identity chip used in navigation and dashboard rails. */
 export function AccountChip({ me }: { me: Me }) {
-  const src = avatarUrl(me);
   return (
     <>
-      {src ? <img src={src} alt="" /> : <span className="auth-avatar-fallback" />}
+      <span className="auth-avatar-fallback" />
       <span className="dash-me-name">{me.username || "Account"}</span>
-      {me.role && me.role !== "member" && <span className={`role-tag ${me.role}`}>{me.role}</span>}
+      {me.role === "admin" && <span className="role-tag admin">admin</span>}
     </>
   );
 }

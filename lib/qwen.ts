@@ -177,9 +177,9 @@ const PINNED: ModelInfo[] = [
   },
 ];
 
-export async function getModels(token: string): Promise<ModelInfo[]> {
-  if (modelCache && Date.now() - modelCache.at < MODEL_TTL) return modelCache.models;
-  const res = await fetch(`${QWEN_BASE}/api/models`, { headers: qwenHeaders(token) });
+export async function getModels(token: string, options?: { bypassCache?: boolean; signal?: AbortSignal }): Promise<ModelInfo[]> {
+  if (!options?.bypassCache && modelCache && Date.now() - modelCache.at < MODEL_TTL) return modelCache.models;
+  const res = await fetch(`${QWEN_BASE}/api/models`, { headers: qwenHeaders(token), signal: options?.signal });
   const j: any = await res.json().catch(() => ({}));
   const models: ModelInfo[] = (j?.data || []).map((m: any) => {
     const meta = m.info?.meta || {};

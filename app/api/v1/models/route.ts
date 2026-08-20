@@ -10,6 +10,8 @@ import { VIRTUAL_MODELS } from "@/lib/media";
 import { CUSTOM_MODELS } from "@/lib/customModels";
 import { withTokenFailover } from "@/lib/tokens";
 import { authenticate } from "@/lib/apiAuth";
+import { getSetting } from "@/lib/settings";
+import { listCustomModels } from "@/lib/customProviders";
 
 export const runtime = "nodejs";
 
@@ -153,11 +155,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: { message: "Invalid or missing API key.", type: "invalid_request_error" } }, { status: 401 });
   }
   try {
-    // The static entries are always available; Qwen models depend on the account pool.
+    // Advertise only models actually returned by the connected Qwen account.
     let qwenEntries: any[] = [];
     try {
       const { result: models } = await withTokenFailover((token) => getModels(token));
-      qwenEntries = models.map((m) => ({
+      const enabled = (await getSetting("models")).enabled;
+      const visible = enabled.length ? models.filter((model) => enabled.includes(model.id)) : models;
+      qwenEntries = visible.map((m) => ({
         id: m.id,
         object: "model",
         created: 0,
@@ -180,12 +184,10 @@ export async function GET(req: NextRequest) {
         },
       }));
     } catch {
-      /* Qwen pool unavailable -> still return the static entries */
+      /* Qwen pool unavailable -> return an empty catalogue. */
     }
-    return NextResponse.json({
-      object: "list",
-      data: [...customEntries, ...mediaEntries, ...oneCompilerEntries, ...tokenRouterEntries, ...openCodeZenEntries, ...solarEntries, ...chatglmEntries, ...nvidiaEntries, ...qwenEntries],
-    });
+    const customEntries = (await listCustomModels()).map((m) => ({ id:m.id,object:"model",created:0,owned_by:m.provider_slug,display_name:m.provider_name,capabilities:{vision:false,thinking:false,chat_types:["t2t"],input:{text:true,image:false,document:false,video:false,audio:false}} }));
+    return NextResponse.json({ object: "list", data: [...qwenEntries,...customEntries] });
   } catch (e: any) {
     return NextResponse.json({ error: { message: e.message, type: "upstream_error" } }, { status: 503 });
   }

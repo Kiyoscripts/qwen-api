@@ -4,6 +4,15 @@ import { withBotId } from "botid/next/config";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Keep production builds within small VPS/workspace memory limits.
+  experimental: {
+    cpus: 1,
+    workerThreads: false,
+    webpackBuildWorker: true,
+    staticGenerationRetryCount: 1,
+    staticGenerationMaxConcurrency: 1,
+  },
+  productionBrowserSourceMaps: false,
   // Emit .next/standalone: a self-contained server plus only the node_modules it
   // actually traced. Needed to run in a container (Cloud Run); Vercel ignores it,
   // so both targets keep working from the same build.

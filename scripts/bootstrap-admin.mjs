@@ -1,0 +1,16 @@
+import { randomBytes, scrypt as callback } from "node:crypto";
+import { promisify } from "node:util";
+import pg from "pg";
+import "dotenv/config";
+const username = (process.argv[2] || "admin").toLowerCase();
+const password = process.argv[3];
+if (!password || password.length < 10) throw new Error("Usage: node scripts/bootstrap-admin.mjs <username> <password-min-10>");
+const salt = randomBytes(16).toString("hex");
+const key = await promisify(callback)(password, salt, 64);
+const hash = `scrypt:${salt}:${key.toString("hex")}`;
+const url = process.env.DATABASE_URL.replace("?sslmode=require", "");
+const client = new pg.Client({ connectionString: url, ssl: process.env.DATABASE_SSL_NO_VERIFY === "true" ? { rejectUnauthorized: false } : undefined });
+await client.connect();
+await client.query("insert into users(username,password_hash,role,disabled) values($1,$2,'admin',false) on conflict (lower(username)) where username is not null do update set password_hash=excluded.password_hash,role='admin',disabled=false,updated_at=now()", [username, hash]);
+await client.end();
+console.log(`Admin ${username} is ready.`);

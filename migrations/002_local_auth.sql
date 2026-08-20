@@ -1,0 +1,10 @@
+alter table public.users add column if not exists username text;
+alter table public.users add column if not exists password_hash text;
+alter table public.users add column if not exists role text not null default 'user';
+alter table public.users add column if not exists disabled boolean not null default false;
+alter table public.users add column if not exists updated_at timestamptz not null default now();
+create unique index if not exists users_username_lower_idx on public.users (lower(username)) where username is not null;
+create table if not exists public.invites (id uuid primary key default gen_random_uuid(), code_hash text not null unique, code_prefix text not null, created_by uuid references public.users(id) on delete set null, created_at timestamptz not null default now(), expires_at timestamptz, used_at timestamptz, used_by uuid references public.users(id) on delete set null, revoked boolean not null default false);
+create table if not exists public.app_settings (key text primary key, value jsonb not null, updated_at timestamptz not null default now(), updated_by uuid references public.users(id) on delete set null);
+create table if not exists public.admin_audit_logs (id bigint generated always as identity primary key, actor_id uuid references public.users(id) on delete set null, action text not null, target_type text, target_id text, details jsonb not null default '{}'::jsonb, created_at timestamptz not null default now());
+create index if not exists admin_audit_created_idx on public.admin_audit_logs(created_at desc);

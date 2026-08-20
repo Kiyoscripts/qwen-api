@@ -4,10 +4,13 @@
 
 import { admin } from "./supabase";
 import type { QwenRefusalCode } from "./qwen";
+import { logger, publicError } from "./logger";
+import { sql } from "./postgres";
 
 interface PoolEntry {
-  id: string | null; // null = the env token
+  id: string | null;
   token: string;
+  parked_until?: string | null;
 }
 
 let cache: { entries: PoolEntry[]; at: number } | null = null;
@@ -45,18 +48,26 @@ export function parkMsForFailure(e: { code?: QwenRefusalCode; message?: string }
   return 0;
 }
 
-function park(entry: PoolEntry, ms: number) {
+function park(entry: PoolEntry, ms: number, code = "account") {
   if (ms <= 0) return;
   const key = parkKey(entry);
   const until = Date.now() + ms;
-  // Keep the longer of any existing park window (don't shorten a 24h ban with a 60s one).
   const prev = parkUntil.get(key) || 0;
   if (until > prev) parkUntil.set(key, until);
+  if (entry.id) void sql(`update qwen_tokens set parked_until=greatest(coalesce(parked_until, to_timestamp(0)), $2), last_failure_code=$3, consecutive_routing_failures=consecutive_routing_failures+1 where id=$1`, [entry.id, new Date(until), code]).catch(() => {});
 }
 
 /** Test helper / admin introspection. */
 export function _parkStateForTests() {
   return parkUntil;
+}
+
+export async function tokenPoolStatus() {
+  const rows = await sql<{ total: string; available: string; parked: string }>(`select count(*) filter (where active)::text total, count(*) filter (where active and (parked_until is null or parked_until <= now()))::text available, count(*) filter (where active and parked_until > now())::text parked from qwen_tokens`);
+  const db = rows[0] || { total: "0", available: "0", parked: "0" };
+  const env = process.env.QWEN_TOKEN;
+  const envExpired = env ? isTokenExpired(env) : false;
+  return { total: Number(db.total) + (env ? 1 : 0), available: Number(db.available) + (env && !envExpired ? 1 : 0), parked: Number(db.parked), expired: envExpired ? 1 : 0 };
 }
 
 async function loadPool(): Promise<PoolEntry[]> {
@@ -100,7 +111,13 @@ export async function poolTokens(): Promise<PoolEntry[]> {
 
 function markUsed(entry: PoolEntry) {
   if (!entry.id) return;
-  admin().from("qwen_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", entry.id).then(() => {}, () => {});
+  void sql(`update qwen_tokens set last_used_at=now(), parked_until=null, last_failure_code=null, consecutive_routing_failures=0 where id=$1`, [entry.id]).catch(() => {});
+}
+
+async function claimDatabaseToken(excluded: string[]): Promise<PoolEntry | null> {
+  const ids = excluded.filter((id) => id !== "env");
+  const rows = await sql<{ id: string; token: string }>("select * from claim_qwen_token($1::uuid[])", [ids]);
+  return rows[0] ? { id: rows[0].id, token: rows[0].token } : null;
 }
 
 // Pick a token at random from the active pool, preferring accounts that are
@@ -187,25 +204,23 @@ function deactivateAccount(entry: PoolEntry, reason: string) {
   (async () => {
     await admin().from("qwen_tokens").update({ active: false }).eq("id", entry.id!);
     invalidateTokenCache();
-    console.warn(`[pool] deactivated account ${entry.id}: ${reason}`);
+    logger.warn("qwen_pool.account_deactivated", { token_entry_id: entry.id, reason });
   })().catch(() => {});
 }
 
 function handleAccountFailure(entry: PoolEntry, e: any) {
   const ms = parkMsForFailure(e);
-  park(entry, ms);
+  park(entry, ms, e?.code || "account");
   noteFailure(entry);
   if (e?.code === "expired" || e?.code === "forbidden") {
     deactivateAccount(entry, e?.message || e?.code);
   }
-  if (ms > 0) {
-    console.warn(
-      `[pool] account ${entry.id ?? "env"} failed over (${e?.code || "account"}): ${e?.message || e}` +
-        ` — parked ${Math.round(ms / 1000)}s`
-    );
-  } else {
-    console.warn(`[pool] account ${entry.id ?? "env"} failed over: ${e?.message || e}`);
-  }
+  logger.warn("qwen_pool.failover", {
+    token_entry_id: entry.id ?? "env",
+    refusal_code: e?.code || "account",
+    parked_ms: ms,
+    ...publicError(e),
+  });
 }
 
 /**
@@ -213,52 +228,19 @@ function handleAccountFailure(entry: PoolEntry, e: any) {
  * exhausted / rate-limited / invalid. This is the whole point of the pool: a
  * single burnt-out account must not fail the request.
  */
-export async function withTokenFailover<T>(
-  attempt: (token: string) => Promise<T>,
-  // An exhausted account rejects immediately without generating anything, so
-  // trying many is cheap. Cap high enough that a pool of challenged accounts
-  // still gets a fair scan of the healthy ones.
-  maxAttempts = 24
-): Promise<{ token: string; entryId: string | null; result: T }> {
-  const pool = await loadPool();
-  if (pool.length === 0) throw new Error("No Qwen tokens configured (add one in the admin dashboard or set QWEN_TOKEN).");
-
-  const now = Date.now();
-  const free = pool.filter((e) => !isParked(e, now));
-  // Prefer unparked accounts; if everything is parked, try the full pool anyway
-  // rather than hard-fail before any network call.
-  const preferred = free.length ? free : pool;
-  const shuffled = [...preferred].sort(() => Math.random() - 0.5).slice(0, Math.min(maxAttempts, preferred.length));
+export async function withTokenFailover<T>(attempt: (token: string) => Promise<T>, maxAttempts = 24): Promise<{ token: string; entryId: string | null; result: T }> {
+  const attempted: string[] = [];
   let lastError: unknown = new Error("No Qwen tokens available.");
-
-  for (const entry of shuffled) {
-    // Expiry is readable locally, so a dead session costs no request at all —
-    // and cannot arrive as an "anti-bot challenge" that looks like a ban.
-    if (isTokenExpired(entry.token)) {
-      lastError = new Error("Qwen token is expired or no longer valid on this account.");
-      deactivateAccount(entry, "token expired (exp in the past)");
-      continue;
-    }
-    try {
-      const result = await attempt(entry.token);
-      markUsed(entry);
-      // entryId lets callers pin a follow-up request to this exact account.
-      return { token: entry.token, entryId: entry.id ?? "env", result };
-    } catch (e: any) {
-      lastError = e;
-      // `retryable` covers account failures whose wording isn't quota-shaped —
-      // e.g. an account that streams a completion but generates no text.
-      if (!e?.retryable && !isTokenFailure(e?.message || "")) throw e; // a real error, not a bad account
-      handleAccountFailure(entry, e);
-    }
+  for (let index = 0; index < maxAttempts; index++) {
+    let entry: PoolEntry | null = null;
+    try { entry = await claimDatabaseToken(attempted); } catch (error) { logger.error("qwen_pool.claim_failed", publicError(error)); }
+    if (!entry && !attempted.includes("env") && process.env.QWEN_TOKEN) entry = { id: null, token: process.env.QWEN_TOKEN };
+    if (!entry) break;
+    attempted.push(entry.id ?? "env");
+    if (isTokenExpired(entry.token)) { lastError = new Error("Qwen token is expired or no longer valid on this account."); deactivateAccount(entry, "token expired (exp in the past)"); continue; }
+    try { const result = await attempt(entry.token); markUsed(entry); return { token: entry.token, entryId: entry.id ?? "env", result }; }
+    catch (error: any) { lastError = error; if (!error?.retryable && !isTokenFailure(error?.message || "")) throw error; handleAccountFailure(entry, error); }
   }
-  // Every candidate refused. That is the state worth shouting about: it means
-  // the pool is exhausted, blocked, or upstream is down for everyone — not one
-  // unlucky account.
-  console.error(
-    `[pool] all ${shuffled.length} attempted accounts failed (pool size ${pool.length}, free ${free.length}). Last: ${
-      (lastError as any)?.message || lastError
-    }`
-  );
+  logger.error("qwen_pool.exhausted", { attempts: attempted.length, ...publicError(lastError) });
   throw lastError;
 }

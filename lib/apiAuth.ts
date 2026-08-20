@@ -16,7 +16,7 @@ import { currentUser } from "./auth";
 
 export const WEB_KEY_NAME = "Web session";
 
-const COLS = "id, name, key_hash, key_prefix, revoked";
+const COLS = "id, name, key_hash, key_prefix, revoked, expires_at, request_limit, request_count, allowed_models, allowed_ips";
 
 /**
  * The key that backs this account's browser sessions. Found or created once;
@@ -45,10 +45,27 @@ export async function webKeyForUser(userId: string): Promise<ApiKeyRecord | null
 }
 
 /** Resolve a request to an API key record: Bearer/x-api-key first, else session. */
+function requestIp(req: Request): string {
+  return (req.headers.get("x-client-ip") || "").trim();
+}
+
 export async function authenticate(req: Request): Promise<ApiKeyRecord | null> {
   const key = extractApiKey(req.headers);
-  if (key) return validateApiKey(key);
-  const user = await currentUser(req);
-  if (!user) return null;
-  return webKeyForUser(user.id);
+  const record = key ? await validateApiKey(key) : await (async () => {
+    const user = await currentUser(req);
+    const webKey = user ? await webKeyForUser(user.id) : null;
+    if (!webKey) return null;
+    const { data } = await admin().rpc("consume_api_key_by_id", { p_id: webKey.id });
+    return data?.[0] || null;
+  })();
+  if (!record) return null;
+  if (record.expires_at && Date.parse(record.expires_at) <= Date.now()) return null;
+  if (record.request_limit != null && Number(record.request_count || 0) >= Number(record.request_limit)) return null;
+  const allowedIps = record.allowed_ips || [];
+  if (allowedIps.length && !allowedIps.includes(requestIp(req))) return null;
+  return record;
+}
+
+export function modelAllowed(record: ApiKeyRecord, model: string): boolean {
+  return !record.allowed_models?.length || record.allowed_models.includes(model);
 }

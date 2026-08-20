@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createApiKey, listApiKeys, deleteApiKey, purgeKeysByPrefix, deleteAllApiKeys } from "@/lib/supabase";
 
-import { requireAdmin } from "@/lib/auth";
+import { audit, requireAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
   }
   try {
     const created = await createApiKey(name);
+    await audit(auth.user.id, "api_key.create", "api_key", created.id, { name });
     return NextResponse.json({
       id: created.id,
       name,
@@ -50,15 +51,16 @@ export async function DELETE(req: NextRequest) {
   const p = req.nextUrl.searchParams;
   try {
     if (p.get("all") === "true") {
-      return NextResponse.json({ deleted: await deleteAllApiKeys() });
+      const deleted = await deleteAllApiKeys(); await audit(auth.user.id, "api_keys.delete_all", "api_key", null, { deleted }); return NextResponse.json({ deleted });
     }
     if (p.has("spam")) {
       const prefix = p.get("spam") || "batch-";
-      return NextResponse.json({ deleted: await purgeKeysByPrefix(prefix) });
+      const deleted = await purgeKeysByPrefix(prefix); await audit(auth.user.id, "api_keys.purge", "api_key", null, { prefix, deleted }); return NextResponse.json({ deleted });
     }
     const id = p.get("id");
     if (id) {
       await deleteApiKey(id);
+      await audit(auth.user.id, "api_key.delete", "api_key", id);
       return NextResponse.json({ ok: true });
     }
     return NextResponse.json({ error: "specify id, spam, or all" }, { status: 400 });

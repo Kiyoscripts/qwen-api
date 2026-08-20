@@ -3,11 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Sun, Moon, List, X, Translate, Check, DiscordLogo } from "@phosphor-icons/react";
+import { Sun, Moon, List, X, Translate, Check } from "@phosphor-icons/react";
 import { useT } from "./I18n";
 import { LOCALES, LOCALE_COOKIE, LOCALE_STORE, dirFor, type LocaleCode } from "@/lib/i18n";
-import { DISCORD_INVITE } from "@/lib/links";
-import { avatarUrl, type Me } from "./Account";
+import { type Me } from "./Account";
 
 /**
  * The shell nav.
@@ -26,6 +25,7 @@ const ROUTES = [
   { href: "/playground", key: "nav_playground" },
   { href: "/chat", key: "nav_chat" },
   { href: "/docs", key: "nav_docs" },
+  { href: "/status", key: "nav_status" },
 ] as const;
 
 function Mark() {
@@ -176,19 +176,6 @@ export function Nav() {
               )}
             </div>
 
-            <a
-              href={DISCORD_INVITE}
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Discord"
-              title="Discord"
-              className="grid size-9 place-items-center border border-rule text-ink-2
-                         transition-colors duration-200 hover:border-ink hover:text-ink"
-              style={{ borderRadius: "var(--r-sm)" }}
-            >
-              <DiscordLogo size={15} weight="bold" />
-            </a>
-
             <button
               type="button"
               onClick={toggleTheme}
@@ -203,17 +190,21 @@ export function Nav() {
             {me === undefined ? (
               <span className="size-9" aria-hidden />
             ) : me ? (
-              <Link
-                href="/keys"
-                className="flex items-center gap-2 border border-rule px-2 py-1.5
-                           transition-colors duration-200 hover:border-ink"
-                style={{ borderRadius: "var(--r-sm)" }}
-              >
-                <Avatar me={me} />
-                <span className="hidden font-mono text-[12px] text-ink sm:inline">
-                  {me.username ?? "account"}
-                </span>
-              </Link>
+              <div className="flex items-center gap-2">
+                {me.role === "admin" && (
+                  <Link href="/admin" className="btn btn-primary hidden sm:inline-flex">Admin</Link>
+                )}
+                <Link
+                  href="/keys"
+                  className="flex items-center gap-2 border border-rule px-2 py-1.5 transition-colors duration-200 hover:border-ink"
+                  style={{ borderRadius: "var(--r-sm)" }}
+                >
+                  <Avatar me={me} />
+                  <span className="hidden font-mono text-[12px] text-ink sm:inline">
+                    {me.username ?? "account"}
+                  </span>
+                </Link>
+              </div>
             ) : (
               <Link href="/login" className="btn btn-primary hidden sm:inline-flex">
                 {t("nav_login")}
@@ -246,6 +237,11 @@ export function Nav() {
                 {t(r.key)}
               </Link>
             ))}
+            {me?.role === "admin" && (
+              <Link href="/admin" className="border-b border-rule py-3 font-mono text-sm text-signal">
+                Admin dashboard
+              </Link>
+            )}
             {!me && (
               <Link href="/login" className="py-3 font-mono text-sm text-signal">
                 {t("nav_login")}
@@ -266,32 +262,15 @@ export function Nav() {
  * shows as the browser's placeholder glyph.
  */
 function Avatar({ me }: { me: Me }) {
-  const src = avatarUrl(me);
-  const [failed, setFailed] = useState(false);
-  const initial = (me.username ?? "?").slice(0, 1).toUpperCase();
-
-  if (!src || failed)
-    return (
-      <span
-        className="grid size-6 shrink-0 place-items-center bg-signal font-mono text-[11px]
-                   text-[var(--on-signal)]"
-        style={{ borderRadius: "var(--r-sm)" }}
-        aria-hidden
-      >
-        {initial}
-      </span>
-    );
-
+  const initial = (me.username || "?").slice(0, 1).toUpperCase();
   return (
-    <img
-      src={`${src}?size=64`}
-      alt=""
-      width={24}
-      height={24}
-      onError={() => setFailed(true)}
-      className="size-6 shrink-0 object-cover"
+    <span
+      className="grid size-6 shrink-0 place-items-center bg-signal font-mono text-[11px] text-[var(--on-signal)]"
       style={{ borderRadius: "var(--r-sm)" }}
-    />
+      aria-hidden
+    >
+      {initial}
+    </span>
   );
 }
 

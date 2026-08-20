@@ -1,13 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { headers } from "next/headers";
 import "highlight.js/styles/github-dark.css";
 import "./syde.css";
 import { I18nProvider } from "./I18n";
 import { getLocale } from "@/lib/i18nServer";
 import { dirFor } from "@/lib/i18n";
-
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
-const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Syde",
@@ -20,14 +17,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // direction — no post-hydration swap, and no RTL flip after paint.
   const locale = await getLocale();
   const dir = dirFor(locale);
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
 
   return (
-    <html lang={locale} dir={dir} className={`${geist.variable} ${geistMono.variable}`} suppressHydrationWarning>
+    <html lang={locale} dir={dir} suppressHydrationWarning>
       <head>
         {/* Applies the stored theme before first paint. Without this the page
             renders in the default and repaints once hydration runs, which is a
             visible flash on every navigation. */}
         <script
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html:
               // Reads the same key the nav writes. It read `qwen_theme` while

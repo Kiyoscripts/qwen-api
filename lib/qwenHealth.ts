@@ -1,0 +1,13 @@
+import { getModels } from "./qwen";
+import { transaction } from "./postgres";
+import { invalidateTokenCache } from "./tokens";
+
+type Outcome={id:string;ok:boolean;status:number;latency_ms:number;models?:number;failure_category?:string;disabled?:boolean;error?:string};
+function expiry(token:string){try{const p=JSON.parse(Buffer.from(token.split(".")[1],"base64url").toString());return p.exp?new Date(p.exp*1000).toISOString():null;}catch{return null;}}
+function category(error:unknown){if(error instanceof DOMException&&error.name==="TimeoutError")return"timeout";const text=String(error instanceof Error?error.message:error).toLowerCase();if(text.includes("401")||text.includes("403"))return"authentication";if(text.includes("429")||text.includes("rate"))return"rate_limited";if(text.includes("challenge")||text.includes("captcha"))return"challenged";return"provider_error";}
+export async function checkQwenTokenHealth(id:string,timeoutMs=15_000):Promise<Outcome>{
+ const started=Date.now();const tokenRow=await transaction(async c=>(await c.query(`select id,token,consecutive_failures from qwen_tokens where id=$1`,[id])).rows[0]);if(!tokenRow)return{id,ok:false,status:404,latency_ms:0,failure_category:"not_found",error:"Token not found"};
+ try{const models=await getModels(tokenRow.token,{bypassCache:true,signal:AbortSignal.timeout(timeoutMs)});const latency=Date.now()-started;await transaction(async c=>{await c.query(`update qwen_tokens set last_health_at=now(),last_success_at=now(),last_error=null,latency_ms=$2,expires_at=$3,consecutive_failures=0 where id=$1`,[id,latency,expiry(tokenRow.token)]);});return{id,ok:true,status:200,latency_ms:latency,models:models.length};}
+ catch(error){const latency=Date.now()-started,reason=category(error),message=reason==="timeout"?"Provider health check timed out.":"Provider health check failed.";const changed=await transaction(async c=>{const row=(await c.query(`update qwen_tokens set last_health_at=now(),last_failure_at=now(),last_error=$2,latency_ms=$3,expires_at=$4,consecutive_failures=consecutive_failures+1,active=case when consecutive_failures+1>=3 then false else active end where id=$1 returning active,consecutive_failures`,[id,reason,latency,expiry(tokenRow.token)])).rows[0];return row&&!row.active;});if(changed)invalidateTokenCache();return{id,ok:false,status:503,latency_ms:latency,failure_category:reason,disabled:Boolean(changed),error:message};}
+}
+export async function checkAllQwenTokens(ids:string[],concurrency=4){const results:Outcome[]=[];let next=0;await Promise.all(Array.from({length:Math.min(concurrency,ids.length)},async()=>{while(next<ids.length){const index=next++;results[index]=await checkQwenTokenHealth(ids[index]);}}));return results;}

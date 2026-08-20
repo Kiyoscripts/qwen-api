@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { claimIdempotency, completeIdempotency, abandonIdempotency } from "@/lib/idempotency";
+import { apiError } from "@/lib/apiErrors";
+import { modelEnabled, capabilityEnabled } from "@/lib/settings";
 import {
   buildMessage,
   createChat,
@@ -10,15 +13,16 @@ import {
 import { getVoices, setVoice, synthesize, pcmToWav } from "@/lib/tts";
 import { withTokenFailover } from "@/lib/tokens";
 import { logUsage } from "@/lib/supabase";
-import { authenticate } from "@/lib/apiAuth";
+import { authenticate, modelAllowed } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const TTS_HELPER_MODEL = process.env.QWEN_TTS_MODEL || "qwen3.8-max";
 
-function err(message: string, status: number, type = "invalid_request_error") {
-  return NextResponse.json({ error: { message, type } }, { status });
+function err(message: string, status: number, type = "invalid_request_error", req?: Request) {
+  const code = type === "model_not_found" ? "model_not_found" : type === "service_unavailable" ? "service_unavailable" : type === "upstream_error" ? "provider_unavailable" : status === 401 ? "invalid_api_key" : status === 403 ? "model_not_allowed" : "invalid_request";
+  return apiError(req, message, status, code, type);
 }
 
 // OpenAI-compatible-ish TTS:
@@ -29,6 +33,10 @@ function err(message: string, status: number, type = "invalid_request_error") {
 export async function POST(req: NextRequest) {
   const record = await authenticate(req);
   if (!record) return err("Missing or invalid API key.", 401);
+  const capability = await capabilityEnabled("audio");
+  if (!capability.enabled) return err(capability.message, 503, "service_unavailable");
+  if (!(await modelEnabled(TTS_HELPER_MODEL))) return err("The requested model is disabled.", 404, "model_not_found");
+  if (!modelAllowed(record, TTS_HELPER_MODEL)) return err("This API key is not permitted to use the TTS helper model.", 403);
 
   let body: any;
   try {
@@ -39,6 +47,11 @@ export async function POST(req: NextRequest) {
   const input = typeof body.input === "string" ? body.input.trim() : "";
   if (!input) return err("'input' is required.", 400);
   if (input.length > 2000) return err("'input' is too long (max 2000 characters).", 400);
+  const idempotency = await claimIdempotency(req, record.id, "/v1/audio/speech", body);
+  if (idempotency.kind === "replay") return idempotency.response;
+  if (idempotency.kind === "conflict") return err(idempotency.message, 409);
+  const idempotencyId = idempotency.kind === "new" ? idempotency.id : null;
+  const finish = (response: Response) => idempotencyId ? completeIdempotency(idempotencyId, response) : response;
   const requestedVoice = typeof body.voice === "string" ? body.voice : "";
 
   // TTS costs an echo completion plus the synthesis, so a burnt-out account must

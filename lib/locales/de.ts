@@ -4,6 +4,7 @@ export const de: Partial<Dict> = {
   nav_models: "Modelle",
   nav_playground: "Playground",
   nav_chat: "Chat",
+  nav_status: "Status",
   nav_docs: "Docs",
   nav_login: "Anmelden",
   nav_dashboard: "Übersicht",

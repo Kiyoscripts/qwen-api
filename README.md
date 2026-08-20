@@ -1,318 +1,255 @@
-# Syde
+# Qwen API
 
-An **OpenAI-compatible** hosted API for `qwen3.8-max-preview` (with **vision**),
-built on **Next.js + Vercel**, with API keys managed in **Supabase**. It proxies
-to a chat.qwen.ai account (your token, server-side) and exposes a clean, keyed API.
+A self-hosted, OpenAI-compatible AI gateway with username/password accounts, invite-only registration, API keys, PostgreSQL persistence, Qwen token pooling, and configurable OpenAI-compatible providers.
 
-- `POST /v1/chat/completions` — all models, streaming, vision, reasoning (`reasoning_content`), **tool/function calling**
-- `POST /v1/messages` — **Anthropic Messages API compatible** (use the Anthropic SDK: `baseURL` = the root, `x-api-key` auth); system/blocks/images/tools/streaming all translate to the same backend
-- `POST /v1/images/generations` — text-to-image **& image editing** (OpenAI-compatible); models `qwen-image-3.0` / `qwen-image-2.0`, `size` aspect ratio, `image`/`images` references, and a `watermark` field (see below)
-- `POST /v1/videos/generations` — text-to-video; returns `202 { id, chat_id, status, created }` immediately
-- `GET  /v1/videos/status?task_id=…&chat_id=…&started=…` — poll a video task (**no timeout**); pass
-  `started` (the `created` value from generation) to get an estimated `progress` back
-- `POST /v1/audio/speech` — text-to-speech → `audio/wav` (`{ "input": "...", "voice": "Cherry" }`)
-- `GET  /v1/audio/voices` — lists the ~78 TTS voices (name, gender, description)
-- `GET  /v1/models` — lists **all** Qwen models
-- `POST /api/keys` — **public** self-serve API key creation (also on the homepage)
-- `/admin` — password-protected dashboard to manage the pooled Qwen tokens & view keys
+## Features
 
-### Tool / function calling
+- OpenAI-compatible `GET /v1/models` and `POST /v1/chat/completions`
+- Streaming and non-streaming chat completions
+- Qwen token pool with health checks, parking, and coordinated routing
+- Custom OpenAI-compatible providers with encrypted credentials and model discovery
+- Invite-only local authentication; administrators can enable public registration
+- Restricted API keys with expiration, model/IP allowlists, quotas, and rotation overlap
+- Admin dashboard for users, invites, providers, models, analytics, jobs, incidents, and security events
+- PostgreSQL migrations, durable jobs, audit logs, request IDs, health checks, readiness, and metrics
+- Interactive API documentation and playground
+- Docker image automatically built and published by GitHub Actions
 
-Standard OpenAI `tools` are supported on `POST /v1/chat/completions`. Qwen has no
-native tool API, so the schemas are injected into the prompt (Qwen-native
-`<tool_call>` convention) and parsed back into OpenAI `tool_calls`; send results
-back as `role:"tool"` messages. It's best-effort emulation, not a guarantee, but
-Qwen3 is trained for function calling so it's reliable for normal agent use.
+## Requirements
 
-- `tool_choice`: `"auto"` (default), `"none"` (ignore tools), `"required"`, or a
-  specific `{ "type":"function","function":{"name":"..."} }`.
-- Parallel tool calls, streaming (`tool_calls` deltas), and multi-turn loops work.
-- Test it interactively in `/playground` and `/chat` (🔧 **Tools** toggle) — they
-  ship built-in demo tools (`get_weather`, `get_current_time`, `calculator`) that
-  execute in the browser so you can watch a full call loop.
+For Docker deployment you need:
 
-> Tool-calling method credit: Discord user `.thereid`.
+- A PostgreSQL 14+ database reachable from the container
+- At least one Qwen token or one configured custom OpenAI-compatible provider
+- Docker 24+ (or another OCI-compatible runtime)
+- An HTTPS reverse proxy for public production use
 
-### Image watermark
+The image listens on port `3000` and runs database migrations on startup by default.
 
-Generated images are stamped with a **`Syde`** watermark (bottom-right) by
-default. Callers control it per request with the `watermark` field — on both
-`POST /v1/images/generations` and `POST /v1/chat/completions` (image models):
+## Container Image
 
-| `watermark` value | Result |
+Every push to `main` runs tests, builds the production application on GitHub Actions, and publishes:
+
+```text
+ghcr.io/kiyoscripts/qwen-api:latest
+```
+
+Immutable commit images are also published as `sha-<commit>` tags. Tagged Git releases produce matching image tags.
+
+If the GHCR package is private, authenticate before pulling:
+
+```bash
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u Kiyoscripts --password-stdin
+docker pull ghcr.io/kiyoscripts/qwen-api:latest
+```
+
+The token needs `read:packages`. Public packages can be pulled without authentication.
+
+## Configuration
+
+Copy `.env.example` to `.env` and replace every placeholder secret. Never commit `.env`.
+
+Required core values:
+
+| Variable | Purpose |
 | --- | --- |
-| *omitted* | default `Syde` |
-| `false` (or `""`, `"none"`) | no watermark |
-| `"your text"` | custom text (up to 64 chars) |
+| `DATABASE_URL` | PostgreSQL connection URL. Use TLS options required by your provider, commonly `?sslmode=require`. |
+| `ADMIN_SECRET` | Long random server-side administrative secret. |
+| `PROVIDER_CREDENTIAL_KEY` | Separate secret of at least 32 random characters used to encrypt custom-provider credentials. Losing it makes stored credentials unreadable. |
+| `MEDIA_SECRET` | Long random secret used to seal media URLs and tickets. |
+| `TRUSTED_PROXY_SECRET` | Shared secret inserted by a trusted reverse proxy before forwarded client-IP headers are accepted. |
+| `CRON_SECRET` | Protects the durable job worker endpoint. |
+| `QWEN_TOKEN` | Optional Qwen account token. It can be omitted when usable custom-provider capacity is configured. |
+
+Generate independent secrets, for example:
 
 ```bash
-# custom text
-curl .../v1/images/generations -H "Authorization: Bearer qwen_sk_..." \
-  -d '{ "prompt": "a red apple", "watermark": "yourbrand.com" }'
-
-# no watermark
-  -d '{ "prompt": "a red apple", "watermark": false }'
+openssl rand -base64 48
 ```
 
-The mark is composited into the pixels server-side, so it survives download. The
-`/chat` and playground UIs always use the default watermark. Watermarked images are
-served through `/api/media?t=…`, where the source URL + watermark are **AES-GCM
-encrypted** into an opaque token — the underlying (signed) Qwen CDN URL is hidden
-and the watermark is tamper-evident (editing the token fails the auth tag). Set
-`MEDIA_SECRET` in production so tokens can't be forged. The link lives as long as
-the underlying Qwen CDN signature.
+Do not reuse a secret for multiple settings. Do not rotate `PROVIDER_CREDENTIAL_KEY` without first re-encrypting provider credentials.
 
-### Image editing (reference images)
+Important optional values:
 
-Send one or more `image`s (or `images`) with a prompt to **edit / use a reference**
-instead of generating from scratch — the request switches from `t2i` to
-`image_edit` automatically. Images can be public URLs or `data:` URLs.
-
-```bash
-# edit an existing image
-curl .../v1/images/generations -H "Authorization: Bearer qwen_sk_..." \
-  -d '{
-    "model": "qwen-image-3.0",
-    "prompt": "make it night time, add neon signs",
-    "image": "https://example.com/street.jpg"
-  }'
-
-# multiple references
-  -d '{ "prompt": "combine these into one scene", "images": ["https://…/a.png", "data:image/png;base64,…"] }'
-```
-
-Accepted shapes for `image`/`images`: a URL string, an array of URL strings, or
-OpenAI-style `{ "url": "…" }` / `{ "image_url": { "url": "…" } }` objects. In the
-**`/chat`** UI, pick an image model, click the 📎 attach button, add a prompt, and
-send — the attached image becomes the edit reference. Same for the **playground**
-Image mode.
-
-### Video generation (`qwen-wan`)
-
-On by default — set `ENABLE_VIDEO_GENERATION=false` to hide the `qwen-wan` model
-and disable the `/v1/videos/*` endpoints. Generation is async (many minutes): the
-POST returns a task id immediately and you poll for the result.
-
-```bash
-# 1) kick it off (optional: size, watermark)
-curl .../v1/videos/generations -H "Authorization: Bearer qwen_sk_..." \
-  -d '{ "prompt": "someone walking in New York", "size": "16:9" }'
-# -> 202 { "id": "<task>", "chat_id": "<chat>", "status": "processing",
-#          "created": 1737…, "ticket": "<opaque>" }
-
-# 2) poll with the ticket (carries task/chat/started AND pins to the right account)
-curl ".../v1/videos/status?ticket=<opaque>" -H "Authorization: Bearer qwen_sk_..."
-# -> { "status": "processing", "progress": 62 }
-# -> { "status": "completed", "progress": 100, "data": [{ "url": "https://…mp4" }] }
-```
-
-**Always poll with the `ticket`.** A video task lives on exactly one pooled account,
-but each request otherwise picks a random account — so polling a random one gets
-"not found" and spins forever. The `ticket` (AES-GCM sealed) pins the poll to the
-account that created the task. You *can* poll by `task_id` instead, but then the
-server has to scan the whole pool each call to find the owner.
-
-**Progress is an estimate.** Qwen's API exposes no real progress value — the web UI
-animates a time-based curve, and so do we (an eased creep toward ~95%, snapping to
-100% on completion). It comes from the ticket's `created` (or a `started` query
-param). Image generation is synchronous (one request, returns the URL), so it has
-no progress to report.
-
-> Video status is polled at `GET /api/v1/tasks/status/{id}` upstream (Qwen moved it
-> from `v2` to `v1`; the old path 404s, which looks like "video never finishes").
-
-**Aspect ratio.** Pass `size` (`16:9`, `9:16`, `1:1`, `4:3`,
-`3:4`) for the video's shape, and `image` (a URL or data URL) to seed **image-to-
-video**. Video also works in `/v1/chat/completions` and the `/chat` UI: select
-`qwen-wan`, optionally attach an image, and send a prompt.
-
-**No watermark on video.** Unlike images, generated video is returned unwatermarked
-— burning text into an MP4 means re-encoding the clip, which broke playback, so the
-raw video is served (proxied through `/api/media` for display). The `watermark`
-field only affects image generation.
-
-### Multiple accounts (token pool)
-
-The API rotates across a **pool of Qwen account tokens** so no single account gets
-rate-limited or flagged. Add tokens in the `/admin` dashboard (password = your
-`ADMIN_SECRET`). The `QWEN_TOKEN` env var is always included as a fallback. This is
-what keeps a public deployment from hammering one account.
-
-> ⚠️ Key creation is **public**: anyone can mint a key, and every key runs through
-> your single shared Qwen account. Consider adding rate limiting / per-key usage
-> caps before promoting this widely.
-
-## 1. Supabase setup
-
-1. Open your Supabase project → **SQL Editor** → **New query**.
-2. Paste the contents of [`supabase/schema.sql`](./supabase/schema.sql) and **Run**.
-   This creates `api_keys`, `usage_logs`, and **`qwen_tokens`** (the account pool) —
-   all with RLS on and no policies, so only the service role can touch them —
-   plus a `touch_api_key` function.
-
-   > If you already ran an earlier version of this file, re-run it (or just run the
-   > `qwen_tokens` table block) to add the token pool table.
-
-## 2. Environment variables
-
-Copy `.env.example` → `.env.local` and fill in (already done locally):
-
-| Var | What |
-| --- | --- |
-| `SUPABASE_URL` | `https://<ref>.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role JWT (secret, server-only). |
-| `SUPABASE_ANON_KEY` / `SUPABASE_PUBLISHABLE_KEY` | Public keys (kept for reference). |
-| `ADMIN_SECRET` | Secret for the `/api/admin/keys` endpoint. |
-| `QWEN_TOKEN` | Bearer token from chat.qwen.ai `localStorage["token"]`. |
-| `QWEN_CLIENT_VERSION` | `Version` header (must match live chat.qwen.ai SPA; default `0.2.83`). |
-| `QWEN_USER_AGENT` | Optional UA override (default Chrome 149 / Windows, matches SSXMOD fingerprint). |
-| `QWEN_EXTRA_COOKIES` | Optional extra browser cookies (`a=b; c=d`). `token` / `ssxmod_*` are auto-generated. |
-| `QWEN_THINKING` | `false` = final answer only; `true` = include reasoning. |
-| `QWEN_FORGET_MEMORIES` | `true` = wipe Qwen's saved memories after each request. |
-
-## 3. Run locally
-
-```bash
-npm install
-npm run dev
-# open http://localhost:3000
-```
-
-## 4. Deploy to Vercel
-
-```bash
-npm i -g vercel      # if needed
-vercel                # link + deploy a preview
-vercel --prod         # production
-```
-
-Then add every variable from `.env.local` in **Vercel → Project → Settings →
-Environment Variables** (Production + Preview). Redeploy.
-
-## 5. Get an API key
-
-Visit the homepage and click **Generate key**. Key creation is protected by
-**Vercel BotID** — it only works from a real browser session on the site, so
-scripted/`curl` requests to `/api/keys` are blocked. It's also rate-limited
-(3/hr, 10/day per IP) and an IP that mass-creates keys is auto-blacklisted and
-its keys purged.
-
-Abuse controls (all env-tunable):
-
-| Var | Default | Purpose |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `PUBLIC_KEY_CREATION` | `true` | `false` = key creation becomes admin-only (kill switch). |
-| `KEY_RL_PER_IP_HOUR` / `KEY_RL_PER_IP_DAY` | `3` / `10` | Per-IP creation limits. |
-| `KEY_RL_GLOBAL_HOUR` | `0` (off) | Global/hour cap — leave off; it 429s everyone during a flood. |
-| `KEY_BLACKLIST_THRESHOLD` | `12` | Auto-ban an IP + delete its keys after this many. |
+| `DATABASE_POOL_SIZE` | `10` | Maximum PostgreSQL connections per app instance. |
+| `RUN_MIGRATIONS` | `true` | Run authoritative migrations before starting the container. Set false on all but one instance if your platform has unusual startup coordination. |
+| `ALLOW_PRIVATE_PROVIDER_URLS` | `false` | Permit private/HTTP provider URLs. Use only for trusted development networks. |
+| `ENABLE_VIDEO_GENERATION` | `true` | Enable Qwen video endpoints. |
+| `PUBLIC_KEY_CREATION` | `true` | Legacy public-key creation switch; account registration is controlled in admin settings. |
+| `QWEN_CLIENT_VERSION` | See `.env.example` | Qwen web-client version header. Update when the legitimate upstream client changes. |
 
-The owner can always create keys out-of-band (bypasses BotID) via the admin
-endpoint, and list/revoke keys there:
+See `.env.example` for optional OneCompiler, OpenCode Zen, NVIDIA, Solar, ChatGLM, proxy, timeout, and abuse-control settings.
 
-```bash
-curl -X POST https://qwen38-api-production.up.railway.app/api/admin/keys \
-  -H "x-admin-secret: <ADMIN_SECRET>" -H "Content-Type: application/json" \
-  -d '{"name":"my key"}'
-curl https://qwen38-api-production.up.railway.app/api/admin/keys -H "x-admin-secret: <ADMIN_SECRET>"
+## Deploy With Docker Compose
+
+Create `compose.yml`:
+
+```yaml
+services:
+  app:
+    image: ghcr.io/kiyoscripts/qwen-api:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      database:
+        condition: service_healthy
+
+  database:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: qwen_api
+      POSTGRES_USER: qwen_api
+      POSTGRES_PASSWORD: change-this-password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qwen_api -d qwen_api"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres-data:
 ```
 
-## 6. Use it
+For this compose network, use:
 
-```bash
-curl https://qwen38-api-production.up.railway.app/v1/chat/completions \
-  -H "Authorization: Bearer qwen_sk_..." \
-  -H "Content-Type: application/json" \
-  -d '{"model":"qwen3.8-max-preview","messages":[{"role":"user","content":"Hi"}]}'
+```dotenv
+DATABASE_URL=postgresql://qwen_api:change-this-password@database:5432/qwen_api
 ```
 
-Vision — send `image_url` parts (base64 data URL or public URL):
+Start and verify it:
 
-```json
-{
-  "model": "qwen3.8-max-preview",
-  "messages": [{
-    "role": "user",
-    "content": [
-      { "type": "text", "text": "Describe this image." },
-      { "type": "image_url", "image_url": { "url": "data:image/png;base64,..." } }
-    ]
-  }]
+```bash
+docker compose pull
+docker compose up -d
+docker compose logs -f app
+curl --fail http://127.0.0.1:3000/api/health
+curl --fail http://127.0.0.1:3000/api/ready
+```
+
+`/api/health` confirms that the process is alive. `/api/ready` additionally checks PostgreSQL and usable provider capacity.
+
+## Existing Managed PostgreSQL
+
+When using Aiven, Neon, RDS, or another managed database, omit the `database` service and provide its TLS connection URL in `.env`:
+
+```dotenv
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
+```
+
+Migrations are ordered, checksum-verified, transaction-protected, and guarded by a PostgreSQL advisory lock. Multiple containers may start together, but one migration runner is operationally simpler. Existing untracked databases may require an explicit baseline; review migration status before doing so:
+
+```bash
+docker run --rm --env-file .env ghcr.io/kiyoscripts/qwen-api:latest node scripts/migrate.mjs --status
+docker run --rm --env-file .env ghcr.io/kiyoscripts/qwen-api:latest node scripts/migrate.mjs --baseline
+```
+
+Only baseline a database whose schema is already known to match the migrations.
+
+## First Administrator
+
+After the database is migrated, open the site and use the administrator bootstrap flow. Create the first administrator only from a trusted connection. Registration is invite-only by default; administrators can create users and invitations or enable public registration from settings.
+
+New users do not receive API keys automatically. Users create keys explicitly from their account page.
+
+## Reverse Proxy and TLS
+
+Put Caddy, Nginx, Traefik, Cloudflare Tunnel, or your platform ingress in front of port `3000`. Terminate HTTPS at the proxy and do not expose PostgreSQL publicly.
+
+Forwarded IP headers are ignored unless the trusted proxy overwrites `X-Origin-Proxy-Secret` with the exact `TRUSTED_PROXY_SECRET`. Never allow clients to preserve or choose this header.
+
+Example Nginx location:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Origin-Proxy-Secret "replace-with-trusted-proxy-secret";
+    proxy_buffering off;
+    proxy_read_timeout 300s;
 }
 ```
 
-## Video generation (no timeout)
+`proxy_buffering off` is important for streaming SSE responses.
 
-Video can take many minutes and a serverless function can't stay open forever, so
-generation is **asynchronous**: you get a task id back instantly and poll it for
-as long as you like.
+## Background Jobs
 
-```bash
-# 1. start the render -> 202
-curl -X POST https://qwen38-api-production.up.railway.app/v1/videos/generations \
-  -H "Authorization: Bearer qwen_sk_..." -H "Content-Type: application/json" \
-  -d '{"prompt":"a man waving hello"}'
-# -> {"id":"<task>","chat_id":"<chat>","status":"processing"}
+Durable provider health, discovery, exports, and maintenance jobs are processed by:
 
-# 2. poll until done (as long as it takes)
-curl "https://qwen38-api-production.up.railway.app/v1/videos/status?task_id=<task>&chat_id=<chat>" \
-  -H "Authorization: Bearer qwen_sk_..."
-# -> {"status":"processing"}  ... then {"status":"completed","data":[{"url":"…mp4"}]}
+```text
+GET or POST /api/cron/worker
+Authorization: Bearer <CRON_SECRET>
 ```
 
-Pass `"wait": true` if you'd rather block and get the URL directly (bounded by the
-function's max duration; it falls back to a 202 task id if it runs long).
-
-## Serving generated media
-
-Qwen's CDN URLs are signed and referer-checked, so they often won't load directly
-in a browser `<img>`/`<video>`. Re-serve them through `GET /api/media?url=<encoded>`
-(host-allowlisted to Qwen/Alibaba CDNs only). The playground does this automatically.
-
-## Text-to-speech
+Call it every minute from a scheduler. Example:
 
 ```bash
-curl -X POST https://qwen38-api-production.up.railway.app/v1/audio/speech \
-  -H "Authorization: Bearer qwen_sk_..." -H "Content-Type: application/json" \
-  -d '{"input":"Hello there","voice":"Cherry"}' --output speech.wav
+curl --fail -X POST https://api.example.com/api/cron/worker \
+  -H "Authorization: Bearer $CRON_SECRET"
 ```
 
-Output is 24 kHz, 16-bit mono WAV. List voices with `GET /v1/audio/voices`
-(Cherry, Dylan, Kiki, Vivian, Serena, Momo, Moon, …).
+## API Usage
 
-Two honest caveats about how Qwen's TTS works:
+Create an API key in the account UI, then discover the currently enabled models:
 
-- Qwen can only *read aloud a message that exists in a chat* — there's no raw
-  text→speech endpoint. So this route first has the model echo your text back
-  verbatim, then runs "read aloud" on that message. That means an extra model
-  call per request, and very occasionally the echo isn't 100% word-for-word.
-- The voice is an **account-level setting**, not a per-request parameter. The
-  route sets it on the pooled account right before synthesising, so two
-  concurrent requests with different voices on the *same* token can race. More
-  tokens in the pool makes this less likely.
+```bash
+curl https://api.example.com/v1/models \
+  -H "Authorization: Bearer $API_KEY"
+```
 
-## How it works / notes
+Non-streaming chat:
 
-- **Stateless** like the OpenAI API: send the full `messages` history each call.
-  Internally the proxy collapses it into one Qwen message (Qwen only accepts one
-  message per call and keeps state server-side).
-- Each request runs in a **throwaway Qwen chat** that is created, used, then
-  deleted, and Qwen's auto-saved memories are wiped — so the shared account and
-  its sidebar stay clean between requests/users.
-- **All traffic uses one shared Qwen account** (your token). Its rate limits and
-  Terms of Service apply to the whole API. Keep `QWEN_TOKEN` fresh (see below).
-- **Tool/function-calling is not supported.** chat.qwen.ai ignores custom function
-  schemas, and emulating it via prompting proved unreliable, so it was removed.
-  Sending `tools` returns a clear 400 rather than silently answering in prose.
-- If completions start failing with `Internal error`, Qwen probably updated their
-  frontend: set `QWEN_CLIENT_VERSION` to the new `Version` header value from
-  DevTools → Network on chat.qwen.ai. If you see `unauthorized`, refresh
-  `QWEN_TOKEN`. Anti-bot (WAF / `FAIL_SYS_USER_VALIDATE` / captcha HTML) is
-  handled by auto-generated SSXMOD fingerprint cookies + browser-shaped headers
-  (ported from [angyedz/QwenFreeApi](https://github.com/angyedz/QwenFreeApi));
-  when WAF still trips, bump `QWEN_CLIENT_VERSION` and re-login a fresh token.
+```bash
+curl https://api.example.com/v1/chat/completions \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"xqapi/gpt-5.6-sol","messages":[{"role":"user","content":"Hello"}]}'
+```
 
-## Security
+Add `"stream":true` for OpenAI-compatible SSE streaming. The deployed `/docs` and `/playground` pages provide live model discovery and generated cURL, JavaScript, and Python examples.
 
-- `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_SECRET`, and `QWEN_TOKEN` are **secrets** —
-  they live only in `.env.local` (gitignored) and Vercel env. Never commit them.
-- API keys are stored as SHA-256 hashes; the raw key is shown only once at creation.
+## Build Locally
+
+GitHub Actions is the recommended builder. To build manually:
+
+```bash
+docker build -t qwen-api:local .
+docker run --rm --env-file .env -p 3000:3000 qwen-api:local
+```
+
+The multi-stage image installs dependencies, builds Next.js standalone output, and copies only runtime assets into the final non-root image.
+
+## GitHub Workflow
+
+`.github/workflows/docker.yml` performs:
+
+1. Dependency installation with the lockfile.
+2. Security, custom-provider, integration, packaging, and TypeScript checks.
+3. A cached BuildKit production build on an `ubuntu-latest` runner.
+4. Publication to GitHub Container Registry using the repository-scoped `GITHUB_TOKEN`.
+
+No personal access token is stored in the workflow. In repository settings, ensure **Actions > General > Workflow permissions** allows read and write permissions. After the first publish, set the GHCR package visibility to public if anonymous pulls are desired.
+
+## Operations and Security
+
+- Back up PostgreSQL before upgrades and test restore procedures.
+- Pin production deployments to a `sha-*` image rather than `latest` when reproducibility matters.
+- Keep `.env`, database URLs, Qwen tokens, provider credentials, cookies, and API keys out of Git and logs.
+- Restrict `/admin`, bootstrap, and database access to trusted operators.
+- Monitor `/api/ready`, container health, job failures, provider health, security events, and disk/database growth.
+- Upgrade by pulling a new image and recreating the app container; startup migrations run before the server.
+- Roll back the image only when its expected database schema remains compatible. Database migrations are not automatically reversed.
+- The project does not bypass upstream anti-bot protections. Unhealthy credentials are parked or disabled instead.
+
+## License and Upstream Services
+
+Review the repository license and the terms, quotas, and acceptable-use policies of every configured upstream provider before operating a public service.

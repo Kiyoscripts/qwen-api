@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticate } from "@/lib/apiAuth";
+import { authenticate, modelAllowed } from "@/lib/apiAuth";
+import { modelEnabled, capabilityEnabled } from "@/lib/settings";
 
 export const runtime = "nodejs";
 
@@ -7,12 +8,17 @@ export const runtime = "nodejs";
 // call this before sending a message to size the context. Qwen gives us no real
 // token count, so we return a ~chars/4 estimate — enough for context management.
 export async function POST(req: NextRequest) {
-  if (!(await authenticate(req))) {
+  const record = await authenticate(req);
+  if (!record) {
     return NextResponse.json({ type: "error", error: { type: "authentication_error", message: "Invalid API key." } }, { status: 401 });
   }
 
   let body: any;
   try { body = await req.json(); } catch { body = {}; }
+  const model = typeof body.model === "string" ? body.model : "qwen3.8-max";
+  const capability = await capabilityEnabled("chat");
+  if (!capability.enabled) return NextResponse.json({ type: "error", error: { type: "service_unavailable", message: capability.message } }, { status: 503 });
+  if (!(await modelEnabled(model)) || !modelAllowed(record, model)) return NextResponse.json({ type: "error", error: { type: "not_found_error", message: "Model unavailable." } }, { status: 404 });
 
   let chars = 0;
   const addContent = (c: any) => {

@@ -1,26 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CANONICAL_URL, isAllowedHost, isApiPath, movedPage } from "@/lib/canonicalHost";
+import { forwardedClientIp, proxyIsTrusted } from "@/lib/clientIp";
+import { applySecurityHeaders, createNonce } from "@/lib/securityHeaders";
 
-/**
- * Retires every host that isn't the canonical one.
- *
- * A client-side banner is only cosmetic — deleting the element in devtools
- * leaves a fully working app underneath, and the API never saw the banner at
- * all. Enforcing it here means the request is answered before any route runs,
- * so on a retired host there is no page to strip and no endpoint to call.
- *
- * 410 rather than 404: the resource existed and is deliberately gone, which is
- * also what tells crawlers to drop it rather than keep retrying.
- */
+/** Enforces the canonical host and attaches request identity and browser defenses. */
 export function middleware(req: NextRequest) {
-  if (isAllowedHost(req.headers.get("host"))) return NextResponse.next();
+  const id = req.headers.get("x-request-id")?.trim() || `req_${crypto.randomUUID().replace(/-/g, "")}`;
+  const nonce = createNonce();
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-request-id", id);
+  requestHeaders.set("x-nonce", nonce);
+  const trustedProxy = proxyIsTrusted(req.headers);
+  requestHeaders.set("x-client-ip", forwardedClientIp(req.headers, trustedProxy));
+  requestHeaders.delete("x-origin-proxy-secret");
+  requestHeaders.delete("cf-connecting-ip");
+  requestHeaders.delete("x-forwarded-for");
+  requestHeaders.delete("x-real-ip");
+
+  if (isAllowedHost(req.headers.get("host"))) {
+    const response = NextResponse.next({ request: { headers: requestHeaders } });
+    response.headers.set("X-Request-ID", id);
+    applySecurityHeaders(response.headers, nonce);
+    return response;
+  }
 
   const { pathname, search } = req.nextUrl;
-
+  let response: NextResponse;
   if (isApiPath(pathname)) {
-    // Machine-readable, and shaped like the errors every other route returns so
-    // existing clients surface the message instead of a parse failure.
-    return NextResponse.json(
+    response = NextResponse.json(
       {
         error: {
           message: `This host has been retired. Point your base URL at ${CANONICAL_URL}/v1 — your API key is unchanged.`,
@@ -33,23 +40,26 @@ export function middleware(req: NextRequest) {
         headers: {
           Link: `<${CANONICAL_URL}${pathname}${search}>; rel="canonical"`,
           "Cache-Control": "no-store",
+          "X-Request-ID": id,
         },
       }
     );
+  } else {
+    response = new NextResponse(movedPage(pathname), {
+      status: 410,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        Link: `<${CANONICAL_URL}${pathname}>; rel="canonical"`,
+        "Cache-Control": "no-store",
+        "X-Request-ID": id,
+      },
+    });
   }
-
-  return new NextResponse(movedPage(pathname), {
-    status: 410,
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      Link: `<${CANONICAL_URL}${pathname}>; rel="canonical"`,
-      "Cache-Control": "no-store",
-    },
-  });
+  applySecurityHeaders(response.headers, nonce);
+  return response;
 }
 
 export const config = {
-  // Static assets are excluded: the notice is self-contained, so serving them is
-  // pointless either way, and matching them would run this on every chunk.
+  // BotID's same-origin challenge and all dynamic/API routes must pass through CSP.
   matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|ttf|woff2?)$).*)"],
 };

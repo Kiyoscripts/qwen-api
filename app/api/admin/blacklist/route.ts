@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listBlacklist, blacklistIp, unblacklistIp, deleteKeysByIp } from "@/lib/supabase";
 
-import { requireAdmin } from "@/lib/auth";
+import { audit, requireAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
   try {
     const deleted = await deleteKeysByIp(ip).catch(() => 0);
     await blacklistIp(ip, "manual", deleted);
+    await audit(auth.user.id, "blacklist.add", "ip", ip, { deleted_keys: deleted });
     return NextResponse.json({ ok: true, deleted });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
@@ -41,6 +42,7 @@ export async function DELETE(req: NextRequest) {
   if (!ip) return NextResponse.json({ error: "ip required" }, { status: 400 });
   try {
     await unblacklistIp(ip);
+    await audit(auth.user.id, "blacklist.remove", "ip", ip);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

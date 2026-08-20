@@ -14,6 +14,7 @@ export const en = {
   nav_models: "Models",
   nav_playground: "Playground",
   nav_chat: "Chat",
+  nav_status: "Status",
   nav_docs: "Docs",
   nav_login: "Log in",
   nav_dashboard: "Dashboard",
