@@ -287,11 +287,16 @@
 
   /* Scroll reveal where the browser can do it without script. Elsewhere the
      content is simply already visible, which is the correct fallback. */
-  @supports (animation-timeline: view()) {
-    .syde .reveal {
-      animation: syde-rise 0.6s var(--syde-ease) both;
-      animation-timeline: view();
-      animation-range: entry 0% cover 26%;
+  /* Mobile Chromium can leave view-timeline elements transparent after fast
+     scrolling or browser chrome resize. Keep mobile content immediately
+     visible; the decorative reveal is reserved for stable desktop viewports. */
+  @media (min-width: 768px) {
+    @supports (animation-timeline: view()) {
+      .syde .reveal {
+        animation: syde-rise 0.6s var(--syde-ease) both;
+        animation-timeline: view();
+        animation-range: entry 0% cover 26%;
+      }
     }
   }
 }
