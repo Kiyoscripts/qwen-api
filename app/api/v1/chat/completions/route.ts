@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError } from "@/lib/apiErrors";
-import { modelEnabled, capabilityEnabled } from "@/lib/settings";
+import { modelEnabled, capabilityEnabled, getSetting } from "@/lib/settings";
 import {
   buildMessage,
   createChat,
@@ -204,11 +204,14 @@ export async function POST(req: NextRequest) {
   // tool_calls. See lib/tools.ts.
   const toolsOn = hasTools(body);
   const wantStream = body.stream === true;
-  const modelId = typeof body.model === "string" && body.model ? body.model : DEFAULT_MODEL;
+  const requestedModelId = typeof body.model === "string" && body.model ? body.model : DEFAULT_MODEL;
+  const toolRouting = toolsOn ? await getSetting("tool_routing") : { enabled: false, model: "" };
+  const modelId = toolRouting.enabled && toolRouting.model ? toolRouting.model : requestedModelId;
   const capability = await capabilityEnabled("chat");
   if (!capability.enabled) return err(capability.message, 503, "service_unavailable");
-  if (!(await modelEnabled(modelId))) return err("The requested model is disabled.", 404, "model_not_found");
-  if (!modelAllowed(record, modelId)) return err("This API key is not permitted to use the requested model.", 403);
+  if (!(await modelEnabled(requestedModelId))) return err("The requested model is disabled.", 404, "model_not_found");
+  if (!modelAllowed(record, requestedModelId)) return err("This API key is not permitted to use the requested model.", 403);
+  if (modelId !== requestedModelId && !(await modelEnabled(modelId))) return err("The configured tool-routing model is disabled.", 503, "tool_router_unavailable");
 
   const hadImage = imageUrlsIn(messages[messages.length - 1]).length > 0;
 
