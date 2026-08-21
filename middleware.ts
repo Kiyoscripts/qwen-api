@@ -17,7 +17,7 @@ export function middleware(req: NextRequest) {
   requestHeaders.delete("x-forwarded-for");
   requestHeaders.delete("x-real-ip");
 
-  if (isAllowedHost(req.headers.get("host"))) {
+  if (!CANONICAL_URL || isAllowedHost(req.headers.get("host"))) {
     const response = NextResponse.next({ request: { headers: requestHeaders } });
     response.headers.set("X-Request-ID", id);
     applySecurityHeaders(response.headers, nonce);
