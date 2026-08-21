@@ -23,6 +23,7 @@ import { findSession, saveSession, forgetSession } from "@/lib/qwenSessions";
 import { virtualModel, generateImage, startVideo, toRatio, type VirtualModel } from "@/lib/media";
 import { resolveWatermark, buildMediaUrl } from "@/lib/watermark";
 import { hasTools, preprocessToolMessages, buildRegistry, ToolStream, extractToolCalls, applyToolPolicy, type OAIToolCall } from "@/lib/tools";
+import { compactToolIntentPrompt, hasToolResults, parseToolIntent, routerMessages, validateNativeToolCalls } from "@/lib/toolRouting";
 import { customModel, systemPromptFor } from "@/lib/customModels";
 import {
   isOneCompilerModel,
@@ -205,13 +206,14 @@ export async function POST(req: NextRequest) {
   const toolsOn = hasTools(body);
   const wantStream = body.stream === true;
   const requestedModelId = typeof body.model === "string" && body.model ? body.model : DEFAULT_MODEL;
-  const toolRouting = toolsOn ? await getSetting("tool_routing") : { enabled: false, model: "" };
-  const modelId = toolRouting.enabled && toolRouting.model ? toolRouting.model : requestedModelId;
+  const toolFollowUp = toolsOn && hasToolResults(messages);
+  const toolRouting = toolsOn && !toolFollowUp ? await getSetting("tool_routing") : { enabled: false, model: "" };
+  const modelId = requestedModelId;
   const capability = await capabilityEnabled("chat");
   if (!capability.enabled) return err(capability.message, 503, "service_unavailable");
   if (!(await modelEnabled(requestedModelId))) return err("The requested model is disabled.", 404, "model_not_found");
   if (!modelAllowed(record, requestedModelId)) return err("This API key is not permitted to use the requested model.", 403);
-  if (modelId !== requestedModelId && !(await modelEnabled(modelId))) return err("The configured tool-routing model is disabled.", 503, "tool_router_unavailable");
+
 
   const hadImage = imageUrlsIn(messages[messages.length - 1]).length > 0;
 
@@ -311,9 +313,14 @@ export async function POST(req: NextRequest) {
   const cm = customModel(modelId);
   const backendModel = cm?.baseModel || modelId;
 
-  // With tools on, flatten the OpenAI tool-flow (assistant tool_calls, role:"tool"
-  // results) into text and append the tool-protocol system section.
-  let effMessages: any[] = toolsOn ? preprocessToolMessages(messages, body.tools, body.tool_choice) : messages;
+  // Existing tool results are flattened for Qwen synthesis. For a new tool-bearing
+  // turn, Qwen sees only compact names/descriptions and decides whether routing is
+  // necessary; schemas remain private until the native router is actually called.
+  let effMessages: any[] = toolFollowUp
+    ? preprocessToolMessages(messages, body.tools, "none")
+    : toolsOn
+      ? [{ role: "system", content: compactToolIntentPrompt(body.tools, body.tool_choice) }, ...messages]
+      : messages;
   // The persona goes first so the caller's own system prompt layers on top of it.
   if (cm) {
     const persona = systemPromptFor(cm);
@@ -464,54 +471,29 @@ export async function POST(req: NextRequest) {
   };
   const withReasoning = showReasoning();
 
-  // Tools + streaming: stream text token-by-token while pulling out tool calls as
-  // they complete. ToolStream is the same machine the buffered path uses, so both
-  // agree on what counts as a call; only the tool JSON is withheld from the text.
+  // Qwen intent markers must never leak into a client stream, so the first decision is buffered.
   if (toolsOn && wantStream) {
-    const encoder = new TextEncoder();
-    const registry = buildRegistry(body.tools);
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        const hb = keepAlive(controller, encoder);
-        const send = (delta: any, finish: string | null = null) => {
-          hb.touch();
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`));
-        };
-        send({ role: "assistant" });
-
-        const parser = new ToolStream(registry);
-        let toolCalls: OAIToolCall[] = [];
-        const st: StreamStatus = { complete: false };
-
-        try {
-          for await (const { phase, text } of qwenDeltas(qwenRes, st)) {
-            if (phase === "think") { if (withReasoning && text) send({ reasoning_content: text }); continue; }
-            const out = parser.push(text);
-            if (out) send({ content: out });
-          }
-          const fin = parser.end();
-          if (fin.text) send({ content: fin.text });
-          // Enforce what the request asked for — a named tool_choice,
-          // parallel_tool_calls:false, strict schemas — before the client sees it.
-          toolCalls = applyToolPolicy(fin.toolCalls, body, registry);
-        } catch (e: any) {
-          // Salvage whatever the parser already resolved before the stream broke.
-          try { toolCalls = applyToolPolicy(parser.end().toolCalls, body, registry); } catch { /* nothing to salvage */ }
-          send({ content: `\n[error: ${e.message}]` });
-        }
-        await cleanup();
-        logUsage(record.id, modelId, hadImage, true, 200);
-        hb.stop();
-        if (toolCalls.length) send({ tool_calls: streamDelta(toolCalls) });
-        // "length" is how OpenAI reports a reply that ran out of room, so every
-        // client already knows to treat it as resumable rather than finished.
-        send({}, toolCalls.length ? "tool_calls" : finishFor(st, created, modelId));
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-        controller.close();
-      },
-    });
-    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+    let raw = "";
+    const st: StreamStatus = { complete: false };
+    try {
+      for await (const { phase, text } of qwenDeltas(qwenRes, st)) if (phase !== "think") raw += text;
+    } catch (e: any) {
+      await cleanup();
+      logUsage(record.id, modelId, hadImage, true, e instanceof QwenError ? e.status : 502);
+      return err(e.message || "Upstream error", e instanceof QwenError ? e.status : 502, "upstream_error");
+    }
+    await cleanup();
+    const intent = !toolFollowUp ? parseToolIntent(raw) : { required: false, answer: raw };
+    if (intent.required) return routeNativeToolCall({ req, body, messages, requestedModelId, routerModelId: toolRouting.model, recordId: record.id, wantStream: true });
+    logUsage(record.id, modelId, hadImage, true, 200);
+    const parsed = toolFollowUp ? extractToolCalls(raw, body.tools) : { content: intent.answer, toolCalls: [] };
+    const calls = applyToolPolicy(parsed.toolCalls, body, buildRegistry(body.tools));
+    const chunks = [
+      { id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] },
+      { id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: calls.length ? { tool_calls: streamDelta(calls) } : { content: intent.answer }, finish_reason: null }] },
+      { id, object: "chat.completion.chunk", created, model: modelId, choices: [{ index: 0, delta: {}, finish_reason: calls.length ? "tool_calls" : finishFor(st, created, modelId) }] },
+    ];
+    return new Response(chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream; charset=utf-8" } });
   }
 
   // Tools without streaming: buffer the whole reply, parse, return JSON.
@@ -533,9 +515,13 @@ export async function POST(req: NextRequest) {
     await cleanup();
     logUsage(record.id, modelId, hadImage, wantStream, 200);
 
-    const { content: toolContent, toolCalls: parsed } = extractToolCalls(raw, body.tools);
+    const intent = !toolFollowUp ? parseToolIntent(raw) : { required: false, answer: raw };
+    if (intent.required) {
+      return routeNativeToolCall({ req, body, messages, requestedModelId, routerModelId: toolRouting.model, recordId: record.id, wantStream });
+    }
+    const { content: toolContent, toolCalls: parsed } = toolFollowUp ? extractToolCalls(raw, body.tools) : { content: intent.answer, toolCalls: [] };
     const toolCalls = applyToolPolicy(parsed, body, buildRegistry(body.tools));
-    const message: Record<string, unknown> = { role: "assistant", content: toolCalls.length ? toolContent : raw };
+    const message: Record<string, unknown> = { role: "assistant", content: toolCalls.length ? toolContent : intent.answer };
     if (toolCalls.length) message.tool_calls = toolCalls;
     if (withReasoning && reasoning) message.reasoning_content = reasoning;
 
@@ -1810,4 +1796,33 @@ async function handleNvidia(args: {
     ],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
+}
+
+async function routeNativeToolCall(args: {
+  req: NextRequest; body: any; messages: OpenAIMessage[]; requestedModelId: string;
+  routerModelId: string; recordId: string; wantStream: boolean;
+}) {
+  const { req, body, messages, requestedModelId, routerModelId, recordId, wantStream } = args;
+  if (!routerModelId || !(await modelEnabled(routerModelId))) return err("The configured tool-routing model is unavailable.", 503, "tool_router_unavailable", req);
+  const router = await customProviderModel(routerModelId);
+  if (!router) return err("The configured tool-routing model is unavailable.", 503, "tool_router_unavailable", req);
+  try {
+    const routedBody = { ...body, model: routerModelId, stream: false, messages: routerMessages(messages) };
+    const { response } = await proxyCustomChat(router, routedBody, req.signal);
+    const payload = await response.json();
+    const calls = validateNativeToolCalls(payload?.choices?.[0]?.message?.tool_calls, body.tools, body);
+    if (!calls.length) return err("The tool router returned no valid tool call.", 502, "invalid_tool_call", req);
+    await logUsage(recordId, requestedModelId, false, wantStream, 200, { provider: router.provider_slug, requestId: req.headers.get("x-request-id") || undefined });
+    const id = "chatcmpl-" + randomUUID();
+    const created = Math.floor(Date.now() / 1000);
+    if (!wantStream) return NextResponse.json({ id, object: "chat.completion", created, model: requestedModelId, choices: [{ index: 0, message: { role: "assistant", content: null, tool_calls: calls }, finish_reason: "tool_calls" }] });
+    const chunks = [
+      { id, object: "chat.completion.chunk", created, model: requestedModelId, choices: [{ index: 0, delta: { role: "assistant", tool_calls: streamDelta(calls) }, finish_reason: null }] },
+      { id, object: "chat.completion.chunk", created, model: requestedModelId, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] },
+    ];
+    return new Response(chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\\n\\n`).join("") + "data: [DONE]\\n\\n", { headers: { "content-type": "text/event-stream; charset=utf-8" } });
+  } catch (error) {
+    const status = error instanceof CustomProviderError ? error.status : 502;
+    return err("The tool router is unavailable.", status >= 500 ? status : 502, "tool_router_unavailable", req);
+  }
 }

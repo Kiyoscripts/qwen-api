@@ -227,3 +227,17 @@ console.log(failures.join("\n\n"));
 
 console.log(`\n${pass} passed, ${fail} failed  (each case checked buffered + streamed)`);
 process.exit(fail ? 1 : 0);
+
+// Qwen-first native-router helpers.
+import { compactToolIntentPrompt, hasToolResults, parseToolIntent, validateNativeToolCalls } from "../lib/toolRouting";
+{
+  const prompt = compactToolIntentPrompt(TOOLS, "auto");
+  check("intent prompt uses compact descriptions", prompt.includes("get_weather") && !prompt.includes("parameters"));
+  check("exact intent marker is accepted", parseToolIntent("<qwen_tool_intent>{\"required\":true}</qwen_tool_intent>").required);
+  check("marker embedded in prose is rejected", !parseToolIntent("Use <qwen_tool_intent>{\"required\":true}</qwen_tool_intent>").required);
+  check("tool-result follow-up detected", hasToolResults([{ role: "tool", tool_call_id: "x", content: "sunny" }]));
+  const native = validateNativeToolCalls([{ id: "x", type: "function", function: { name: "get_weather", arguments: "{\"city\":\"Paris\"}" } }], TOOLS, { tools: TOOLS });
+  check("valid native router call accepted", native.length === 1 && native[0].function.name === "get_weather");
+  check("unknown native router tool rejected", validateNativeToolCalls([{ function: { name: "delete_all", arguments: "{}" } }], TOOLS, { tools: TOOLS }).length === 0);
+  check("malformed native arguments rejected", validateNativeToolCalls([{ function: { name: "get_weather", arguments: "nope" } }], TOOLS, { tools: TOOLS }).length === 0);
+}
