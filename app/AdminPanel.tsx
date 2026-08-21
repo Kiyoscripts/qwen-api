@@ -16,7 +16,7 @@ const card = "border border-rule p-4 md:p-5";
 async function json(url: string, options?: RequestInit) { const r = await fetch(url, options); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || "Request failed"); return j; }
 
 export function AdminPanel() {
-  const [me, setMe] = useState<any>(undefined); const [tab, setTab] = useState<Tab>("users");
+  const [me, setMe] = useState<any>(undefined); const [tab, setTab] = useState<Tab>("users"); const [mobileNavOpen, setMobileNavOpen] = useState(false);
   useEffect(() => { json("/api/auth/me").then(j => setMe(j.user || null)).catch(() => setMe(null)); }, []);
   useEffect(() => {
     const readTab = () => {
@@ -32,11 +32,12 @@ export function AdminPanel() {
     const url = new URL(window.location.href);
     if (next === "users") url.searchParams.delete("tab"); else url.searchParams.set("tab", next);
     window.history.pushState({}, "", url);
+    setMobileNavOpen(false);
   }
   if (me === undefined) return <p className="body py-20 text-center">Loading...</p>;
   if (!me || me.role !== "admin") return <div className="py-20 text-center"><h1 className="h2 text-ink">Admin access required</h1><Link href="/" className="btn btn-ghost mt-6">Back home</Link></div>;
   return <div><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">Control room</p><h1 className="h2 text-ink">Administration</h1><p className="body mt-2 text-sm">Signed in as {me.username}</p></div><Link href="/keys" className="btn btn-ghost">My API keys</Link></div>
-    <div className="mt-8 md:hidden"><label htmlFor="admin-section" className="mb-2 block font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">Admin section</label><select id="admin-section" className={`${field} bg-[var(--paper)] font-mono`} value={tab} onChange={e => selectTab(e.target.value as Tab)}>{tabGroups.map(group => <optgroup key={group.label} label={group.label}>{group.tabs.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</optgroup>)}</select></div>
+    <div className="relative mt-8 md:hidden"><p className="mb-2 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">Admin section</p><button type="button" aria-expanded={mobileNavOpen} aria-controls="admin-mobile-sections" onClick={()=>setMobileNavOpen(open=>!open)} className="flex w-full items-center justify-between border border-ink bg-[var(--paper)] px-4 py-3 text-left"><span><span className="block font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">Current workspace</span><b className="mt-1 block text-base text-ink">{tabs.find(item=>item.id===tab)?.label}</b></span><span aria-hidden className={`font-mono text-xl text-signal transition-transform ${mobileNavOpen?"rotate-45":""}`}>+</span></button>{mobileNavOpen&&<div id="admin-mobile-sections" className="absolute inset-x-0 z-30 mt-2 max-h-[min(65vh,34rem)] overflow-y-auto border border-ink bg-[var(--paper)] p-3 shadow-[8px_8px_0_var(--ink)]">{tabGroups.map(group=><div key={group.label} className="not-last:mb-4"><p className="px-2 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">{group.label}</p><div className="grid gap-1">{group.tabs.map(item=><button key={item.id} type="button" aria-current={tab===item.id?"page":undefined} onClick={()=>selectTab(item.id)} className={`flex min-h-11 items-center justify-between px-3 py-2 text-left text-sm ${tab===item.id?"bg-ink text-[var(--paper)]":"border border-transparent text-ink hover:border-rule hover:bg-[var(--paper-2)]"}`}><span>{item.label}</span>{tab===item.id&&<span aria-hidden className="font-mono text-signal">●</span>}</button>)}</div></div>)}</div>}</div>
     <nav aria-label="Admin sections" className="mt-8 hidden gap-2 overflow-x-auto border-b border-rule pb-3 md:flex">{tabs.map(x => <button key={x.id} type="button" aria-current={tab === x.id ? "page" : undefined} onClick={() => selectTab(x.id)} className={`shrink-0 px-3 py-2 font-mono text-xs ${tab === x.id ? "bg-ink text-[var(--paper)]" : "border border-rule text-ink-2"}`}>{x.label}</button>)}</nav>
     <div className="mt-7">{tab === "users" && <Users />}{tab === "invites" && <Invites />}{tab === "tokens" && <Tokens />}{tab === "providers" && <CustomProviders />}{tab === "blacklist" && <Blacklist />}{tab === "settings" && <Settings />}{tab === "analytics" && <Analytics />}{tab === "security" && <Security />}{tab === "incidents" && <Incidents />}{tab === "bulk" && <BulkActions />}{tab === "audit" && <Audit />}{tab === "exports" && <Exports />}</div>
   </div>;
