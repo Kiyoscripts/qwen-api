@@ -27,6 +27,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             visible flash on every navigation. */}
         <script
           nonce={nonce}
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{
             __html:
               // Reads the same key the nav writes. It read `qwen_theme` while
