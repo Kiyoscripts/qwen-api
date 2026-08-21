@@ -41,14 +41,9 @@ export function ModelCard({ m, labels }: { m: CardModel; labels: Record<string, 
       </div>
       <div className="mt-6">
         <div className="flex flex-wrap gap-1.5">
-          <span className="border border-rule px-2 py-1 font-mono text-[10.5px] text-ink-2"
-                style={{ borderRadius: "var(--r-sm)" }}>
-            {labels.text}
-          </span>
           {m.inputs.map((i) => (
             <span key={i}
-              className="border border-[var(--signal)] bg-[var(--signal-wash)] px-2 py-1 font-mono
-                         text-[10.5px] text-signal"
+              className={`border px-2 py-1 font-mono text-[10.5px] ${i === "text" ? "border-rule text-ink-2" : "border-[var(--signal)] bg-[var(--signal-wash)] text-signal"}`}
               style={{ borderRadius: "var(--r-sm)" }}>
               {labels[i] ?? i}
             </span>

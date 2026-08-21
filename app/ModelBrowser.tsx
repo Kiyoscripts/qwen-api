@@ -58,7 +58,7 @@ export function ModelBrowser({ rows }: { rows: CardModel[] }) {
               {key} {n}
             </Chip>
           ))}
-        </div><select value={capability||""} onChange={e=>setCapability(e.target.value||null)} className="h-10 border border-rule bg-transparent px-3 font-mono text-xs text-ink" aria-label="Filter by capability"><option value="">All capabilities</option><option value="reasoning">Reasoning</option><option value="image">Image</option><option value="file">Files</option><option value="video">Video</option><option value="audio">Audio</option></select><select value={sort} onChange={e=>setSort(e.target.value)} className="h-10 border border-rule bg-transparent px-3 font-mono text-xs text-ink" aria-label="Sort models"><option value="name">Sort: name</option><option value="provider">Sort: provider</option><option value="context">Sort: context</option></select>
+        </div><select value={capability||""} onChange={e=>setCapability(e.target.value||null)} className="h-10 border border-rule bg-transparent px-3 font-mono text-xs text-ink" aria-label="Filter by capability"><option value="">All capabilities</option><option value="reasoning">Reasoning</option><option value="text">Text</option><option value="image">Image</option><option value="file">Files</option><option value="video">Video</option><option value="audio">Audio</option></select><select value={sort} onChange={e=>setSort(e.target.value)} className="h-10 border border-rule bg-transparent px-3 font-mono text-xs text-ink" aria-label="Sort models"><option value="name">Sort: name</option><option value="provider">Sort: provider</option><option value="context">Sort: context</option></select>
       </div>
 
       {shown.length === 0 ? (

@@ -22,7 +22,8 @@ async function load(): Promise<{ rows: CardModel[]; degraded: boolean }> {
       owner: model.provider_slug,
       maker: model.provider_slug,
       thinking: false,
-      inputs: [],
+      // Custom providers currently expose chat completions only.
+      inputs: ["text"],
     }));
   try {
     const { result } = await withTokenFailover((token) => getModels(token));
@@ -34,6 +35,7 @@ async function load(): Promise<{ rows: CardModel[]; degraded: boolean }> {
       maker: "qwen",
       thinking: model.thinking,
       inputs: [
+        "text",
         ...(model.vision ? ["image" as const] : []),
         ...(model.document ? ["file" as const] : []),
         ...(model.video ? ["video" as const] : []),
