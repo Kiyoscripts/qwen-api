@@ -82,6 +82,7 @@ import { authenticate, modelAllowed } from "@/lib/apiAuth";
 import { CustomProviderError, customModel as customProviderModel, proxyCustomChat } from "@/lib/customProviders";
 import { publicOrigin } from "@/lib/canonicalHost";
 import { randomUUID } from "node:crypto";
+import { injectSystemPrompts, type ScopedPrompt } from "@/lib/systemPromptInjection";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -197,7 +198,7 @@ export async function POST(req: NextRequest) {
   } catch {
     return err("Request body must be valid JSON.", 400);
   }
-  const messages: OpenAIMessage[] = Array.isArray(body.messages) ? body.messages : [];
+  let messages: OpenAIMessage[] = Array.isArray(body.messages) ? body.messages : [];
   if (messages.length === 0) return err("'messages' must be a non-empty array.", 400);
 
   // Tool / function calling is emulated at the proxy: the schemas are injected into
@@ -205,6 +206,12 @@ export async function POST(req: NextRequest) {
   // tool_calls. See lib/tools.ts.
   const toolsOn = hasTools(body);
   const wantStream = body.stream === true;
+  const promptInjection = await getSetting("prompt_injection");
+  try {
+    if (promptInjection.enabled) messages = injectSystemPrompts(messages, [{ scope: "global", content: promptInjection.global_prompt }], promptInjection) as OpenAIMessage[];
+    else if (!promptInjection.allow_client_system_prompts) messages = injectSystemPrompts(messages, [], promptInjection) as OpenAIMessage[];
+  } catch (error: any) { return err(error.message || "Invalid system prompt configuration.", 400, "invalid_prompt_configuration", req); }
+  body = { ...body, messages };
   const requestedModelId = typeof body.model === "string" && body.model ? body.model : DEFAULT_MODEL;
   const toolFollowUp = toolsOn && hasToolResults(messages);
   const toolRouting = toolsOn && !toolFollowUp ? await getSetting("tool_routing") : { enabled: false, model: "" };
@@ -219,6 +226,11 @@ export async function POST(req: NextRequest) {
 
   const configuredProviderModel = await customProviderModel(modelId);
   if (configuredProviderModel) {
+    const scopedPrompts: ScopedPrompt[] = [];
+    if (configuredProviderModel.provider_system_prompt_enabled) scopedPrompts.push({ scope: "provider", content: configuredProviderModel.provider_system_prompt || "" });
+    if (configuredProviderModel.model_system_prompt_enabled) scopedPrompts.push({ scope: "model", content: configuredProviderModel.model_system_prompt || "" });
+    try { messages = injectSystemPrompts(messages, scopedPrompts, { ...promptInjection, enabled: true, allow_client_system_prompts: true }) as OpenAIMessage[]; body = { ...body, messages }; }
+    catch (error: any) { return err(error.message || "Invalid provider system prompt.", 400, "invalid_prompt_configuration", req); }
     if (hadImage) return err("This custom provider model supports text input only.", 400);
     const started = Date.now();
     const requestId = req.headers.get("x-request-id") || undefined;

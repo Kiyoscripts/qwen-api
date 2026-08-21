@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import { injectSystemPrompts, promptAuditMetadata } from "../lib/systemPromptInjection";
+const base:any={enabled:true,global_prompt:"admin",placement:"before_client",allow_client_system_prompts:true,max_prompt_chars:100};
+const messages=[{role:"system",content:"client"},{role:"user",content:"hello"}];
+assert.deepEqual(injectSystemPrompts(messages,[{scope:"global",content:"admin"}],base).map(x=>x.content),["admin","client","hello"]);
+assert.deepEqual(injectSystemPrompts(messages,[{scope:"global",content:"admin"}],{...base,placement:"after_client"}).map(x=>x.content),["client","admin","hello"]);
+assert.deepEqual(injectSystemPrompts(messages,[],{...base,allow_client_system_prompts:false}).map(x=>x.content),["hello"]);
+assert.throws(()=>injectSystemPrompts(messages,[{scope:"global",content:"x".repeat(101)}],base));
+assert.ok(!JSON.stringify(promptAuditMetadata(base)).includes("admin"));
+console.log("system prompt injection tests passed");
