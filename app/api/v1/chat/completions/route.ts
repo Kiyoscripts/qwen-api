@@ -225,21 +225,21 @@ export async function POST(req: NextRequest) {
       const headers = new Headers({ "content-type": response.headers.get("content-type") || (wantStream ? "text/event-stream" : "application/json") });
       if (requestId) headers.set("X-Request-ID", requestId);
       if (!wantStream) {
-        void logUsage(record.id, modelId, false, false, response.status, { provider: configuredProviderModel.provider_slug, providerAttempts: attempts, latencyMs: Date.now() - started, requestId });
+        await logUsage(record.id, modelId, false, false, response.status, { provider: configuredProviderModel.provider_slug, providerAttempts: attempts, latencyMs: Date.now() - started, requestId });
         return new Response(response.body, { status: response.status, headers });
       }
       if (!response.body) throw new CustomProviderError("Provider returned an empty stream.", 502, "invalid_response", attempts);
       const reader = response.body.getReader();
       let finalized = false;
-      const finalize = (status:number, category?:string) => { if (finalized) return; finalized = true; void logUsage(record.id, modelId, false, true, status, { provider: configuredProviderModel.provider_slug, providerAttempts: attempts, latencyMs: Date.now() - started, requestId, failureCategory: category }); };
+      const finalize = async (status:number, category?:string) => { if (finalized) return; finalized = true; await logUsage(record.id, modelId, false, true, status, { provider: configuredProviderModel.provider_slug, providerAttempts: attempts, latencyMs: Date.now() - started, requestId, failureCategory: category }); };
       const stream = new ReadableStream({
-        async pull(controller) { try { const chunk = await reader.read(); if (chunk.done) { finalize(200); controller.close(); } else controller.enqueue(chunk.value); } catch { finalize(502, "stream_error"); controller.error(new Error("Provider stream failed.")); } },
-        async cancel(reason) { finalize(499, "client_cancelled"); await reader.cancel(reason).catch(() => undefined); },
+        async pull(controller) { try { const chunk = await reader.read(); if (chunk.done) { await finalize(200); controller.close(); } else controller.enqueue(chunk.value); } catch { await finalize(502, "stream_error"); controller.error(new Error("Provider stream failed.")); } },
+        async cancel(reason) { await finalize(499, "client_cancelled"); await reader.cancel(reason).catch(() => undefined); },
       });
       return new Response(stream, { status: response.status, headers });
     } catch (error) {
       const providerError = error instanceof CustomProviderError ? error : new CustomProviderError("Custom provider is unavailable.", 503, "provider_error");
-      void logUsage(record.id, modelId, false, wantStream, providerError.status, { provider: configuredProviderModel.provider_slug, providerAttempts: providerError.attempts, latencyMs: Date.now() - started, requestId, failureCategory: providerError.category });
+      await logUsage(record.id, modelId, false, wantStream, providerError.status, { provider: configuredProviderModel.provider_slug, providerAttempts: providerError.attempts, latencyMs: Date.now() - started, requestId, failureCategory: providerError.category });
       return err(providerError.status >= 500 ? "Custom provider is unavailable." : providerError.message, providerError.status, "upstream_error", req);
     }
   }
